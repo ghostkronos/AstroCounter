@@ -96,9 +96,28 @@
                     </Border>
                 </StackPanel>
 
-                <!-- Center Hardware Status -->
+                <!-- Center Engine Mode & Hardware Status -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <TextBlock Text="Hızlandırıcı: " Foreground="#94A3B8" FontSize="12" VerticalAlignment="Center"/>
+                    <!-- Engine Mode Switcher -->
+                    <Border Background="#161E2E" CornerRadius="8" Padding="6,3" Margin="0,0,14,0" BorderBrush="#222C3D" BorderThickness="1">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <RadioButton Content="🔭 Astronomik Fotometri"
+                                         IsChecked="{Binding IsPhotometricMode}"
+                                         Foreground="#38BDF8" FontWeight="SemiBold" FontSize="11"
+                                         Margin="4,0,8,0" VerticalAlignment="Center"/>
+                            <RadioButton Content="🧠 YOLO Yapay Zeka"
+                                         IsChecked="{Binding IsYoloMode}"
+                                         Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11"
+                                         VerticalAlignment="Center"/>
+                            <Button Content="📂 Model Seç..."
+                                    Command="{Binding SelectCustomModelCommand}"
+                                    Style="{StaticResource ModernButtonStyle}"
+                                    FontSize="9" Padding="6,2" Margin="8,0,0,0"
+                                    Visibility="{Binding IsYoloMode, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="Motor: " Foreground="#64748B" FontSize="11" VerticalAlignment="Center"/>
                     <Border Background="#1E293B" CornerRadius="12" Padding="8,3" Margin="4,0,0,0">
                         <TextBlock Text="{Binding HardwareInfo}" Foreground="#10B981" FontWeight="SemiBold" FontSize="11"/>
                     </Border>

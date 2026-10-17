@@ -8,22 +8,38 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 using SkiaSharp;
 
 /// <summary>
-/// ONNX Runtime engine with DirectML hardware acceleration and automatic CPU fallback.
-/// Implements YOLOv8/YOLO11 tensor parsing and SAHI tiling inference.
+/// Hybrid astronomical detection engine supporting:
+/// 1. Real Astronomical Photometry (DAOStarFinder / SEP) - Default!
+/// 2. Deep Learning YOLOv8/11 ONNX (DirectML GPU or CPU Fallback)
 /// </summary>
 public class OnnxInferenceEngine : IInferenceEngine
 {
     private readonly InferenceSession? _session;
     private readonly string _inputName = "images";
+    private readonly string _onnxProviderName;
     private readonly List<string> _classNames = new() { "star", "galaxy", "nebula", "satellite_trail" };
     private bool _disposed;
 
-    public string ExecutionProviderName { get; }
-    public bool IsGpuAccelerated { get; }
+    public DetectionEngineMode Mode { get; set; } = DetectionEngineMode.Photometric;
+
+    public string ExecutionProviderName => Mode switch
+    {
+        DetectionEngineMode.Photometric => "Astronomik Fotometri (DAOStarFinder / SNR)",
+        DetectionEngineMode.DeepLearningYolo => _session != null ? _onnxProviderName : "ONNX Model Yüklenmedi",
+        _ => "Bilinmeyen"
+    };
+
+    public bool IsGpuAccelerated => Mode == DetectionEngineMode.DeepLearningYolo && _isGpuActive;
+    private readonly bool _isGpuActive;
+
     public IReadOnlyList<string> ClassNames => _classNames;
 
-    public OnnxInferenceEngine(string? modelPath = null, int gpuDeviceId = 0)
+    public OnnxInferenceEngine(string? modelPath = null, int gpuDeviceId = 0, DetectionEngineMode initialMode = DetectionEngineMode.Photometric)
     {
+        Mode = initialMode;
+        _onnxProviderName = "CPU Fallback";
+        _isGpuActive = false;
+
         if (!string.IsNullOrWhiteSpace(modelPath) && File.Exists(modelPath))
         {
             var sessionOptions = new SessionOptions();
@@ -32,7 +48,6 @@ public class OnnxInferenceEngine : IInferenceEngine
 
             try
             {
-                // Attempt DirectML initialization for NVIDIA, AMD, Intel GPU acceleration
                 sessionOptions.AppendExecutionProvider_DML(gpuDeviceId);
                 gpuActive = true;
                 provider = $"DirectML (GPU Device {gpuDeviceId})";
@@ -48,8 +63,8 @@ public class OnnxInferenceEngine : IInferenceEngine
             try
             {
                 _session = new InferenceSession(modelPath, sessionOptions);
-                ExecutionProviderName = provider;
-                IsGpuAccelerated = gpuActive;
+                _onnxProviderName = provider;
+                _isGpuActive = gpuActive;
 
                 var firstInput = _session.InputMetadata.Keys.FirstOrDefault();
                 if (!string.IsNullOrEmpty(firstInput))
@@ -59,19 +74,18 @@ public class OnnxInferenceEngine : IInferenceEngine
             }
             catch (Exception)
             {
-                // In case model failed to load with DirectML, try strict CPU
                 var cpuOptions = new SessionOptions();
                 cpuOptions.AppendExecutionProvider_CPU();
                 _session = new InferenceSession(modelPath, cpuOptions);
-                ExecutionProviderName = "CPU Fallback";
-                IsGpuAccelerated = false;
+                _onnxProviderName = "CPU Fallback";
+                _isGpuActive = false;
             }
         }
         else
         {
             _session = null;
-            ExecutionProviderName = "Built-in Photometric Star Finder";
-            IsGpuAccelerated = false;
+            _onnxProviderName = "ONNX Model Bulunamadı";
+            _isGpuActive = false;
         }
     }
 
@@ -90,12 +104,15 @@ public class OnnxInferenceEngine : IInferenceEngine
             int imgW = bitmap.Width;
             int imgH = bitmap.Height;
 
-            var slices = ImageTiler.ComputeSlices(imgW, imgH, config);
             var candidates = new List<AstrophotographyObject>();
+            int tileCount = 1;
 
-            if (_session != null)
+            if (Mode == DetectionEngineMode.DeepLearningYolo && _session != null)
             {
-                // Run deep learning inference across SAHI tiles
+                // Run YOLO deep learning inference across SAHI tiles
+                var slices = ImageTiler.ComputeSlices(imgW, imgH, config);
+                tileCount = slices.Count;
+
                 for (int i = 0; i < slices.Count; i++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -107,23 +124,23 @@ public class OnnxInferenceEngine : IInferenceEngine
 
                     progress?.Report((float)(i + 1) / slices.Count);
                 }
+
+                candidates = NmsFilter.ApplyNms(candidates, config.NmsIouThreshold);
             }
             else
             {
-                // Built-in high-precision astronomical photometric detection (DAOStarFinder inspired)
-                candidates = RunPhotometricStarFinder(bitmap, config, progress, cancellationToken);
+                // Built-in high-precision astronomical photometric detection (DAOStarFinder / SNR standard)
+                candidates = PhotometricStarFinder.DetectStars(bitmap, config, progress, cancellationToken);
+                tileCount = 1;
             }
-
-            // Apply global Non-Maximum Suppression across all overlapping tile coordinates
-            var suppressed = NmsFilter.ApplyNms(candidates, config.NmsIouThreshold);
 
             stopwatch.Stop();
 
             return new DetectionResult(
-                allObjects: suppressed,
+                allObjects: candidates,
                 imageWidth: imgW,
                 imageHeight: imgH,
-                tileCount: slices.Count,
+                tileCount: tileCount,
                 elapsedTime: stopwatch.Elapsed,
                 executionProvider: ExecutionProviderName
             );
@@ -149,7 +166,6 @@ public class OnnxInferenceEngine : IInferenceEngine
         var outTensor = firstOutput.AsTensor<float>();
         var shape = outTensor.Dimensions;
 
-        // YOLOv8/11 format typically: [1, 4 + classes, 8400]
         if (shape.Length == 3 && shape[1] < shape[2])
         {
             int numChannels = shape[1];
@@ -200,149 +216,8 @@ public class OnnxInferenceEngine : IInferenceEngine
                 }
             }
         }
-        else if (shape.Length == 3 && shape[1] >= shape[2])
-        {
-            // Transposed format: [1, 8400, 4 + classes]
-            int numAnchors = shape[1];
-            int numChannels = shape[2];
-            int numClasses = numChannels - 4;
-
-            for (int a = 0; a < numAnchors; a++)
-            {
-                float cx = outTensor[0, a, 0];
-                float cy = outTensor[0, a, 1];
-                float w = outTensor[0, a, 2];
-                float h = outTensor[0, a, 3];
-
-                float maxScore = 0f;
-                int bestClassId = 0;
-
-                for (int c = 0; c < numClasses; c++)
-                {
-                    float score = outTensor[0, a, 4 + c];
-                    if (score > maxScore)
-                    {
-                        maxScore = score;
-                        bestClassId = c;
-                    }
-                }
-
-                if (maxScore >= minConfidenceThreshold && w > 1f && h > 1f)
-                {
-                    float localX = cx - (w / 2f);
-                    float localY = cy - (h / 2f);
-
-                    if (localX < 0 || localY < 0 || localX > slice.Width || localY > slice.Height)
-                        continue;
-
-                    float globalX = localX + slice.X;
-                    float globalY = localY + slice.Y;
-
-                    string className = bestClassId < _classNames.Count ? _classNames[bestClassId] : "star";
-
-                    resultsList.Add(new AstrophotographyObject(
-                        Id: 0,
-                        Box: new BoundingBox(globalX, globalY, w, h),
-                        Confidence: Math.Clamp(maxScore, 0f, 1f),
-                        ClassName: className,
-                        TileOffsetX: slice.X,
-                        TileOffsetY: slice.Y
-                    ));
-                }
-            }
-        }
 
         return resultsList;
-    }
-
-    /// <summary>
-    /// Classical astronomy photometric detection (SNR-based DAOStarFinder method)
-    /// </summary>
-    private List<AstrophotographyObject> RunPhotometricStarFinder(
-        SKBitmap bitmap,
-        TilingConfig config,
-        IProgress<float>? progress,
-        CancellationToken cancellationToken)
-    {
-        var candidates = new List<AstrophotographyObject>();
-        int width = bitmap.Width;
-        int height = bitmap.Height;
-
-        float sum = 0f;
-        float sumSq = 0f;
-        int count = 0;
-        int step = Math.Max(1, Math.Min(width, height) / 200);
-
-        for (int y = 0; y < height; y += step)
-        {
-            for (int x = 0; x < width; x += step)
-            {
-                var pixel = bitmap.GetPixel(x, y);
-                float lum = (pixel.Red * 0.299f) + (pixel.Green * 0.587f) + (pixel.Blue * 0.114f);
-                sum += lum;
-                sumSq += lum * lum;
-                count++;
-            }
-        }
-
-        if (count == 0) return candidates;
-        float mean = sum / count;
-        float variance = Math.Max(1f, (sumSq / count) - (mean * mean));
-        float stdDev = (float)Math.Sqrt(variance);
-
-        float threshold = mean + (3.0f * stdDev);
-        int id = 1;
-        int margin = 3;
-
-        for (int y = margin; y < height - margin; y += 2)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            for (int x = margin; x < width - margin; x += 2)
-            {
-                var centerPix = bitmap.GetPixel(x, y);
-                float centerLum = (centerPix.Red * 0.299f) + (centerPix.Green * 0.587f) + (centerPix.Blue * 0.114f);
-
-                if (centerLum > threshold)
-                {
-                    var topPix = bitmap.GetPixel(x, y - 1);
-                    var btmPix = bitmap.GetPixel(x, y + 1);
-                    var leftPix = bitmap.GetPixel(x - 1, y);
-                    var rightPix = bitmap.GetPixel(x + 1, y);
-
-                    float topLum = (topPix.Red * 0.299f) + (topPix.Green * 0.587f) + (topPix.Blue * 0.114f);
-                    float btmLum = (btmPix.Red * 0.299f) + (btmPix.Green * 0.587f) + (btmPix.Blue * 0.114f);
-                    float leftLum = (leftPix.Red * 0.299f) + (leftPix.Green * 0.587f) + (leftPix.Blue * 0.114f);
-                    float rightLum = (rightPix.Red * 0.299f) + (rightPix.Green * 0.587f) + (rightPix.Blue * 0.114f);
-
-                    if (centerLum >= topLum && centerLum >= btmLum && centerLum >= leftLum && centerLum >= rightLum)
-                    {
-                        float snr = (centerLum - mean) / stdDev;
-                        float confidence = Math.Clamp(snr / 15.0f, 0.10f, 1.0f);
-
-                        float radius = Math.Clamp(2.0f + (snr * 0.3f), 4.0f, 24.0f);
-                        float boxX = Math.Max(0, x - (radius / 2f));
-                        float boxY = Math.Max(0, y - (radius / 2f));
-
-                        candidates.Add(new AstrophotographyObject(
-                            Id: id++,
-                            Box: new BoundingBox(boxX, boxY, radius, radius),
-                            Confidence: confidence,
-                            ClassName: confidence > 0.85f ? "star" : (confidence > 0.70f ? "faint_star" : "background_source"),
-                            TileOffsetX: 0,
-                            TileOffsetY: 0
-                        ));
-                    }
-                }
-            }
-
-            if (y % 100 == 0)
-            {
-                progress?.Report((float)y / height);
-            }
-        }
-
-        return candidates;
     }
 
     public void Dispose()
@@ -355,4 +230,3 @@ public class OnnxInferenceEngine : IInferenceEngine
         GC.SuppressFinalize(this);
     }
 }
-

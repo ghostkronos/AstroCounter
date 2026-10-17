@@ -71,6 +71,35 @@ public class MainViewModel : INotifyPropertyChanged
         AnalyzeCommand = new RelayCommand(async () => await ExecuteAnalyzeAsync(), () => !IsLoading && !string.IsNullOrEmpty(SelectedImagePath));
         ExportCsvCommand = new RelayCommand(ExecuteExportCsv, () => _lastDetectionResult != null && TotalCount > 0);
         ExportImageCommand = new RelayCommand(ExecuteExportImage, () => _lastDetectionResult != null && !string.IsNullOrEmpty(SelectedImagePath));
+        SelectCustomModelCommand = new RelayCommand(ExecuteSelectCustomModel);
+    }
+
+    private bool _isPhotometricMode = true;
+    public bool IsPhotometricMode
+    {
+        get => _isPhotometricMode;
+        set
+        {
+            if (SetProperty(ref _isPhotometricMode, value))
+            {
+                OnPropertyChanged(nameof(IsYoloMode));
+                if (_engine != null)
+                {
+                    _engine.Mode = value ? DetectionEngineMode.Photometric : DetectionEngineMode.DeepLearningYolo;
+                    HardwareInfo = _engine.ExecutionProviderName;
+                }
+                if (!string.IsNullOrEmpty(SelectedImagePath))
+                {
+                    _ = ExecuteAnalyzeAsync();
+                }
+            }
+        }
+    }
+
+    public bool IsYoloMode
+    {
+        get => !_isPhotometricMode;
+        set => IsPhotometricMode = !value;
     }
 
     private void InitializeEngine()
@@ -78,12 +107,28 @@ public class MainViewModel : INotifyPropertyChanged
         try
         {
             _engine?.Dispose();
-            _engine = new OnnxInferenceEngine(_modelPath);
+            var initialMode = _isPhotometricMode ? DetectionEngineMode.Photometric : DetectionEngineMode.DeepLearningYolo;
+            _engine = new OnnxInferenceEngine(_modelPath, initialMode: initialMode);
             HardwareInfo = _engine.ExecutionProviderName;
         }
         catch (Exception ex)
         {
             HardwareInfo = $"Hata: {ex.Message}";
+        }
+    }
+
+    private void ExecuteSelectCustomModel()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Eğitilmiş YOLO ONNX Modeli Seç",
+            Filter = "ONNX Model Dosyası (*.onnx)|*.onnx|Tüm Dosyalar (*.*)|*.*"
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            _modelPath = dialog.FileName;
+            InitializeEngine();
+            IsPhotometricMode = false;
         }
     }
 
@@ -238,6 +283,7 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand AnalyzeCommand { get; }
     public ICommand ExportCsvCommand { get; }
     public ICommand ExportImageCommand { get; }
+    public ICommand SelectCustomModelCommand { get; }
 
     private void LoadBitmapPreview(string filePath)
     {
@@ -267,25 +313,36 @@ public class MainViewModel : INotifyPropertyChanged
 
         IsLoading = true;
         ProgressValue = 0;
-        StatusMessage = "Görüntü 640x640 dilimleniyor ve çıkarım yapılıyor...";
+        StatusMessage = IsPhotometricMode
+            ? "Astronomik fotometri: 2D arka plan modelleniyor ve yıldızlar aranıyor..."
+            : "YOLO SAHI: Görüntü 640x640 dilimleniyor ve model çıkarımı yapılıyor...";
 
         var progress = new Progress<float>(percent =>
         {
             ProgressValue = percent * 100.0;
-            StatusMessage = $"Dilimler işleniyor: %{(int)(percent * 100)}";
+            StatusMessage = IsPhotometricMode
+                ? $"Fotometrik analiz: %{(int)(percent * 100)}"
+                : $"Dilimler işleniyor: %{(int)(percent * 100)}";
         });
 
         try
         {
-            _engine ??= new OnnxInferenceEngine(_modelPath);
-            HardwareInfo = _engine.ExecutionProviderName;
+            if (_engine == null)
+            {
+                InitializeEngine();
+            }
+            else
+            {
+                _engine.Mode = IsPhotometricMode ? DetectionEngineMode.Photometric : DetectionEngineMode.DeepLearningYolo;
+                HardwareInfo = _engine.ExecutionProviderName;
+            }
 
             var config = new TilingConfig(DefaultConfidenceThreshold: 0.10f, MinConfidence: 0.10f);
-            var result = await _engine.ProcessImageAsync(SelectedImagePath, config, progress);
+            var result = await _engine!.ProcessImageAsync(SelectedImagePath, config, progress);
 
             _lastDetectionResult = result;
             ProcessingTimeText = $"{result.ElapsedTime.TotalMilliseconds:F0} ms";
-            TileCountText = $"{result.TileCount} Dilim";
+            TileCountText = IsPhotometricMode ? "Fotometri (Tam Kare)" : $"{result.TileCount} Dilim";
 
             ApplyLiveFilter();
 
