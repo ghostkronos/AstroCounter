@@ -3,7 +3,7 @@
 > **Astrofotoğraflarda Yapay Zeka ve Fotometri Tabanlı Nesne Tespiti ve Sayımı**  
 > SAHI (Slicing Aided Hyper Inference) + YOLO11 / DirectML GPU Hızlandırma + Canlı Eşikleme (Interactive Live Filtering)
 
-[![Build & Test](https://github.com/astro-counter/astro-object-counter/actions/workflows/build-test.yml/badge.svg)](https://github.com/astro-counter/astro-object-counter/actions)
+[![Build & Test](https://github.com/ghostkronos/AstroCounter/actions/workflows/build-test.yml/badge.svg)](https://github.com/ghsotkronos/AstroCounter/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Framework](https://img.shields.io/badge/.NET-10.0-purple.svg)](https://dotnet.microsoft.com/)
 [![Runtime](https://img.shields.io/badge/ONNX_Runtime-DirectML-orange.svg)](https://onnxruntime.ai/)
