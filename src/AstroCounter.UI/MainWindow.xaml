@@ -4,10 +4,12 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:AstroCounter.UI.ViewModels"
+        xmlns:local="clr-namespace:AstroCounter.UI"
         mc:Ignorable="d"
         Title="AstroCounter - Astrofotoğraflarda Yapay Zeka ile Nesne Tespiti ve Sayımı"
-        Height="850" Width="1350"
-        MinHeight="650" MinWidth="1000"
+        Icon="pack://application:,,,/Assets/app_icon.ico"
+        Height="880" Width="1400"
+        MinHeight="680" MinWidth="1100"
         WindowStartupLocation="CenterScreen"
         Background="#0A0D14"
         Foreground="#ECEFF4"
@@ -21,14 +23,19 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+        <SolidColorBrush x:Key="AccentBrush" Color="#0284C7"/>
+        <SolidColorBrush x:Key="GreenBrush" Color="#059669"/>
+        <SolidColorBrush x:Key="RedBrush" Color="#DC2626"/>
+
         <!-- Modern Glow & Rounded Card Styles -->
         <Style x:Key="MetricCardStyle" TargetType="Border">
             <Setter Property="Background" Value="#121824"/>
             <Setter Property="BorderBrush" Value="#222C3D"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="14,10"/>
-            <Setter Property="Margin" Value="0,0,10,0"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
         </Style>
 
         <Style x:Key="ModernButtonStyle" TargetType="Button">
@@ -68,11 +75,116 @@
             <Setter Property="BorderBrush" Value="#38BDF8"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
         </Style>
+
+        <!-- Toolbar chip-style radio buttons (checked colour comes from the Tag brush) -->
+        <Style x:Key="ChipRadioStyle" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="#94A3B8"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="Tag" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="chip"
+                                Background="#1A2233"
+                                BorderBrush="#2A364D"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="10,5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="chip" Property="BorderBrush" Value="#00E5FF"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="chip" Property="Background" Value="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"/>
+                                <Setter TargetName="chip" Property="BorderBrush" Value="#E2E8F0"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="chip" Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="GroupLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#64748B"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+
+        <!-- Custom Confidence Slider with Dynamic Color Binding -->
+        <Style x:Key="ConfidenceSliderThumbStyle" TargetType="Thumb">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Grid Width="22" Height="22">
+                            <!-- Outer glow halo using ConfidenceBrush -->
+                            <Ellipse Width="22" Height="22" Fill="{Binding ConfidenceBrush}" Opacity="0.35"/>
+                            <!-- Inner indicator circle -->
+                            <Ellipse Width="14" Height="14" Fill="{Binding ConfidenceBrush}" Stroke="#FFFFFF" StrokeThickness="2"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ConfidenceSliderStyle" TargetType="Slider">
+            <Setter Property="Stylus.IsPressAndHoldEnabled" Value="False"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid VerticalAlignment="Center">
+                            <!-- Groove / Background track -->
+                            <Border Height="6" CornerRadius="3" Background="#1E293B" Margin="7,0"/>
+
+                            <!-- Active track and draggable thumb -->
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static Slider.DecreaseLarge}">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate>
+                                                <Border Height="6" CornerRadius="3,0,0,3" Background="{Binding ConfidenceBrush}" Margin="7,0,0,0"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static Slider.IncreaseLarge}">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate>
+                                                <Border Height="6" Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource ConfidenceSliderThumbStyle}"/>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/> <!-- Header / Top Controls -->
+            <RowDefinition Height="Auto"/> <!-- Engine and scan-area toolbar -->
             <RowDefinition Height="Auto"/> <!-- Metrics & Filter Bar -->
             <RowDefinition Height="*"/>    <!-- Canvas / Interactive Image Viewer -->
             <RowDefinition Height="Auto"/> <!-- Status Bar -->
@@ -89,37 +201,10 @@
 
                 <!-- App Title -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="✦" FontSize="20" Foreground="#00E5FF" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <Image Source="pack://application:,,,/Assets/logo.png" Width="26" Height="26" Margin="0,0,10,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
                     <TextBlock Text="AstroCounter" FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
                     <Border Background="#162E4A" CornerRadius="4" Padding="6,2" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="YOLO + SAHI + DirectML" FontSize="11" FontWeight="SemiBold" Foreground="#38BDF8"/>
-                    </Border>
-                </StackPanel>
-
-                <!-- Center Engine Mode & Hardware Status -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <!-- Engine Mode Switcher -->
-                    <Border Background="#161E2E" CornerRadius="8" Padding="6,3" Margin="0,0,14,0" BorderBrush="#222C3D" BorderThickness="1">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <RadioButton Content="🔭 Astronomik Fotometri"
-                                         IsChecked="{Binding IsPhotometricMode}"
-                                         Foreground="#38BDF8" FontWeight="SemiBold" FontSize="11"
-                                         Margin="4,0,8,0" VerticalAlignment="Center"/>
-                            <RadioButton Content="🧠 YOLO Yapay Zeka"
-                                         IsChecked="{Binding IsYoloMode}"
-                                         Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11"
-                                         VerticalAlignment="Center"/>
-                            <Button Content="📂 Model Seç..."
-                                    Command="{Binding SelectCustomModelCommand}"
-                                    Style="{StaticResource ModernButtonStyle}"
-                                    FontSize="9" Padding="6,2" Margin="8,0,0,0"
-                                    Visibility="{Binding IsYoloMode, Converter={StaticResource BoolToVis}}"/>
-                        </StackPanel>
-                    </Border>
-
-                    <TextBlock Text="Motor: " Foreground="#64748B" FontSize="11" VerticalAlignment="Center"/>
-                    <Border Background="#1E293B" CornerRadius="12" Padding="8,3" Margin="4,0,0,0">
-                        <TextBlock Text="{Binding HardwareInfo}" Foreground="#10B981" FontWeight="SemiBold" FontSize="11"/>
+                        <TextBlock Text="Fotometri + YOLO/SAHI" FontSize="11" FontWeight="SemiBold" Foreground="#38BDF8"/>
                     </Border>
                 </StackPanel>
 
@@ -133,62 +218,143 @@
             </Grid>
         </Border>
 
-        <!-- METRICS & SLIDER BAR -->
-        <Border Grid.Row="1" Background="#0C101A" BorderBrush="#1A2233" BorderThickness="0,0,0,1" Padding="20,12">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
+        <!-- TOOLBAR: Engine mode and scan-area tools (wraps instead of overlapping on narrow windows) -->
+        <Border Grid.Row="1" Background="#0D1220" BorderBrush="#1A2233" BorderThickness="0,0,0,1" Padding="20,8">
+            <WrapPanel Orientation="Horizontal">
 
-                <!-- Stat Cards -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <!-- Total Count -->
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel>
-                            <TextBlock Text="TOPLAM OBJE" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                            <TextBlock Text="{Binding TotalCount}" FontSize="22" FontWeight="Bold" Foreground="#38BDF8" Margin="0,2,0,0"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Tier 1 High -->
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel>
-                            <TextBlock Text="TIER 1 (YÜKSEK >10σ)" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                            <TextBlock Text="{Binding Tier1Count}" FontSize="22" FontWeight="Bold" Foreground="#00E676" Margin="0,2,0,0"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Tier 2 Medium -->
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel>
-                            <TextBlock Text="TIER 2 (ORTA 5-10σ)" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                            <TextBlock Text="{Binding Tier2Count}" FontSize="22" FontWeight="Bold" Foreground="#FFD600" Margin="0,2,0,0"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Tier 3 Low -->
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel>
-                            <TextBlock Text="TIER 3 (DÜŞÜK 3-5σ)" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                            <TextBlock Text="{Binding Tier3Count}" FontSize="22" FontWeight="Bold" Foreground="#FF9100" Margin="0,2,0,0"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Time & Tiles -->
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel>
-                            <TextBlock Text="İŞLEM SÜRESİ" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                                <TextBlock Text="{Binding ProcessingTimeText}" FontSize="18" FontWeight="Bold" Foreground="#E2E8F0"/>
-                                <TextBlock Text="{Binding TileCountText, StringFormat=' ({0})'}" FontSize="12" Foreground="#94A3B8" VerticalAlignment="Bottom" Margin="4,0,0,2"/>
-                            </StackPanel>
-                        </StackPanel>
+                <!-- Engine Mode Switcher and Hardware Status -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,3,28,3">
+                    <TextBlock Text="MOTOR" Style="{StaticResource GroupLabelStyle}"/>
+                    <RadioButton GroupName="EngineMode" Content="🔭 Fotometri"
+                                 IsChecked="{Binding IsPhotometricMode}"
+                                 Style="{StaticResource ChipRadioStyle}"/>
+                    <RadioButton GroupName="EngineMode" Content="🧠 YOLO"
+                                 IsChecked="{Binding IsYoloMode}"
+                                 Style="{StaticResource ChipRadioStyle}"/>
+                    <Button Content="📂 Model Seç..."
+                            Command="{Binding SelectCustomModelCommand}"
+                            Style="{StaticResource ModernButtonStyle}"
+                            FontSize="11" Padding="8,4" Margin="2,0,8,0"
+                            Visibility="{Binding IsYoloMode, Converter={StaticResource BoolToVis}}"/>
+                    <Border Background="#1E293B" CornerRadius="12" Padding="8,3" Margin="6,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding HardwareInfo}" Foreground="#10B981" FontWeight="SemiBold" FontSize="11"/>
                     </Border>
                 </StackPanel>
 
-                <!-- Interactive Confidence Slider -->
-                <Border Grid.Column="1" Background="#121824" BorderBrush="#222C3D" BorderThickness="1" CornerRadius="8" Padding="16,8" Margin="10,0,0,0" VerticalAlignment="Center">
+                <!-- Scan area (region of interest) tools -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,3,0,3">
+                    <TextBlock Text="TARAMA ALANI" Style="{StaticResource GroupLabelStyle}"/>
+                    <RadioButton GroupName="ScanTool" Content="✋ Gezin"
+                                 IsChecked="{Binding IsToolPan}"
+                                 Style="{StaticResource ChipRadioStyle}"/>
+                    <RadioButton GroupName="ScanTool" Content="▭ Dikdörtgen"
+                                 IsChecked="{Binding IsToolRectangle}"
+                                 Style="{StaticResource ChipRadioStyle}"/>
+                    <RadioButton GroupName="ScanTool" Content="⬠ Çokgen"
+                                 IsChecked="{Binding IsToolPolygon}"
+                                 Style="{StaticResource ChipRadioStyle}"/>
+
+                    <Border Width="1" Height="22" Background="#2A364D" Margin="8,0,12,0"/>
+
+                    <RadioButton GroupName="RegionMode" Content="🚫 Hariç tut"
+                                 IsChecked="{Binding IsExcludeMode}"
+                                 Tag="{StaticResource RedBrush}"
+                                 Style="{StaticResource ChipRadioStyle}"/>
+                    <RadioButton GroupName="RegionMode" Content="✅ Sadece tara"
+                                 IsChecked="{Binding IsIncludeMode}"
+                                 Tag="{StaticResource GreenBrush}"
+                                 Style="{StaticResource ChipRadioStyle}"/>
+
+                    <Button Content="↩ Geri Al" Command="{Binding UndoRegionCommand}"
+                            Style="{StaticResource ModernButtonStyle}"
+                            FontSize="11" Padding="8,4" Margin="8,0,4,0"/>
+                    <Button Content="🗑 Temizle" Command="{Binding ClearRegionsCommand}"
+                            Style="{StaticResource ModernButtonStyle}"
+                            FontSize="11" Padding="8,4" Margin="0,0,12,0"/>
+                    <TextBlock Text="{Binding ToolHint}" Foreground="#64748B" FontSize="11" VerticalAlignment="Center"/>
+                </StackPanel>
+            </WrapPanel>
+        </Border>
+
+        <!-- METRICS & SLIDER BAR -->
+        <Border Grid.Row="2" Background="#0C101A" BorderBrush="#1A2233" BorderThickness="0,0,0,1" Padding="20,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Stat Cards with horizontal scrolling fallback if screen is narrow -->
+                <ScrollViewer Grid.Column="0"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled"
+                              Focusable="False">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Total Count -->
+                        <Border Style="{StaticResource MetricCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="TOPLAM OBJE" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock Text="{Binding TotalCount}" FontSize="20" FontWeight="Bold" Foreground="#38BDF8" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Tier 1 High -->
+                        <Border Style="{StaticResource MetricCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="TIER 1 (>10σ)" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock Text="{Binding Tier1Count}" FontSize="20" FontWeight="Bold" Foreground="#00E676" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Tier 2 Medium -->
+                        <Border Style="{StaticResource MetricCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="TIER 2 (5-10σ)" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock Text="{Binding Tier2Count}" FontSize="20" FontWeight="Bold" Foreground="#FFD600" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Tier 3 Low -->
+                        <Border Style="{StaticResource MetricCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="TIER 3 (3-5σ)" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock Text="{Binding Tier3Count}" FontSize="20" FontWeight="Bold" Foreground="#FF9100" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Spekülatif / Gürültü Riski (<3σ) -->
+                        <Border Style="{StaticResource MetricCardStyle}"
+                                Visibility="{Binding HasSpeculativeObjects, Converter={StaticResource BoolToVis}}"
+                                BorderBrush="#EF4444">
+                            <StackPanel>
+                                <TextBlock Text="SPEKÜLATİF (&lt;3σ)" FontSize="10" FontWeight="SemiBold" Foreground="#EF4444"/>
+                                <TextBlock Text="{Binding SpeculativeCount}" FontSize="20" FontWeight="Bold" Foreground="#EF4444" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Scan area summary -->
+                        <Border Style="{StaticResource MetricCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="TARAMA ALANI" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <TextBlock Text="{Binding RegionSummary}" FontSize="14" FontWeight="Bold" Foreground="#E2E8F0" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Time & Tiles -->
+                        <Border Style="{StaticResource MetricCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="İŞLEM SÜRESİ" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                    <TextBlock Text="{Binding ProcessingTimeText}" FontSize="18" FontWeight="Bold" Foreground="#E2E8F0"/>
+                                    <TextBlock Text="{Binding TileCountText, StringFormat=' ({0})'}" FontSize="11" Foreground="#94A3B8" VerticalAlignment="Bottom" Margin="4,0,0,2"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Interactive Confidence Slider with Fixed Invariant Width (Never shrinks or resizes) -->
+                <Border Grid.Column="1" Width="390" Background="#121824" BorderBrush="{Binding ConfidenceBrush}" BorderThickness="1.2" CornerRadius="8" Padding="14,8" Margin="12,0,0,0" VerticalAlignment="Center">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -200,36 +366,40 @@
                         </Grid.ColumnDefinitions>
 
                         <!-- Slider Header -->
-                        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal">
-                            <TextBlock Text="Canlı Güven Eşiği (Confidence Filter): " FontSize="12" FontWeight="SemiBold" Foreground="#CBD5E1"/>
-                            <TextBlock Text="{Binding ConfidencePercentText}" FontSize="12" FontWeight="Bold" Foreground="#00E5FF"/>
-                            <TextBlock Text=" (Re-inference gerektirmez)" FontSize="11" Foreground="#64748B" Margin="6,0,0,0"/>
+                        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="Güven Eşiği: " FontSize="12" FontWeight="SemiBold" Foreground="#CBD5E1"/>
+                            <TextBlock Text="{Binding ConfidencePercentText}" FontSize="13" FontWeight="Bold" Foreground="{Binding ConfidenceBrush}"/>
+                            <Border Background="#1E293B" CornerRadius="10" Padding="6,2" Margin="6,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding ConfidenceStatusText}" Foreground="{Binding ConfidenceBrush}" FontSize="10.5" FontWeight="SemiBold"/>
+                            </Border>
                         </StackPanel>
 
                         <!-- Toggles -->
-                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
-                            <CheckBox IsChecked="{Binding ShowBoundingBoxes}" Content="Kutular" Foreground="#94A3B8" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <CheckBox IsChecked="{Binding ShowBoundingBoxes}" Content="Kutular" Foreground="#94A3B8" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <CheckBox IsChecked="{Binding ShowLabels}" Content="Etiketler" Foreground="#94A3B8" VerticalAlignment="Center"/>
                         </StackPanel>
 
-                        <!-- Slider -->
+                        <!-- Slider with Dynamic Color (Red <20%, Yellow 20-25%, Cyan >25%) -->
                         <Slider Grid.Row="1" Grid.ColumnSpan="2"
-                                Minimum="0.10" Maximum="0.90"
+                                Style="{StaticResource ConfidenceSliderStyle}"
+                                Minimum="0.02" Maximum="0.95"
                                 Value="{Binding ConfidenceThreshold, Mode=TwoWay}"
                                 SmallChange="0.01" LargeChange="0.05"
                                 TickFrequency="0.05" IsSnapToTickEnabled="False"
-                                Margin="0,8,0,0"/>
+                                Margin="0,10,0,2"/>
                     </Grid>
                 </Border>
             </Grid>
         </Border>
 
         <!-- MAIN INTERACTIVE VIEWER (PAN & ZOOM) -->
-        <ScrollViewer Grid.Row="2"
+        <ScrollViewer Grid.Row="3"
                       x:Name="ViewerScrollViewer"
                       HorizontalScrollBarVisibility="Auto"
                       VerticalScrollBarVisibility="Auto"
                       Background="#070A0F"
+                      ScrollChanged="ViewerScrollViewer_ScrollChanged"
                       PreviewMouseWheel="ScrollViewer_PreviewMouseWheel"
                       PreviewMouseDown="ScrollViewer_PreviewMouseDown"
                       PreviewMouseMove="ScrollViewer_PreviewMouseMove"
@@ -248,67 +418,34 @@
                         Background="#0D131F"
                         Visibility="{Binding IsPlaceholderVisible, Converter={StaticResource BoolToVis}}">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <TextBlock Text="🔭" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,14"/>
+                        <Image Source="pack://application:,,,/Assets/logo.png" Width="80" Height="80" HorizontalAlignment="Center" Margin="0,0,0,16" RenderOptions.BitmapScalingMode="HighQuality"/>
                         <TextBlock Text="Astrofotoğrafınızı Buraya Sürükleyip Bırakın" FontSize="18" FontWeight="Bold" Foreground="#94A3B8" HorizontalAlignment="Center"/>
                         <TextBlock Text="TIFF, PNG, JPG, BMP veya 16-bit FITS formatları desteklenir" FontSize="13" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,6,0,20"/>
                         <Button Content="Gözat ve Görsel Seç" Command="{Binding SelectImageCommand}" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Center"/>
                     </StackPanel>
                 </Border>
 
-                <!-- Astro Image -->
+                <!-- Astro Image: sized in image PIXELS (not DIPs) so it always lines up with the detections -->
                 <Image x:Name="AstroImage"
                        Source="{Binding ImageBitmap}"
-                       Stretch="None"
+                       Width="{Binding ImageWidth}"
+                       Height="{Binding ImageHeight}"
+                       Stretch="Fill"
                        RenderOptions.BitmapScalingMode="HighQuality"/>
 
-                <!-- Overlaid Bounding Box Canvas -->
-                <ItemsControl ItemsSource="{Binding VisibleBoxes}"
-                              Width="{Binding ImageWidth}"
-                              Height="{Binding ImageHeight}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <Canvas/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-
-                    <ItemsControl.ItemContainerStyle>
-                        <Style TargetType="ContentPresenter">
-                            <Setter Property="Canvas.Left" Value="{Binding Left}"/>
-                            <Setter Property="Canvas.Top" Value="{Binding Top}"/>
-                        </Style>
-                    </ItemsControl.ItemContainerStyle>
-
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Grid ToolTip="{Binding TooltipText}">
-                                <!-- Bounding Box Border -->
-                                <Rectangle Width="{Binding Width}"
-                                           Height="{Binding Height}"
-                                           Stroke="{Binding ColorHex}"
-                                           StrokeThickness="1.5"/>
-
-                                <!-- Small Badge Label -->
-                                <Border Background="#D00F172A"
-                                        CornerRadius="2"
-                                        Padding="3,1"
-                                        Margin="0,-16,0,0"
-                                        HorizontalAlignment="Left"
-                                        VerticalAlignment="Top"
-                                        Visibility="{Binding DataContext.ShowLabels, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
-                                    <TextBlock Text="{Binding LabelText}"
-                                               FontSize="9"
-                                               FontWeight="SemiBold"
-                                               Foreground="{Binding ColorHex}"/>
-                                </Border>
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <!-- Overlaid detections and scan regions (drawn with a DrawingContext for speed) -->
+                <local:DetectionOverlay x:Name="Overlay"
+                                        Width="{Binding ImageWidth}"
+                                        Height="{Binding ImageHeight}"
+                                        Objects="{Binding VisibleObjects}"
+                                        Regions="{Binding RegionSnapshot}"
+                                        ShowBoxes="{Binding ShowBoundingBoxes}"
+                                        ShowLabels="{Binding ShowLabels}"/>
             </Grid>
         </ScrollViewer>
 
         <!-- STATUS BAR -->
-        <Border Grid.Row="3" Background="#0A0E17" BorderBrush="#1A2233" BorderThickness="0,1,0,0" Padding="16,8">
+        <Border Grid.Row="4" Background="#0A0E17" BorderBrush="#1A2233" BorderThickness="0,1,0,0" Padding="16,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -317,13 +454,14 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Status Text -->
-                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" Foreground="#94A3B8" FontSize="12" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" Foreground="#94A3B8" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
 
                 <!-- Zoom Level -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,16,0" VerticalAlignment="Center">
                     <TextBlock Text="Yakınlaştırma: " Foreground="#64748B" FontSize="11"/>
                     <TextBlock x:Name="ZoomPercentText" Text="100%" Foreground="#CBD5E1" FontSize="11" FontWeight="SemiBold"/>
-                    <Button Content="Sıfırla" Click="ResetZoom_Click" Style="{StaticResource ModernButtonStyle}" Padding="6,2" Margin="8,0,0,0" FontSize="10"/>
+                    <Button Content="Sığdır" Click="FitZoom_Click" Style="{StaticResource ModernButtonStyle}" Padding="6,2" Margin="8,0,0,0" FontSize="10"/>
+                    <Button Content="100%" Click="ResetZoom_Click" Style="{StaticResource ModernButtonStyle}" Padding="6,2" Margin="4,0,0,0" FontSize="10"/>
                 </StackPanel>
 
                 <!-- Progress Bar -->

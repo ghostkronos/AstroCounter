@@ -2,17 +2,21 @@ namespace AstroCounter.Core.Processing;
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using AstroCounter.Core.Models;
 using SkiaSharp;
 
 /// <summary>
 /// High-precision Astronomical Photometry and Star Extractor (DAOStarFinder / SEP standard).
 /// Performs 2D background modeling, local sigma-clipping, and point-spread-function peak detection.
+/// Detection runs on a lightly smoothed (3x3 matched filter) luminance image, which suppresses
+/// single-pixel sensor / JPEG noise that would otherwise be reported as thousands of false stars.
 /// </summary>
 public static class PhotometricStarFinder
 {
+    private const int GridSize = 64;
+
     public static List<AstrophotographyObject> DetectStars(
         SKBitmap bitmap,
         TilingConfig config,
@@ -22,49 +26,29 @@ public static class PhotometricStarFinder
         int width = bitmap.Width;
         int height = bitmap.Height;
 
-        // 1. Extract 8-bit luminance matrix from image
-        float[] luminance = new float[width * height];
-        unsafe
-        {
-            var ptr = (byte*)bitmap.GetPixels().ToPointer();
-            int bytesPerPixel = bitmap.BytesPerPixel;
-            int rowBytes = bitmap.RowBytes;
-
-            for (int y = 0; y < height; y++)
-            {
-                byte* row = ptr + (y * rowBytes);
-                int rowOffset = y * width;
-                for (int x = 0; x < width; x++)
-                {
-                    byte* pixel = row + (x * bytesPerPixel);
-                    // Standard luminance formula: 0.299*R + 0.587*G + 0.114*B (handles BGRA or RGBA correctly)
-                    byte b = pixel[0];
-                    byte g = pixel[1];
-                    byte r = pixel[2];
-                    luminance[rowOffset + x] = (r * 0.299f) + (g * 0.587f) + (b * 0.114f);
-                }
-            }
-        }
+        // 1. Extract luminance matrix from image and smooth it (noise suppression)
+        float[] luminance = Smooth3x3(ExtractLuminance(bitmap), width, height);
+        progress?.Report(0.15f);
+        cancellationToken.ThrowIfCancellationRequested();
 
         // 2. 2D Background and Noise (sigma) modeling using local mesh grid
-        int gridSize = 64;
-        int gridCols = (width + gridSize - 1) / gridSize;
-        int gridRows = (height + gridSize - 1) / gridSize;
+        int gridCols = (width + GridSize - 1) / GridSize;
+        int gridRows = (height + GridSize - 1) / GridSize;
 
         float[] bgGrid = new float[gridCols * gridRows];
         float[] stdGrid = new float[gridCols * gridRows];
 
-        var sampleBuffer = new float[gridSize * gridSize];
+        var sampleBuffer = new float[GridSize * GridSize];
 
         for (int gy = 0; gy < gridRows; gy++)
         {
-            int y0 = gy * gridSize;
-            int y1 = Math.Min(height, y0 + gridSize);
+            int y0 = gy * GridSize;
+            int y1 = Math.Min(height, y0 + GridSize);
 
             for (int gx = 0; gx < gridCols; gx++)
             {
-                int x0 = gx * gridSize;
-                int x1 = Math.Min(width, x0 + gridSize);
+                int x0 = gx * GridSize;
+                int x1 = Math.Min(width, x0 + GridSize);
 
                 int sampleCount = 0;
                 for (int y = y0; y < y1; y++)
@@ -80,8 +64,10 @@ public static class PhotometricStarFinder
                 (float median, float std) = ComputeSigmaClippedStats(sampleBuffer, sampleCount);
                 int gridIdx = (gy * gridCols) + gx;
                 bgGrid[gridIdx] = median;
-                stdGrid[gridIdx] = Math.Max(1.0f, std);
+                stdGrid[gridIdx] = Math.Max(0.75f, std);
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
         }
 
         progress?.Report(0.35f);
@@ -90,6 +76,11 @@ public static class PhotometricStarFinder
         var candidates = new List<AstrophotographyObject>();
         int id = 1;
         int border = 4;
+        float minConfidence = config?.MinConfidence ?? 0.02f;
+        // 3.0 sigma maps to confidence 0.25 (i.e. 25%).
+        // For confidence C < 0.25, SNR sigma = (C / 0.25) * 3.0.
+        // We set a minimum sigma floor of 0.20 to prevent detecting flat noise.
+        float minSigma = Math.Clamp((minConfidence / 0.25f) * 3.0f, 0.20f, 3.0f);
 
         for (int y = border; y < height - border; y++)
         {
@@ -99,17 +90,17 @@ public static class PhotometricStarFinder
                 progress?.Report(0.35f + (0.50f * ((float)y / height)));
             }
 
-            int gy = Math.Clamp(y / gridSize, 0, gridRows - 1);
+            int gy = Math.Clamp(y / GridSize, 0, gridRows - 1);
             int rowOffset = y * width;
 
             for (int x = border; x < width - border; x++)
             {
-                int gx = Math.Clamp(x / gridSize, 0, gridCols - 1);
+                int gx = Math.Clamp(x / GridSize, 0, gridCols - 1);
                 int gridIdx = (gy * gridCols) + gx;
 
                 float localBg = bgGrid[gridIdx];
                 float localStd = stdGrid[gridIdx];
-                float threshold = localBg + (3.0f * localStd);
+                float threshold = localBg + (minSigma * localStd);
 
                 float centerVal = luminance[rowOffset + x];
                 if (centerVal <= threshold) continue;
@@ -161,6 +152,8 @@ public static class PhotometricStarFinder
                     confidence = Math.Max(0.01f, (snr / 3.0f) * 0.25f);
                 }
 
+                if (confidence < minConfidence) continue;
+
                 // Estimate Point Spread Function (PSF) size / star diameter
                 float halfMax = localBg + (netPeak / 2.0f);
                 float radius = MeasureFwhmRadius(luminance, width, height, x, y, halfMax);
@@ -169,7 +162,7 @@ public static class PhotometricStarFinder
                 float boxX = Math.Max(0, x - (boxSize / 2.0f));
                 float boxY = Math.Max(0, y - (boxSize / 2.0f));
 
-                string classification = "star";
+                string classification;
                 if (boxSize > 30.0f && snr < 12.0f)
                 {
                     classification = "galaxy";
@@ -205,6 +198,89 @@ public static class PhotometricStarFinder
 
         progress?.Report(1.0f);
         return finalStars;
+    }
+
+    /// <summary>
+    /// Converts the bitmap to a luminance (0..255) matrix. Handles BGRA, RGBA and grayscale layouts.
+    /// </summary>
+    private static unsafe float[] ExtractLuminance(SKBitmap bitmap)
+    {
+        SKBitmap? converted = null;
+        var source = bitmap;
+        var colorType = bitmap.ColorType;
+
+        if (colorType != SKColorType.Bgra8888 && colorType != SKColorType.Rgba8888 && colorType != SKColorType.Gray8)
+        {
+            converted = bitmap.Copy(SKColorType.Bgra8888)
+                        ?? throw new InvalidOperationException("Görsel piksel formatı dönüştürülemedi.");
+            source = converted;
+            colorType = SKColorType.Bgra8888;
+        }
+
+        try
+        {
+            int w = source.Width;
+            int h = source.Height;
+            var result = new float[w * h];
+
+            byte* basePtr = (byte*)source.GetPixels().ToPointer();
+            int bytesPerPixel = source.BytesPerPixel;
+            int rowBytes = source.RowBytes;
+
+            int redIdx = colorType == SKColorType.Rgba8888 ? 0 : 2;
+            int blueIdx = colorType == SKColorType.Rgba8888 ? 2 : 0;
+            bool gray = colorType == SKColorType.Gray8;
+
+            for (int y = 0; y < h; y++)
+            {
+                byte* row = basePtr + ((long)y * rowBytes);
+                int rowOffset = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    byte* p = row + (x * bytesPerPixel);
+                    result[rowOffset + x] = gray
+                        ? p[0]
+                        : (p[redIdx] * 0.299f) + (p[1] * 0.587f) + (p[blueIdx] * 0.114f);
+                }
+            }
+
+            return result;
+        }
+        finally
+        {
+            converted?.Dispose();
+        }
+    }
+
+    /// <summary>Separable [1 2 1]/4 smoothing with edge clamping.</summary>
+    private static float[] Smooth3x3(float[] src, int w, int h)
+    {
+        var tmp = new float[src.Length];
+        var dst = new float[src.Length];
+
+        Parallel.For(0, h, y =>
+        {
+            int o = y * w;
+            for (int x = 0; x < w; x++)
+            {
+                int l = x > 0 ? x - 1 : x;
+                int r = x < w - 1 ? x + 1 : x;
+                tmp[o + x] = (src[o + l] + (2f * src[o + x]) + src[o + r]) * 0.25f;
+            }
+        });
+
+        Parallel.For(0, h, y =>
+        {
+            int up = Math.Max(0, y - 1) * w;
+            int mid = y * w;
+            int dn = Math.Min(h - 1, y + 1) * w;
+            for (int x = 0; x < w; x++)
+            {
+                dst[mid + x] = (tmp[up + x] + (2f * tmp[mid + x]) + tmp[dn + x]) * 0.25f;
+            }
+        });
+
+        return dst;
     }
 
     private static (float median, float std) ComputeSigmaClippedStats(float[] buffer, int count)
@@ -246,10 +322,10 @@ public static class PhotometricStarFinder
         {
             float mean = clippedSum / clippedCount;
             float var = (clippedSumSq / clippedCount) - (mean * mean);
-            return (mean, (float)Math.Sqrt(Math.Max(1.0f, var)));
+            return (mean, (float)Math.Sqrt(Math.Max(0.25f, var)));
         }
 
-        return (median, Math.Max(1.0f, std));
+        return (median, Math.Max(0.5f, std));
     }
 
     private static float MeasureFwhmRadius(float[] lum, int width, int height, int cx, int cy, float halfMax)

@@ -2,20 +2,30 @@ namespace AstroCounter.UI.ViewModels;
 
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using AstroCounter.Core.Export;
 using AstroCounter.Core.Inference;
 using AstroCounter.Core.Models;
+using AstroCounter.Core.Processing;
 using Microsoft.Win32;
+using SkiaSharp;
+
+public enum ScanTool
+{
+    Pan,
+    Rectangle,
+    Polygon
+}
 
 public class MainViewModel : INotifyPropertyChanged
 {
@@ -23,7 +33,7 @@ public class MainViewModel : INotifyPropertyChanged
     private BitmapSource? _imageBitmap;
     private double _imageWidth;
     private double _imageHeight;
-    private float _confidenceThreshold = 0.25f;
+    private float _confidenceThreshold = 0.50f;
     private bool _isLoading;
     private double _progressValue;
     private string _statusMessage = "Analiz edilecek astrofotoğrafı sürükleyip bırakın veya 'Görsel Seç'e tıklayın.";
@@ -34,14 +44,20 @@ public class MainViewModel : INotifyPropertyChanged
     private int _tier1Count;
     private int _tier2Count;
     private int _tier3Count;
+    private int _speculativeCount;
     private bool _showBoundingBoxes = true;
     private bool _showLabels = true;
     private string? _modelPath;
 
+    private ScanTool _tool = ScanTool.Pan;
+    private RegionKind _regionKind = RegionKind.Exclude;
+    private readonly ScanMask _mask = new();
+    private IReadOnlyList<SelectionRegion> _regionSnapshot = Array.Empty<SelectionRegion>();
+    private IReadOnlyList<AstrophotographyObject> _visibleObjects = Array.Empty<AstrophotographyObject>();
+
     private DetectionResult? _lastDetectionResult;
     private IInferenceEngine? _engine;
-
-    public ObservableCollection<VisualBoxViewModel> VisibleBoxes { get; } = new();
+    private CancellationTokenSource? _analysisCts;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -72,6 +88,8 @@ public class MainViewModel : INotifyPropertyChanged
         ExportCsvCommand = new RelayCommand(ExecuteExportCsv, () => _lastDetectionResult != null && TotalCount > 0);
         ExportImageCommand = new RelayCommand(ExecuteExportImage, () => _lastDetectionResult != null && !string.IsNullOrEmpty(SelectedImagePath));
         SelectCustomModelCommand = new RelayCommand(ExecuteSelectCustomModel);
+        UndoRegionCommand = new RelayCommand(UndoRegion, () => !_mask.IsEmpty);
+        ClearRegionsCommand = new RelayCommand(ClearRegions, () => !_mask.IsEmpty);
     }
 
     private bool _isPhotometricMode = true;
@@ -141,6 +159,7 @@ public class MainViewModel : INotifyPropertyChanged
             {
                 if (!string.IsNullOrEmpty(value) && File.Exists(value))
                 {
+                    ResetForNewImage();
                     LoadBitmapPreview(value);
                     _ = ExecuteAnalyzeAsync();
                 }
@@ -182,12 +201,35 @@ public class MainViewModel : INotifyPropertyChanged
             if (SetProperty(ref _confidenceThreshold, (float)Math.Round(value, 2)))
             {
                 OnPropertyChanged(nameof(ConfidencePercentText));
+                OnPropertyChanged(nameof(ConfidenceBrush));
+                OnPropertyChanged(nameof(ConfidenceStatusText));
                 ApplyLiveFilter();
             }
         }
     }
 
-    public string ConfidencePercentText => $"%{(int)(_confidenceThreshold * 100)}";
+    public string ConfidencePercentText => $"%{(int)Math.Round(_confidenceThreshold * 100)}";
+
+    private static readonly SolidColorBrush CyanConfidenceBrush = new(Color.FromRgb(0x00, 0xE5, 0xFF));
+    private static readonly SolidColorBrush YellowConfidenceBrush = new(Color.FromRgb(0xFF, 0xD6, 0x00));
+    private static readonly SolidColorBrush RedConfidenceBrush = new(Color.FromRgb(0xEF, 0x44, 0x44));
+
+    static MainViewModel()
+    {
+        CyanConfidenceBrush.Freeze();
+        YellowConfidenceBrush.Freeze();
+        RedConfidenceBrush.Freeze();
+    }
+
+    public SolidColorBrush ConfidenceBrush =>
+        _confidenceThreshold < 0.20f ? RedConfidenceBrush :
+        _confidenceThreshold <= 0.25f ? YellowConfidenceBrush :
+        CyanConfidenceBrush;
+
+    public string ConfidenceStatusText =>
+        _confidenceThreshold < 0.20f ? "Yüksek Gürültü Riski (<2.4σ)" :
+        _confidenceThreshold <= 0.25f ? "Düşük Eşik (2.4σ–3.0σ)" :
+        "Kararlı Tespit (≥3.0σ)";
 
     public bool IsLoading
     {
@@ -255,28 +297,168 @@ public class MainViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _tier3Count, value);
     }
 
+    public int SpeculativeCount
+    {
+        get => _speculativeCount;
+        private set
+        {
+            if (SetProperty(ref _speculativeCount, value))
+            {
+                OnPropertyChanged(nameof(HasSpeculativeObjects));
+            }
+        }
+    }
+
+    public bool HasSpeculativeObjects => _speculativeCount > 0;
+
     public bool ShowBoundingBoxes
     {
         get => _showBoundingBoxes;
-        set
-        {
-            if (SetProperty(ref _showBoundingBoxes, value))
-            {
-                ApplyLiveFilter();
-            }
-        }
+        set => SetProperty(ref _showBoundingBoxes, value);
     }
 
     public bool ShowLabels
     {
         get => _showLabels;
+        set => SetProperty(ref _showLabels, value);
+    }
+
+    /// <summary>Detections that pass the live confidence filter and the scan mask (drawn by the overlay).</summary>
+    public IReadOnlyList<AstrophotographyObject> VisibleObjects
+    {
+        get => _visibleObjects;
+        private set => SetProperty(ref _visibleObjects, value);
+    }
+
+    // ---- Scan area (region of interest) tools ----
+
+    public ScanTool Tool
+    {
+        get => _tool;
         set
         {
-            if (SetProperty(ref _showLabels, value))
+            if (SetProperty(ref _tool, value))
             {
-                ApplyLiveFilter();
+                OnPropertyChanged(nameof(IsToolPan));
+                OnPropertyChanged(nameof(IsToolRectangle));
+                OnPropertyChanged(nameof(IsToolPolygon));
+                OnPropertyChanged(nameof(ToolHint));
             }
         }
+    }
+
+    public bool IsToolPan
+    {
+        get => _tool == ScanTool.Pan;
+        set { if (value) Tool = ScanTool.Pan; }
+    }
+
+    public bool IsToolRectangle
+    {
+        get => _tool == ScanTool.Rectangle;
+        set { if (value) Tool = ScanTool.Rectangle; }
+    }
+
+    public bool IsToolPolygon
+    {
+        get => _tool == ScanTool.Polygon;
+        set { if (value) Tool = ScanTool.Polygon; }
+    }
+
+    public RegionKind CurrentRegionKind => _regionKind;
+
+    public bool IsIncludeMode
+    {
+        get => _regionKind == RegionKind.Include;
+        set { if (value) SetRegionKind(RegionKind.Include); }
+    }
+
+    public bool IsExcludeMode
+    {
+        get => _regionKind == RegionKind.Exclude;
+        set { if (value) SetRegionKind(RegionKind.Exclude); }
+    }
+
+    private void SetRegionKind(RegionKind kind)
+    {
+        if (_regionKind == kind) return;
+        _regionKind = kind;
+        OnPropertyChanged(nameof(IsIncludeMode));
+        OnPropertyChanged(nameof(IsExcludeMode));
+        OnPropertyChanged(nameof(CurrentRegionKind));
+    }
+
+    public string ToolHint => _tool switch
+    {
+        ScanTool.Rectangle => "Sürükleyerek dikdörtgen çizin.",
+        ScanTool.Polygon => "Noktaları tıklayın · sağ tık / çift tık / Enter ile kapatın · Esc iptal.",
+        _ => "Sol tuş: kaydır · Tekerlek: yakınlaştır"
+    };
+
+    public IReadOnlyList<SelectionRegion> RegionSnapshot
+    {
+        get => _regionSnapshot;
+        private set => SetProperty(ref _regionSnapshot, value);
+    }
+
+    public string RegionSummary
+    {
+        get
+        {
+            if (_mask.IsEmpty) return "Tüm kare";
+            int include = _mask.Regions.Count(r => r.Kind == RegionKind.Include);
+            int exclude = _mask.Regions.Count - include;
+            return $"{include} tara · {exclude} hariç";
+        }
+    }
+
+    public void AddRegion(IReadOnlyList<Vector2> points)
+    {
+        if (points.Count < 3) return;
+
+        _mask.Add(new SelectionRegion(_regionKind, points));
+        OnMaskChanged();
+    }
+
+    private void UndoRegion()
+    {
+        if (_mask.RemoveLast())
+        {
+            OnMaskChanged();
+        }
+    }
+
+    private void ClearRegions()
+    {
+        if (_mask.IsEmpty) return;
+
+        _mask.Clear();
+        OnMaskChanged();
+    }
+
+    private void OnMaskChanged()
+    {
+        RegionSnapshot = _mask.Regions.ToList();
+        OnPropertyChanged(nameof(RegionSummary));
+        ApplyLiveFilter();
+        CommandManager.InvalidateRequerySuggested();
+    }
+
+    private void ResetForNewImage()
+    {
+        // Regions are expressed in pixel coordinates of one specific image.
+        _analysisCts?.Cancel();
+        _mask.Clear();
+        _lastDetectionResult = null;
+        RegionSnapshot = Array.Empty<SelectionRegion>();
+        VisibleObjects = Array.Empty<AstrophotographyObject>();
+        TotalCount = 0;
+        Tier1Count = 0;
+        Tier2Count = 0;
+        Tier3Count = 0;
+        SpeculativeCount = 0;
+        OnPropertyChanged(nameof(RegionSummary));
+        CommandManager.InvalidateRequerySuggested();
     }
 
     public ICommand SelectImageCommand { get; }
@@ -284,6 +466,8 @@ public class MainViewModel : INotifyPropertyChanged
     public ICommand ExportCsvCommand { get; }
     public ICommand ExportImageCommand { get; }
     public ICommand SelectCustomModelCommand { get; }
+    public ICommand UndoRegionCommand { get; }
+    public ICommand ClearRegionsCommand { get; }
 
     private void LoadBitmapPreview(string filePath)
     {
@@ -296,20 +480,61 @@ public class MainViewModel : INotifyPropertyChanged
             bitmap.EndInit();
             bitmap.Freeze();
 
-            ImageBitmap = bitmap;
+            // Pixel size (not DIP size): detections are in pixel coordinates, so the view must use the same units.
             ImageWidth = bitmap.PixelWidth;
             ImageHeight = bitmap.PixelHeight;
+            ImageBitmap = bitmap;
         }
-        catch (Exception ex)
+        catch
         {
-            StatusMessage = $"Görsel yüklenirken hata: {ex.Message}";
+            try
+            {
+                // Fallback using AstroCounter.Core's ImagePreprocessor (handles complex TIFF variants)
+                using var skBitmap = ImagePreprocessor.LoadImage(filePath);
+                var wpfBitmap = ConvertToWpfBitmap(skBitmap);
+                ImageWidth = wpfBitmap.PixelWidth;
+                ImageHeight = wpfBitmap.PixelHeight;
+                ImageBitmap = wpfBitmap;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Görsel yüklenirken hata: {ex.Message}";
+            }
         }
+    }
+
+    private static BitmapSource ConvertToWpfBitmap(SKBitmap skBitmap)
+    {
+        using var converted = skBitmap.ColorType == SKColorType.Bgra8888
+            ? skBitmap.Copy()
+            : skBitmap.Copy(SKColorType.Bgra8888);
+
+        var wb = new WriteableBitmap(
+            converted.Width,
+            converted.Height,
+            96,
+            96,
+            System.Windows.Media.PixelFormats.Bgra32,
+            null);
+
+        wb.WritePixels(
+            new Int32Rect(0, 0, converted.Width, converted.Height),
+            converted.GetPixels(),
+            converted.RowBytes * converted.Height,
+            converted.RowBytes);
+
+        wb.Freeze();
+        return wb;
     }
 
     public async Task ExecuteAnalyzeAsync()
     {
         if (string.IsNullOrEmpty(SelectedImagePath) || !File.Exists(SelectedImagePath))
             return;
+
+        _analysisCts?.Cancel();
+        _analysisCts = new CancellationTokenSource();
+        var token = _analysisCts.Token;
 
         IsLoading = true;
         ProgressValue = 0;
@@ -319,6 +544,8 @@ public class MainViewModel : INotifyPropertyChanged
 
         var progress = new Progress<float>(percent =>
         {
+            if (token.IsCancellationRequested) return;
+
             ProgressValue = percent * 100.0;
             StatusMessage = IsPhotometricMode
                 ? $"Fotometrik analiz: %{(int)(percent * 100)}"
@@ -337,8 +564,10 @@ public class MainViewModel : INotifyPropertyChanged
                 HardwareInfo = _engine.ExecutionProviderName;
             }
 
-            var config = new TilingConfig(DefaultConfidenceThreshold: 0.10f, MinConfidence: 0.10f);
-            var result = await _engine!.ProcessImageAsync(SelectedImagePath, config, progress);
+            var config = new TilingConfig(DefaultConfidenceThreshold: 0.25f, MinConfidence: 0.02f);
+            var result = await _engine!.ProcessImageAsync(SelectedImagePath, config, progress, token);
+
+            if (token.IsCancellationRequested) return;
 
             _lastDetectionResult = result;
             ProcessingTimeText = $"{result.ElapsedTime.TotalMilliseconds:F0} ms";
@@ -348,50 +577,39 @@ public class MainViewModel : INotifyPropertyChanged
 
             StatusMessage = $"Tamamlandı! {TotalCount} obje tespit edildi ({ProcessingTimeText}).";
         }
+        catch (OperationCanceledException)
+        {
+            // A newer analysis replaced this one.
+        }
         catch (Exception ex)
         {
             StatusMessage = $"Analiz hatası: {ex.Message}";
         }
         finally
         {
-            IsLoading = false;
-            ProgressValue = 100;
+            if (!token.IsCancellationRequested)
+            {
+                IsLoading = false;
+                ProgressValue = 100;
+            }
         }
     }
 
     /// <summary>
-    /// Filters detected objects in RAM according to ConfidenceThreshold slider without re-running AI.
+    /// Filters detected objects in RAM according to ConfidenceThreshold slider (and the scan areas) without re-running AI.
     /// </summary>
     public void ApplyLiveFilter()
     {
         if (_lastDetectionResult == null) return;
 
-        var filtered = _lastDetectionResult.Filter(_confidenceThreshold);
+        var filtered = _lastDetectionResult.Filter(_confidenceThreshold, _mask);
 
         TotalCount = filtered.TotalCount;
         Tier1Count = filtered.Tier1Count;
         Tier2Count = filtered.Tier2Count;
         Tier3Count = filtered.Tier3Count;
-
-        VisibleBoxes.Clear();
-        if (ShowBoundingBoxes)
-        {
-            foreach (var obj in filtered.FilteredObjects)
-            {
-                string label = ShowLabels ? $"{obj.ClassName} {(int)(obj.Confidence * 100)}%" : "";
-                VisibleBoxes.Add(new VisualBoxViewModel(
-                    Id: obj.Id,
-                    Left: obj.Box.X,
-                    Top: obj.Box.Y,
-                    Width: Math.Max(4, obj.Box.Width),
-                    Height: Math.Max(4, obj.Box.Height),
-                    ColorHex: obj.TierColorHex,
-                    LabelText: label,
-                    Confidence: obj.Confidence,
-                    Tier: obj.Tier
-                ));
-            }
-        }
+        SpeculativeCount = filtered.NoiseCount;
+        VisibleObjects = filtered.FilteredObjects;
 
         CommandManager.InvalidateRequerySuggested();
     }
@@ -401,7 +619,7 @@ public class MainViewModel : INotifyPropertyChanged
         var dialog = new OpenFileDialog
         {
             Title = "Astrofotoğraf Seç",
-            Filter = "Desteklenen Görseller (*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp)|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp|Tüm Dosyalar (*.*)|*.*"
+            Filter = "Desteklenen Görseller (*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp)|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp|TIFF Görselleri (*.tif;*.tiff)|*.tif;*.tiff|PNG Görselleri (*.png)|*.png|JPEG Görselleri (*.jpg;*.jpeg)|*.jpg;*.jpeg|Tüm Dosyalar (*.*)|*.*"
         };
 
         if (dialog.ShowDialog() == true)
@@ -423,7 +641,7 @@ public class MainViewModel : INotifyPropertyChanged
 
         if (dialog.ShowDialog() == true)
         {
-            var filtered = _lastDetectionResult.Filter(_confidenceThreshold);
+            var filtered = _lastDetectionResult.Filter(_confidenceThreshold, _mask);
             ResultExporter.ExportToCsv(filtered.FilteredObjects, dialog.FileName);
             MessageBox.Show($"CSV başarıyla kaydedildi:\n{dialog.FileName}", "Dışa Aktarma Başarılı", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -442,8 +660,8 @@ public class MainViewModel : INotifyPropertyChanged
 
         if (dialog.ShowDialog() == true)
         {
-            var filtered = _lastDetectionResult.Filter(_confidenceThreshold);
-            ResultExporter.ExportAnnotatedImage(SelectedImagePath, filtered.FilteredObjects, dialog.FileName);
+            var filtered = _lastDetectionResult.Filter(_confidenceThreshold, _mask);
+            ResultExporter.ExportAnnotatedImage(SelectedImagePath, filtered.FilteredObjects, dialog.FileName, _mask);
             MessageBox.Show($"Etiketli görsel kaydedildi:\n{dialog.FileName}", "Dışa Aktarma Başarılı", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
@@ -463,4 +681,3 @@ public class MainViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
-

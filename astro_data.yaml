@@ -1,0 +1,10 @@
+# AstroCounter - YOLO11 Dataset Configuration
+path: ./dataset
+train: images/train
+val: images/val
+
+names:
+  0: star
+  1: galaxy
+  2: nebula
+  3: satellite_trail

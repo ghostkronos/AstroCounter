@@ -11,7 +11,7 @@ publish/
 *.sln.docstates
 _ReSharper*/
 
-## Python & Machine Learning
+## Python, Training Data & Heavy ML Artifacts
 __pycache__/
 *.py[cod]
 *$py.class
@@ -22,11 +22,19 @@ env/
 venv/
 ENV/
 runs/
+weights/
+*.pt
 *.pt.cache
 wandb/
+
+## Training Datasets & Heavy Raw Astro Images
+dataset/
+*.tif
+*.tiff
+*.fits
+*.fit
 
 ## OS artifacts
 Thumbs.db
 Desktop.ini
 .DS_Store
-

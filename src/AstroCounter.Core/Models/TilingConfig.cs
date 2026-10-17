@@ -9,7 +9,7 @@ public record TilingConfig(
     float OverlapRatio = 0.20f,
     float NmsIouThreshold = 0.45f,
     float DefaultConfidenceThreshold = 0.25f,
-    float MinConfidence = 0.10f
+    float MinConfidence = 0.02f
 )
 {
     public int StepX => Math.Max(1, (int)(TileWidth * (1.0f - OverlapRatio)));

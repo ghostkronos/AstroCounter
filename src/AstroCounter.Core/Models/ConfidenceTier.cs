@@ -33,7 +33,7 @@ public static class ConfidenceTierExtensions
         ConfidenceTier.Tier1_High => "#00E676",    // Bright neon green / emerald
         ConfidenceTier.Tier2_Medium => "#FFD600",  // Vivid amber / yellow
         ConfidenceTier.Tier3_Low => "#FF9100",     // Bright orange
-        ConfidenceTier.FilteredNoise => "#757575", // Muted gray
+        ConfidenceTier.FilteredNoise => "#EF4444", // Vivid red
         _ => "#FFFFFF"
     };
 

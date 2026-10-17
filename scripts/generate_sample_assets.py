@@ -93,8 +93,12 @@ def create_synthetic_astrophoto(filepath: str, width: int = 1920, height: int = 
 
     # Save to disk
     Path(filepath).parent.mkdir(parents=True, exist_ok=True)
-    img.save(filepath, format="PNG")
+    img.save(filepath)
     print(f"[+] Saved synthetic image to: {filepath}")
+    if filepath.endswith(".png"):
+        tif_path = filepath[:-4] + ".tif"
+        img.save(tif_path)
+        print(f"[+] Saved synthetic TIFF to: {tif_path}")
 
 def create_valid_onnx_model(filepath: str):
     """

@@ -29,14 +29,19 @@ public class DetectionResult
     }
 
     /// <summary>
-    /// Filters detected objects by minimum confidence in memory without re-inference.
+    /// Filters detected objects by minimum confidence (and optionally by the user's scan mask)
+    /// in memory without re-inference.
     /// </summary>
-    public FilteredResult Filter(float minConfidence)
+    public FilteredResult Filter(float minConfidence, ScanMask? mask = null)
     {
-        var filtered = AllObjects.Where(o => o.Confidence >= minConfidence).ToList();
+        bool useMask = mask is { IsEmpty: false };
+        var filtered = AllObjects
+            .Where(o => o.Confidence >= minConfidence && (!useMask || mask!.IsAllowed(o.CenterX, o.CenterY)))
+            .ToList();
         int tier1 = filtered.Count(o => o.Tier == ConfidenceTier.Tier1_High);
         int tier2 = filtered.Count(o => o.Tier == ConfidenceTier.Tier2_Medium);
         int tier3 = filtered.Count(o => o.Tier == ConfidenceTier.Tier3_Low);
+        int speculativeNoise = filtered.Count(o => o.Tier == ConfidenceTier.FilteredNoise);
 
         return new FilteredResult(
             FilteredObjects: filtered,
@@ -44,7 +49,7 @@ public class DetectionResult
             Tier1Count: tier1,
             Tier2Count: tier2,
             Tier3Count: tier3,
-            NoiseCount: AllObjects.Count - filtered.Count,
+            NoiseCount: speculativeNoise,
             MinConfidence: minConfidence
         );
     }
@@ -59,4 +64,3 @@ public record FilteredResult(
     int NoiseCount,
     float MinConfidence
 );
-

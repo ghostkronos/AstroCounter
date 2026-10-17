@@ -10,7 +10,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>..\..\assets\app_icon.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="..\..\assets\logo.png" Link="Assets\logo.png" />
+    <Resource Include="..\..\assets\app_icon.ico" Link="Assets\app_icon.ico" />
+    <Resource Include="..\..\assets\logo.svg" Link="Assets\logo.svg" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Include="..\..\models\**\*" Link="models\%(RecursiveDir)%(FileName)%(Extension)">

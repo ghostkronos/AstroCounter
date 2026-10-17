@@ -7,6 +7,8 @@ using AstroCounter.Core.Models;
 /// </summary>
 public static class NmsFilter
 {
+    private const float CellSize = 64f;
+
     /// <summary>
     /// Applies Non-Maximum Suppression to a collection of detected objects.
     /// </summary>
@@ -41,24 +43,71 @@ public static class NmsFilter
             .ToList();
     }
 
+    /// <summary>
+    /// Greedy NMS accelerated with a spatial hash: a candidate is only compared against
+    /// already selected boxes whose centres are close enough to possibly overlap (O(n) instead of O(n^2)).
+    /// </summary>
     private static List<AstrophotographyObject> SuppressionCore(
         IEnumerable<AstrophotographyObject> items,
         float iouThreshold)
     {
         var sorted = items.OrderByDescending(o => o.Confidence).ToList();
-        var selected = new List<AstrophotographyObject>();
+        var selected = new List<AstrophotographyObject>(sorted.Count);
+        var grid = new Dictionary<long, List<AstrophotographyObject>>();
+        float maxSelectedExtent = 0f;
 
-        while (sorted.Count > 0)
+        foreach (var candidate in sorted)
         {
-            var current = sorted[0];
-            selected.Add(current);
-            sorted.RemoveAt(0);
+            float candidateExtent = Math.Max(candidate.Box.Width, candidate.Box.Height);
+            // Two boxes can only overlap if their centres are closer than half the sum of their extents.
+            float reach = ((maxSelectedExtent + candidateExtent) * 0.5f) + 1f;
 
-            // Filter out candidates that overlap with the current highest-confidence box
-            sorted.RemoveAll(candidate => current.Box.ComputeIoU(candidate.Box) >= iouThreshold);
+            if (IsSuppressed(candidate, reach, grid, iouThreshold))
+                continue;
+
+            selected.Add(candidate);
+            long key = CellKey(CellIndex(candidate.CenterX), CellIndex(candidate.CenterY));
+            if (!grid.TryGetValue(key, out var bucket))
+            {
+                bucket = new List<AstrophotographyObject>();
+                grid[key] = bucket;
+            }
+            bucket.Add(candidate);
+            maxSelectedExtent = Math.Max(maxSelectedExtent, candidateExtent);
         }
 
         return selected;
     }
-}
 
+    private static bool IsSuppressed(
+        AstrophotographyObject candidate,
+        float reach,
+        Dictionary<long, List<AstrophotographyObject>> grid,
+        float iouThreshold)
+    {
+        int x0 = CellIndex(candidate.CenterX - reach);
+        int x1 = CellIndex(candidate.CenterX + reach);
+        int y0 = CellIndex(candidate.CenterY - reach);
+        int y1 = CellIndex(candidate.CenterY + reach);
+
+        for (int cy = y0; cy <= y1; cy++)
+        {
+            for (int cx = x0; cx <= x1; cx++)
+            {
+                if (!grid.TryGetValue(CellKey(cx, cy), out var bucket)) continue;
+
+                foreach (var other in bucket)
+                {
+                    if (other.Box.ComputeIoU(candidate.Box) >= iouThreshold)
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static int CellIndex(float coordinate) => (int)MathF.Floor(coordinate / CellSize);
+
+    private static long CellKey(int cx, int cy) => ((long)cx << 32) | (uint)cy;
+}

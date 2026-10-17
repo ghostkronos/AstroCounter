@@ -23,8 +23,24 @@ def export_to_onnx(
         print("[!] Ultralytics is not installed. Install with: pip install ultralytics")
         return
 
-    print(f"[*] Loading weights from: {weights_path}")
-    model = YOLO(weights_path)
+    # Check candidate paths for weights
+    candidates = [
+        weights_path,
+        "runs/astro_train/astro_detector/weights/best.pt",
+        "runs/detect/runs/astro_train/astro_detector/weights/best.pt",
+        "astro_detector/weights/best.pt"
+    ]
+    actual_weights = None
+    for c in candidates:
+        if Path(c).exists():
+            actual_weights = c
+            break
+
+    if actual_weights is None:
+        actual_weights = weights_path
+
+    print(f"[*] Loading weights from: {actual_weights}")
+    model = YOLO(actual_weights)
 
     print(f"[*] Exporting to ONNX format (opset={opset}, dynamic={dynamic}, half={half})...")
     exported_file = model.export(
