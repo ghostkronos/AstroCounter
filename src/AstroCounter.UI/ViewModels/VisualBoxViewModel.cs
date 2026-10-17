@@ -16,3 +16,4 @@ public record VisualBoxViewModel(
 {
     public string TooltipText => $"{LabelText}\nKonum: ({Left:F0}, {Top:F0})\nBoyut: {Width:F0}x{Height:F0}";
 }
+

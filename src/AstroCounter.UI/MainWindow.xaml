@@ -20,6 +20,7 @@
     </Window.DataContext>
 
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <!-- Modern Glow & Rounded Card Styles -->
         <Style x:Key="MetricCardStyle" TargetType="Border">
             <Setter Property="Background" Value="#121824"/>
@@ -226,7 +227,7 @@
                         BorderBrush="#1E293B" BorderThickness="2"
                         CornerRadius="12"
                         Background="#0D131F"
-                        Visibility="{Binding ImageBitmap, Converter={x:Null}}">
+                        Visibility="{Binding IsPlaceholderVisible, Converter={StaticResource BoolToVis}}">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                         <TextBlock Text="🔭" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,14"/>
                         <TextBlock Text="Astrofotoğrafınızı Buraya Sürükleyip Bırakın" FontSize="18" FontWeight="Bold" Foreground="#94A3B8" HorizontalAlignment="Center"/>
@@ -274,7 +275,7 @@
                                         Margin="0,-16,0,0"
                                         HorizontalAlignment="Left"
                                         VerticalAlignment="Top"
-                                        Visibility="{Binding DataContext.ShowLabels, RelativeSource={RelativeSource AncestorType=Window}, Converter={x:Null}}">
+                                        Visibility="{Binding DataContext.ShowLabels, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}">
                                     <TextBlock Text="{Binding LabelText}"
                                                FontSize="9"
                                                FontWeight="SemiBold"
@@ -309,7 +310,7 @@
                 <!-- Progress Bar -->
                 <ProgressBar Grid.Column="2"
                              Height="8"
-                             Value="{Binding ProgressValue}"
+                             Value="{Binding ProgressValue, Mode=OneWay}"
                              Minimum="0" Maximum="100"
                              Foreground="#00E5FF"
                              Background="#1E293B"

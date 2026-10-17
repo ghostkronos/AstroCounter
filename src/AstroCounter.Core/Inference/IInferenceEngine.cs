@@ -14,3 +14,4 @@ public interface IInferenceEngine : IDisposable
         IProgress<float>? progress = null,
         CancellationToken cancellationToken = default);
 }
+

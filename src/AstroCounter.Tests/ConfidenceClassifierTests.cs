@@ -41,3 +41,4 @@ public class ConfidenceClassifierTests
         Assert.Equal(1, summary.NoiseCount);
     }
 }
+

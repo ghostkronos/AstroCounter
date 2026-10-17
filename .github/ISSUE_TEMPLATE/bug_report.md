@@ -28,3 +28,4 @@ Normal şartlarda gerçekleşmesi beklenen davranış.
 
 ### Ekler / Ekran Görüntüleri
 Hata anına ait log veya ekran görüntüsü ekleyebilirsiniz.
+

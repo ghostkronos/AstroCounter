@@ -29,3 +29,4 @@ jobs:
 
     - name: Run Unit Tests
       run: dotnet test src/AstroCounter.Tests/AstroCounter.Tests.csproj --configuration Release --no-build --verbosity normal
+

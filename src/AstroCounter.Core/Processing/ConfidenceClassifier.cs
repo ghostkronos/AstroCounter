@@ -83,3 +83,4 @@ public static class ConfidenceClassifier
         return (confidence / 0.25f) * 3.0f; // 0.0 -> 0 sigma, 0.25 -> 3 sigma
     }
 }
+

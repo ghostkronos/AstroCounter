@@ -64,3 +64,4 @@ if __name__ == "__main__":
         half=args.half,
         dynamic=args.dynamic
     )
+

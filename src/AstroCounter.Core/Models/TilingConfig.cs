@@ -15,3 +15,4 @@ public record TilingConfig(
     public int StepX => Math.Max(1, (int)(TileWidth * (1.0f - OverlapRatio)));
     public int StepY => Math.Max(1, (int)(TileHeight * (1.0f - OverlapRatio)));
 }
+

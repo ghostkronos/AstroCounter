@@ -106,8 +106,16 @@ public class MainViewModel : INotifyPropertyChanged
     public BitmapSource? ImageBitmap
     {
         get => _imageBitmap;
-        private set => SetProperty(ref _imageBitmap, value);
+        private set
+        {
+            if (SetProperty(ref _imageBitmap, value))
+            {
+                OnPropertyChanged(nameof(IsPlaceholderVisible));
+            }
+        }
     }
+
+    public bool IsPlaceholderVisible => ImageBitmap == null;
 
     public double ImageWidth
     {
@@ -151,7 +159,7 @@ public class MainViewModel : INotifyPropertyChanged
     public double ProgressValue
     {
         get => _progressValue;
-        private set => SetProperty(ref _progressValue, value);
+        set => SetProperty(ref _progressValue, value);
     }
 
     public string StatusMessage
@@ -398,3 +406,4 @@ public class MainViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+

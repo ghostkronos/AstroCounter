@@ -18,3 +18,4 @@ Düşündüğünüz alternatif araçlar veya yöntemler var mı? (ör. PixInsigh
 
 ### Ek Bağlam
 Özellik fikrini destekleyecek FITS başlıkları, formüller veya referanslar.
+

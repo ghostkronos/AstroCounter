@@ -148,3 +148,4 @@ python scripts/export_onnx.py --weights runs/astro_train/astro_detector/weights/
 
 ## 📄 Lisans
 Bu proje [MIT Lisansı](LICENSE) kapsamında açık kaynak olarak lisanslanmıştır.
+

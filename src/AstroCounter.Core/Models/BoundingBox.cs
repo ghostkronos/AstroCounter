@@ -31,3 +31,4 @@ public readonly record struct BoundingBox(float X, float Y, float Width, float H
         return unionArea > 0 ? intersectionArea / unionArea : 0f;
     }
 }
+

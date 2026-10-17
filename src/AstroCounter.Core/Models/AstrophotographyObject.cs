@@ -19,3 +19,4 @@ public record AstrophotographyObject(
     public float CenterX => Box.X + (Box.Width / 2f);
     public float CenterY => Box.Y + (Box.Height / 2f);
 }
+
