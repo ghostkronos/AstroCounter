@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="AstroCounter.Core/AstroCounter.Core.csproj" />
+  <Project Path="AstroCounter.Tests/AstroCounter.Tests.csproj" />
+  <Project Path="AstroCounter.UI/AstroCounter.UI.csproj" />
+</Solution>
