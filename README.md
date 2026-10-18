@@ -27,6 +27,8 @@ High-resolution astrophotography images frequently exceed 24 MP to 100 MP and ex
 2. **Dual-Engine Source Detection:** Supports analytical point-spread-function signal-to-noise ratio photometry (DAOStarFinder standard) alongside Slicing Aided Hyper Inference (SAHI) with hardware-accelerated YOLO11 ONNX models via Windows DirectML.
 3. **Blind Triangle-Pattern Plate Solving and Stellarium Synchronization:** Extracts sub-pixel stellar centroids, matches scale- and rotation-invariant triangle ratios against an embedded J2000 catalog using RANSAC, computes gnomonic tangent-plane World Coordinate System (WCS) parameters, and establishes two-way real-time viewport synchronization with Stellarium.
 
+![AstroCounter and Stellarium 1:1 Synchronization](assets/screenshots/02_stellarium_sync_andromeda.png)
+
 ---
 
 ## System Architecture and Processing Workflow
@@ -78,6 +80,30 @@ flowchart TD
 * **Hardware Acceleration:** Executes ONNX inference on NVIDIA, AMD, and Intel GPUs via DirectML with automatic CPU fallback.
 * **Lossless Scientific Format Support:** Decodes 8-bit, 16-bit integer, and 32-bit IEEE floating-point TIFF stacks (striped and tiled) alongside standard image formats.
 * **Real-Time Confidence Filtering and ROI Masking:** Filters detections in memory across signal-to-noise tiers (`>10σ`, `5-10σ`, `3-5σ`, `<3σ`) and supports rectangular and polygonal inclusion/exclusion masks.
+
+---
+
+## Screenshots and Interface Preview
+
+### 1. Two-Way 1:1 Stellarium Synchronization
+Bidirectional viewport synchronization between AstroCounter and Stellarium with real-time camera tracking, spherical coordinate grids, and orientation matching.
+![Stellarium 1:1 Synchronization](assets/screenshots/02_stellarium_sync_andromeda.png)
+
+### 2. Blind Geometric Plate Solving and Spherical Coordinate Grid
+Gnomonic tangent-plane World Coordinate System (WCS) solution projecting curved Right Ascension and Declination lines directly onto the photograph.
+![Plate Solving and Coordinate Grid](assets/screenshots/04_plate_solved_coordinate_grid.png)
+
+### 3. In-Frame Celestial Target Selection and Centering
+Automatic scanning of embedded celestial catalogs filtered strictly to objects physically inside the camera's field of view, with one-click centering and targeting reticles.
+![In-Frame Catalog Selection](assets/screenshots/03_in_frame_catalog_target_selection.png)
+
+### 4. High-Precision Photometric Detection and Region Masking
+Sub-pixel stellar centroid extraction across signal-to-noise confidence tiers (`>10σ`, `5-10σ`, `3-5σ`) with polygonal exclusion masking and automatic radiometric sky-glow subtraction.
+![Photometric Detection and Masking](assets/screenshots/01_photometric_detection_masking.png)
+
+### 5. Scientific Data Analysis and CSV Export
+Export detected celestial sources with full astrometric parameters (ID, class, confidence, SNR, pixel coordinates, width, height, RA, Dec) for tabular analysis.
+![CSV Data Export](assets/screenshots/05_csv_data_export_analysis.png)
 
 ---
 
@@ -149,6 +175,8 @@ In AstroCounter, click **Load Model (.onnx)** on the toolbar to select your expo
 ```text
 AstroCounter/
 ├── Directory.Build.props                # Deterministic build and privacy configuration
+├── assets/                              # UI logos, icons, sample data, and documentation screenshots
+│   └── screenshots/                     # Interface preview screenshots
 ├── models/
 │   └── astro_yolo11n.onnx               # Baseline trained YOLO11 ONNX model
 ├── src/

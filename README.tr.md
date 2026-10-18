@@ -27,6 +27,8 @@ Yüksek çözünürlüklü astrofotoğraflar genellikle 24 MP ile 100 MP üzerin
 2. **Çift Motorlu Kaynak Tespiti:** Analitik nokta dağılım fonksiyonu ve sinyal-gürültü oranı fotometrisini (DAOStarFinder standardı), Windows DirectML donanım hızlandırmalı 640×640 örtüşmeli dilimleme (SAHI) ve YOLO11 ONNX derin öğrenme çıkarımı ile bir arada sunar.
 3. **Kör Üçgen Desenli Gökyüzü Çözümleme ve Stellarium Senkronizasyonu:** Alt-piksel hassasiyetinde yıldız merkezlerini çıkarır, ölçek ve dönüşten bağımsız üçgen kenar oranlarını RANSAC ile J2000 kataloğuna karşı doğrular, gnomonik teğet düzlem gök koordinat matrisini (WCS) hesaplar ve Stellarium ile çift yönlü gerçek zamanlı senkronizasyon kurar.
 
+![AstroCounter ve Stellarium 1:1 Senkronizasyonu](assets/screenshots/02_stellarium_sync_andromeda.png)
+
 ---
 
 ## Sistem Mimarisi ve İşleyiş Akışı
@@ -78,6 +80,30 @@ flowchart TD
 * **Donanım Hızlandırma:** DirectML aracılığıyla NVIDIA, AMD ve Intel ekran kartlarında ONNX çıkarımı çalıştırır; uygun GPU bulunmadığında otomatik olarak işlemci (CPU) moduna geçer.
 * **Kayıpsız Bilimsel Format Desteği:** Standart görsel formatlarının yanı sıra 8-bit, 16-bit tam sayı ve 32-bit IEEE kayan noktalı TIFF istiflerini (şeritli ve döşemeli) doğrudan okur.
 * **Canlı Eşik Filtreleme ve Alan Maskeleme:** Tespit edilen nesneleri sinyal-gürültü katmanlarına (`>10σ`, `5-10σ`, `3-5σ`, `<3σ`) göre bellek üzerinde anlık filtreler; dikdörtgen ve çokgen dahil etme veya hariç tutma maskelerini destekler.
+
+---
+
+## Ekran Görüntüleri ve Arayüz Önizlemesi
+
+### 1. Çift Yönlü 1:1 Stellarium Senkronizasyonu
+AstroCounter ve Stellarium arasında gerçek zamanlı çift yönlü bakış açısı senkronizasyonu, küresel gök koordinat ızgarası ve yönelim açısı denetimi.
+![Stellarium 1:1 Senkronizasyonu](assets/screenshots/02_stellarium_sync_andromeda.png)
+
+### 2. Kör Geometrik Gökyüzü Çözümleme ve Küresel Izgara İzdüşümü
+Gnomonik teğet düzlem Dünya Koordinat Sistemi (WCS) çözümü ile fotoğraf düzlemine izdüşürülen eğrisel Sağ Açıklık ve Dik Açıklık eksenleri.
+![Gökyüzü Çözümleme ve Koordinat Izgarası](assets/screenshots/04_plate_solved_coordinate_grid.png)
+
+### 3. Kadraj İçi Gök Cismi Seçimi ve Otomatik Odaklanma
+Yalnızca fotoğrafın görüş açısı içinde kalan Messier, NGC ve IC gök cisimlerinin otomatik taranması, hedef seçici ve tek tıkla hedef merkezleme.
+![Kadraj İçi Katalog Seçimi](assets/screenshots/03_in_frame_catalog_target_selection.png)
+
+### 4. Yüksek Hassasiyetli Fotometrik Yıldız Tespiti ve Alan Maskeleme
+Sinyal-gürültü oranına (SNR) dayalı katmanlı yıldız çıkarımı (`>10σ`, `5-10σ`, `3-5σ`), çokgen hariç tutma maskeleri ve otomatik gök ışıması bastırma.
+![Fotometrik Yıldız Tespiti ve Maskeleme](assets/screenshots/01_photometric_detection_masking.png)
+
+### 5. Bilimsel Veri Analizi ve CSV Dışa Aktarımı
+Tespit edilen tüm gök cisimlerinin astrometrik parametreleriyle (kimlik, sınıf, güven skoru, SNR, piksel koordinatları, genişlik, yükseklik, RA, Dec) tablosal analiz ve bilimsel işleme için CSV formatında dışa aktarımı.
+![CSV Veri Dışa Aktarımı](assets/screenshots/05_csv_data_export_analysis.png)
 
 ---
 
@@ -149,6 +175,8 @@ Dışa aktardığınız modeli AstroCounter üst çubuğundaki **Model Yükle (.
 ```text
 AstroCounter/
 ├── Directory.Build.props                # Deterministik derleme ve gizlilik yapılandırması
+├── assets/                              # Arayüz logoları, simgeler, örnek veriler ve dokümantasyon ekran görüntüleri
+│   └── screenshots/                     # Arayüz önizleme ekran görüntüleri
 ├── models/
 │   └── astro_yolo11n.onnx               # Eğitilmiş temel YOLO11 ONNX modeli
 ├── src/
