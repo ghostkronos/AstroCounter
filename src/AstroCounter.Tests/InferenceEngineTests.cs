@@ -60,7 +60,14 @@ public class InferenceEngineTests
 
         // 1. 8-bit RGB TIFF
         string path8 = Path.Combine(sampleDir, "test_8bit.tif");
-        if (File.Exists(path8))
+        bool isTemp8 = false;
+        if (!File.Exists(path8))
+        {
+            path8 = Path.Combine(Path.GetTempPath(), $"test_8bit_{Guid.NewGuid()}.tif");
+            Create8BitRgbTiff(path8, 100, 100, 50, 100, 150);
+            isTemp8 = true;
+        }
+        try
         {
             using var bmp8 = ImagePreprocessor.LoadImage(path8);
             Assert.NotNull(bmp8);
@@ -71,10 +78,21 @@ public class InferenceEngineTests
             Assert.Equal(100, px8.Green);
             Assert.Equal(150, px8.Blue);
         }
+        finally
+        {
+            if (isTemp8 && File.Exists(path8)) File.Delete(path8);
+        }
 
         // 2. 16-bit Grayscale TIFF
         string path16 = Path.Combine(sampleDir, "test_16bit_gray.tif");
-        if (File.Exists(path16))
+        bool isTemp16 = false;
+        if (!File.Exists(path16))
+        {
+            path16 = Path.Combine(Path.GetTempPath(), $"test_16bit_{Guid.NewGuid()}.tif");
+            Create16BitGrayTiff(path16, 100, 100, 30000);
+            isTemp16 = true;
+        }
+        try
         {
             using var bmp16 = ImagePreprocessor.LoadImage(path16);
             Assert.NotNull(bmp16);
@@ -83,10 +101,21 @@ public class InferenceEngineTests
             var px16 = bmp16.GetPixel(0, 0);
             Assert.InRange(px16.Red, 110, 125);
         }
+        finally
+        {
+            if (isTemp16 && File.Exists(path16)) File.Delete(path16);
+        }
 
         // 3. 32-bit Float TIFF
         string path32 = Path.Combine(sampleDir, "test_32bit_float.tif");
-        if (File.Exists(path32))
+        bool isTemp32 = false;
+        if (!File.Exists(path32))
+        {
+            path32 = Path.Combine(Path.GetTempPath(), $"test_32bit_{Guid.NewGuid()}.tif");
+            Create32BitFloatTiff(path32, 100, 100, 0.5f);
+            isTemp32 = true;
+        }
+        try
         {
             using var bmp32 = ImagePreprocessor.LoadImage(path32);
             Assert.NotNull(bmp32);
@@ -95,40 +124,183 @@ public class InferenceEngineTests
             var px32 = bmp32.GetPixel(0, 0);
             Assert.InRange(px32.Red, 120, 135);
         }
+        finally
+        {
+            if (isTemp32 && File.Exists(path32)) File.Delete(path32);
+        }
     }
 
     [Fact]
     public async Task ProcessImageAsync_TiffImage_DetectsStarsAndExportsAnnotated()
     {
         string baseDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
-        string tiffImagePath = Path.Combine(baseDir, "assets", "sample_images", "deep_sky_stack.tif");
+        string sampleTiff = Path.Combine(baseDir, "assets", "sample_images", "deep_sky_stack.tif");
         string modelPath = Path.Combine(baseDir, "models", "astro_yolo11n.onnx");
 
-        Assert.True(File.Exists(tiffImagePath), $"TIFF image not found at: {tiffImagePath}");
+        string tiffImagePath;
+        bool isTemp = false;
 
-        // Test with Photometric mode
-        using var photometricEngine = new OnnxInferenceEngine(initialMode: DetectionEngineMode.Photometric);
-        var config = new TilingConfig(TileWidth: 640, TileHeight: 640, OverlapRatio: 0.20f);
-        var resultPhotometric = await photometricEngine.ProcessImageAsync(tiffImagePath, config);
-
-        Assert.NotNull(resultPhotometric);
-        Assert.True(resultPhotometric.AllObjects.Count > 0, "Photometric mode should detect stars in TIFF");
-
-        // Test with Deep Learning YOLO mode
-        if (File.Exists(modelPath))
+        if (File.Exists(sampleTiff))
         {
-            using var yoloEngine = new OnnxInferenceEngine(modelPath, initialMode: DetectionEngineMode.DeepLearningYolo);
-            var resultYolo = await yoloEngine.ProcessImageAsync(tiffImagePath, config);
-            Assert.NotNull(resultYolo);
-            Assert.True(resultYolo.AllObjects.Count > 0, "YOLO mode should detect stars in TIFF");
+            tiffImagePath = sampleTiff;
+        }
+        else
+        {
+            string pngFallback = Path.Combine(baseDir, "assets", "sample_images", "deep_sky_stack.png");
+            Assert.True(File.Exists(pngFallback), $"Fallback PNG sample image not found at: {pngFallback}");
+            tiffImagePath = Path.Combine(Path.GetTempPath(), $"astro_test_stack_{Guid.NewGuid()}.tif");
+            ConvertImageToTiff(pngFallback, tiffImagePath);
+            isTemp = true;
         }
 
-        // Test export annotated image with TIFF input
-        string tempPng = Path.Combine(Path.GetTempPath(), $"astro_annotated_from_tiff_{Guid.NewGuid()}.png");
-        ResultExporter.ExportAnnotatedImage(tiffImagePath, resultPhotometric.AllObjects, tempPng);
-        Assert.True(File.Exists(tempPng));
-        Assert.True(new FileInfo(tempPng).Length > 1000);
-        File.Delete(tempPng);
+        try
+        {
+            Assert.True(File.Exists(tiffImagePath), $"TIFF image not found at: {tiffImagePath}");
+
+            // Test with Photometric mode
+            using var photometricEngine = new OnnxInferenceEngine(initialMode: DetectionEngineMode.Photometric);
+            var config = new TilingConfig(TileWidth: 640, TileHeight: 640, OverlapRatio: 0.20f);
+            var resultPhotometric = await photometricEngine.ProcessImageAsync(tiffImagePath, config);
+
+            Assert.NotNull(resultPhotometric);
+            Assert.True(resultPhotometric.AllObjects.Count > 0, "Photometric mode should detect stars in TIFF");
+
+            // Test with Deep Learning YOLO mode
+            if (File.Exists(modelPath))
+            {
+                using var yoloEngine = new OnnxInferenceEngine(modelPath, initialMode: DetectionEngineMode.DeepLearningYolo);
+                var resultYolo = await yoloEngine.ProcessImageAsync(tiffImagePath, config);
+                Assert.NotNull(resultYolo);
+                Assert.True(resultYolo.AllObjects.Count > 0, "YOLO mode should detect stars in TIFF");
+            }
+
+            // Test export annotated image with TIFF input
+            string tempPng = Path.Combine(Path.GetTempPath(), $"astro_annotated_from_tiff_{Guid.NewGuid()}.png");
+            ResultExporter.ExportAnnotatedImage(tiffImagePath, resultPhotometric.AllObjects, tempPng);
+            Assert.True(File.Exists(tempPng));
+            Assert.True(new FileInfo(tempPng).Length > 1000);
+            File.Delete(tempPng);
+        }
+        finally
+        {
+            if (isTemp && File.Exists(tiffImagePath))
+            {
+                File.Delete(tiffImagePath);
+            }
+        }
+    }
+
+    private static void ConvertImageToTiff(string sourceImagePath, string targetTiffPath)
+    {
+        using var bmp = ImagePreprocessor.LoadImage(sourceImagePath);
+        int width = bmp.Width;
+        int height = bmp.Height;
+
+        using var tiff = BitMiracle.LibTiff.Classic.Tiff.Open(targetTiffPath, "w");
+        if (tiff == null) throw new InvalidOperationException($"Cannot create test TIFF at: {targetTiffPath}");
+
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.IMAGEWIDTH, width);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.IMAGELENGTH, height);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.SAMPLESPERPIXEL, 3);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.BITSPERSAMPLE, 8);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.ORIENTATION, BitMiracle.LibTiff.Classic.Orientation.TOPLEFT);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.PLANARCONFIG, BitMiracle.LibTiff.Classic.PlanarConfig.CONTIG);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.PHOTOMETRIC, BitMiracle.LibTiff.Classic.Photometric.RGB);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.ROWSPERSTRIP, 32);
+
+        byte[] scanline = new byte[width * 3];
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                var color = bmp.GetPixel(x, y);
+                scanline[x * 3] = color.Red;
+                scanline[x * 3 + 1] = color.Green;
+                scanline[x * 3 + 2] = color.Blue;
+            }
+            tiff.WriteScanline(scanline, y);
+        }
+        tiff.WriteDirectory();
+    }
+
+    private static void Create8BitRgbTiff(string filePath, int width, int height, byte r, byte g, byte b)
+    {
+        using var tiff = BitMiracle.LibTiff.Classic.Tiff.Open(filePath, "w");
+        if (tiff == null) return;
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.IMAGEWIDTH, width);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.IMAGELENGTH, height);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.SAMPLESPERPIXEL, 3);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.BITSPERSAMPLE, 8);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.ORIENTATION, BitMiracle.LibTiff.Classic.Orientation.TOPLEFT);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.PLANARCONFIG, BitMiracle.LibTiff.Classic.PlanarConfig.CONTIG);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.PHOTOMETRIC, BitMiracle.LibTiff.Classic.Photometric.RGB);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.ROWSPERSTRIP, height);
+
+        byte[] scanline = new byte[width * 3];
+        for (int x = 0; x < width; x++)
+        {
+            scanline[x * 3] = r;
+            scanline[x * 3 + 1] = g;
+            scanline[x * 3 + 2] = b;
+        }
+        for (int y = 0; y < height; y++)
+        {
+            tiff.WriteScanline(scanline, y);
+        }
+        tiff.WriteDirectory();
+    }
+
+    private static void Create16BitGrayTiff(string filePath, int width, int height, ushort val)
+    {
+        using var tiff = BitMiracle.LibTiff.Classic.Tiff.Open(filePath, "w");
+        if (tiff == null) return;
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.IMAGEWIDTH, width);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.IMAGELENGTH, height);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.SAMPLESPERPIXEL, 1);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.BITSPERSAMPLE, 16);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.ORIENTATION, BitMiracle.LibTiff.Classic.Orientation.TOPLEFT);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.PLANARCONFIG, BitMiracle.LibTiff.Classic.PlanarConfig.CONTIG);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.PHOTOMETRIC, BitMiracle.LibTiff.Classic.Photometric.MINISBLACK);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.ROWSPERSTRIP, height);
+
+        byte[] scanline = new byte[width * 2];
+        for (int x = 0; x < width; x++)
+        {
+            scanline[x * 2] = (byte)(val & 0xFF);
+            scanline[x * 2 + 1] = (byte)((val >> 8) & 0xFF);
+        }
+        for (int y = 0; y < height; y++)
+        {
+            tiff.WriteScanline(scanline, y);
+        }
+        tiff.WriteDirectory();
+    }
+
+    private static void Create32BitFloatTiff(string filePath, int width, int height, float val)
+    {
+        using var tiff = BitMiracle.LibTiff.Classic.Tiff.Open(filePath, "w");
+        if (tiff == null) return;
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.IMAGEWIDTH, width);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.IMAGELENGTH, height);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.SAMPLESPERPIXEL, 1);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.BITSPERSAMPLE, 32);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.SAMPLEFORMAT, BitMiracle.LibTiff.Classic.SampleFormat.IEEEFP);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.ORIENTATION, BitMiracle.LibTiff.Classic.Orientation.TOPLEFT);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.PLANARCONFIG, BitMiracle.LibTiff.Classic.PlanarConfig.CONTIG);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.PHOTOMETRIC, BitMiracle.LibTiff.Classic.Photometric.MINISBLACK);
+        tiff.SetField(BitMiracle.LibTiff.Classic.TiffTag.ROWSPERSTRIP, height);
+
+        byte[] valBytes = BitConverter.GetBytes(val);
+        byte[] scanline = new byte[width * 4];
+        for (int x = 0; x < width; x++)
+        {
+            Buffer.BlockCopy(valBytes, 0, scanline, x * 4, 4);
+        }
+        for (int y = 0; y < height; y++)
+        {
+            tiff.WriteScanline(scanline, y);
+        }
+        tiff.WriteDirectory();
     }
 
     [Fact]
