@@ -24,9 +24,13 @@ public class OnnxInferenceEngine : IInferenceEngine
 
     public string ExecutionProviderName => Mode switch
     {
-        DetectionEngineMode.Photometric => "Astronomik Fotometri (DAOStarFinder / SNR)",
-        DetectionEngineMode.DeepLearningYolo => _session != null ? _onnxProviderName : "ONNX Model Yüklenmedi",
-        _ => "Bilinmeyen"
+        DetectionEngineMode.Photometric => AstroCounter.Core.Astrometry.CataloguePlateSolver.UseTurkishLanguage
+            ? "Astronomik Fotometri (DAOStarFinder / SNR)"
+            : "Astronomical Photometry (DAOStarFinder / SNR)",
+        DetectionEngineMode.DeepLearningYolo => _session != null
+            ? _onnxProviderName
+            : (AstroCounter.Core.Astrometry.CataloguePlateSolver.UseTurkishLanguage ? "ONNX Model Yüklenmedi" : "ONNX Model Not Loaded"),
+        _ => AstroCounter.Core.Astrometry.CataloguePlateSolver.UseTurkishLanguage ? "Bilinmeyen" : "Unknown"
     };
 
     public bool IsGpuAccelerated => Mode == DetectionEngineMode.DeepLearningYolo && _isGpuActive;
@@ -100,7 +104,8 @@ public class OnnxInferenceEngine : IInferenceEngine
 
         return await Task.Run(() =>
         {
-            using var bitmap = ImagePreprocessor.LoadImage(imagePath);
+            using var rawBitmap = ImagePreprocessor.LoadImage(imagePath);
+            using var bitmap = ImagePreprocessor.AutoBalanceBrightness(rawBitmap, out _);
             int imgW = bitmap.Width;
             int imgH = bitmap.Height;
 
@@ -126,6 +131,7 @@ public class OnnxInferenceEngine : IInferenceEngine
                 }
 
                 candidates = NmsFilter.ApplyNms(candidates, config.NmsIouThreshold);
+                candidates = CalibrateYoloConfidenceForBrightStars(bitmap, candidates);
             }
             else
             {
@@ -218,6 +224,62 @@ public class OnnxInferenceEngine : IInferenceEngine
         }
 
         return resultsList;
+    }
+
+    private static unsafe List<AstrophotographyObject> CalibrateYoloConfidenceForBrightStars(
+        SKBitmap bitmap,
+        List<AstrophotographyObject> candidates)
+    {
+        if (candidates.Count == 0 || bitmap.Width <= 0 || bitmap.Height <= 0) return candidates;
+
+        int w = bitmap.Width;
+        int h = bitmap.Height;
+        byte* basePtr = (byte*)bitmap.GetPixels().ToPointer();
+        int bpp = bitmap.BytesPerPixel;
+        int rowBytes = bitmap.RowBytes;
+        bool isBgra = bitmap.ColorType == SKColorType.Bgra8888;
+        int redIdx = isBgra ? 2 : 0;
+        int blueIdx = isBgra ? 0 : 2;
+
+        var result = new List<AstrophotographyObject>(candidates.Count);
+
+        foreach (var obj in candidates)
+        {
+            int cx = Math.Clamp((int)Math.Round(obj.CenterX), 0, w - 1);
+            int cy = Math.Clamp((int)Math.Round(obj.CenterY), 0, h - 1);
+
+            float peakLum = 0f;
+            for (int dy = -2; dy <= 2; dy++)
+            {
+                int py = Math.Clamp(cy + dy, 0, h - 1);
+                byte* row = basePtr + ((long)py * rowBytes);
+                for (int dx = -2; dx <= 2; dx++)
+                {
+                    int px = Math.Clamp(cx + dx, 0, w - 1);
+                    byte* p = row + (px * bpp);
+                    float lum = (p[redIdx] * 0.299f) + (p[1] * 0.587f) + (p[blueIdx] * 0.114f);
+                    if (lum > peakLum) peakLum = lum;
+                }
+            }
+
+            float conf = obj.Confidence;
+            if (peakLum >= 245f)
+            {
+                conf = Math.Max(conf, 0.96f);
+            }
+            else if (peakLum >= 210f)
+            {
+                conf = Math.Max(conf, 0.88f);
+            }
+            else if (peakLum >= 160f && conf < 0.80f)
+            {
+                conf = Math.Max(conf, 0.82f);
+            }
+
+            result.Add(conf != obj.Confidence ? obj with { Confidence = conf } : obj);
+        }
+
+        return result;
     }
 
     public void Dispose()

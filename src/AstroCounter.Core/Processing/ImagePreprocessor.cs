@@ -2,6 +2,7 @@ namespace AstroCounter.Core.Processing;
 
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using BitMiracle.LibTiff.Classic;
 using SkiaSharp;
 
@@ -338,5 +339,376 @@ public static class ImagePreprocessor
         }
 
         return tensor;
+    }
+
+    public enum ExposureState
+    {
+        Optimal,
+        TooDark,
+        TooBright,
+        LowContrast
+    }
+
+    public record BrightnessCorrectionInfo(
+        ExposureState State,
+        bool WasAdjusted,
+        float OriginalMedianBg,
+        float OriginalStarPeak999,
+        string SummaryText);
+
+    /// <summary>
+    /// Automatically analyzes the astronomical image's sky background mesh and star signal dynamic range.
+    /// - If the image is TOO DARK (underexposed / linear stack), applies local black-point subtraction
+    ///   and an astronomical Midtone Transfer Function (MTF) stretch so faint/medium stars become clearly detectable.
+    /// - If the image is TOO BRIGHT (overexposed / light pollution dome / twilight sky glow), subtracts the 2D
+    ///   local color sky background gradient and stretches the true star signal above the noise floor.
+    /// </summary>
+    public static SKBitmap AutoBalanceBrightness(SKBitmap source, out BrightnessCorrectionInfo info)
+    {
+        int width = source.Width;
+        int height = source.Height;
+
+        using var bgraSource = source.ColorType == SKColorType.Bgra8888
+            ? null
+            : source.Copy(SKColorType.Bgra8888);
+        SKBitmap workSrc = bgraSource ?? source;
+
+        const int gridSize = 64;
+        int gridCols = Math.Max(1, (width + gridSize - 1) / gridSize);
+        int gridRows = Math.Max(1, (height + gridSize - 1) / gridSize);
+        int cellCount = gridCols * gridRows;
+
+        float[] gridBgR = new float[cellCount];
+        float[] gridBgG = new float[cellCount];
+        float[] gridBgB = new float[cellCount];
+        float[] gridBgL = new float[cellCount];
+        float[] gridSigma = new float[cellCount];
+        bool[] gridValid = new bool[cellCount];
+
+        var bufR = new float[1024];
+        var bufG = new float[1024];
+        var bufB = new float[1024];
+        var bufL = new float[1024];
+        var bufDev = new float[1024];
+
+        unsafe
+        {
+            byte* srcPtr = (byte*)workSrc.GetPixels();
+            int stride = workSrc.RowBytes;
+
+            for (int gy = 0; gy < gridRows; gy++)
+            {
+                int y0 = gy * gridSize;
+                int y1 = Math.Min(height, y0 + gridSize);
+                int stepY = Math.Max(1, (y1 - y0) / 16);
+
+                for (int gx = 0; gx < gridCols; gx++)
+                {
+                    int x0 = gx * gridSize;
+                    int x1 = Math.Min(width, x0 + gridSize);
+                    int stepX = Math.Max(1, (x1 - x0) / 16);
+
+                    int count = 0;
+                    int nonZero = 0;
+                    for (int y = y0; y < y1 && count < 1024; y += stepY)
+                    {
+                        byte* row = srcPtr + (y * stride);
+                        for (int x = x0; x < x1 && count < 1024; x += stepX)
+                        {
+                            byte b = row[(x * 4) + 0];
+                            byte g = row[(x * 4) + 1];
+                            byte r = row[(x * 4) + 2];
+                            float lum = (0.299f * r) + (0.587f * g) + (0.114f * b);
+                            if (r > 0 || g > 0 || b > 0) nonZero++;
+
+                            bufR[count] = r;
+                            bufG[count] = g;
+                            bufB[count] = b;
+                            bufL[count] = lum;
+                            count++;
+                        }
+                    }
+
+                    int idx = (gy * gridCols) + gx;
+                    bool isOuterBorderCell = gy == 0 || gy == gridRows - 1 || gx == 0 || gx == gridCols - 1;
+                    if (count < 4 || (nonZero == 0 && isOuterBorderCell))
+                    {
+                        gridValid[idx] = false;
+                        continue;
+                    }
+
+                    Array.Sort(bufR, 0, count);
+                    Array.Sort(bufG, 0, count);
+                    Array.Sort(bufB, 0, count);
+                    Array.Sort(bufL, 0, count);
+
+                    // Use 30th percentile as sky background to avoid star contamination
+                    int bgPos = (int)(count * 0.30f);
+                    float medL = bufL[bgPos];
+                    gridBgR[idx] = bufR[bgPos];
+                    gridBgG[idx] = bufG[bgPos];
+                    gridBgB[idx] = bufB[bgPos];
+                    gridBgL[idx] = medL;
+
+                    for (int i = 0; i < count; i++)
+                    {
+                        bufDev[i] = Math.Abs(bufL[i] - medL);
+                    }
+                    Array.Sort(bufDev, 0, count);
+                    float mad = bufDev[count / 2];
+                    gridSigma[idx] = Math.Max(0.25f, mad * 1.4826f);
+                    gridValid[idx] = true;
+                }
+            }
+
+            // Collect global background statistics from valid cells
+            var validBgList = new System.Collections.Generic.List<float>(cellCount);
+            var validSigmaList = new System.Collections.Generic.List<float>(cellCount);
+            for (int i = 0; i < cellCount; i++)
+            {
+                if (gridValid[i])
+                {
+                    validBgList.Add(gridBgL[i]);
+                    validSigmaList.Add(gridSigma[i]);
+                }
+            }
+
+            float globalMedianBg = 0f;
+            float globalSigma = 0.5f;
+            if (validBgList.Count > 0)
+            {
+                validBgList.Sort();
+                validSigmaList.Sort();
+                globalMedianBg = validBgList[validBgList.Count / 2];
+                globalSigma = validSigmaList[validSigmaList.Count / 2];
+            }
+
+            // Fill any invalid border cells with global median
+            for (int i = 0; i < cellCount; i++)
+            {
+                if (!gridValid[i])
+                {
+                    gridBgR[i] = globalMedianBg;
+                    gridBgG[i] = globalMedianBg;
+                    gridBgB[i] = globalMedianBg;
+                    gridBgL[i] = globalMedianBg;
+                    gridSigma[i] = globalSigma;
+                }
+            }
+
+            // Sample net star signals across the image (taking 2x2 local max so tiny 1-2px stars are never missed)
+            int sampleStepY = Math.Max(1, height / 400);
+            int sampleStepX = Math.Max(1, width / 400);
+            var netSignals = new System.Collections.Generic.List<float>(160000);
+
+            for (int y = 0; y < height; y += sampleStepY)
+            {
+                byte* row0 = srcPtr + (y * stride);
+                byte* row1 = srcPtr + (Math.Min(height - 1, y + 1) * stride);
+                int gy = Math.Clamp(y / gridSize, 0, gridRows - 1);
+                for (int x = 0; x < width; x += sampleStepX)
+                {
+                    int gx = Math.Clamp(x / gridSize, 0, gridCols - 1);
+                    int idx = (gy * gridCols) + gx;
+                    if (!gridValid[idx]) continue;
+
+                    int xNext = Math.Min(width - 1, x + 1);
+                    float lum00 = (0.299f * row0[(x * 4) + 2]) + (0.587f * row0[(x * 4) + 1]) + (0.114f * row0[(x * 4) + 0]);
+                    float lum10 = (0.299f * row0[(xNext * 4) + 2]) + (0.587f * row0[(xNext * 4) + 1]) + (0.114f * row0[(xNext * 4) + 0]);
+                    float lum01 = (0.299f * row1[(x * 4) + 2]) + (0.587f * row1[(x * 4) + 1]) + (0.114f * row1[(x * 4) + 0]);
+                    float lum = Math.Max(lum00, Math.Max(lum10, lum01));
+
+                    float net = Math.Max(0f, lum - gridBgL[idx]);
+                    netSignals.Add(net);
+                }
+            }
+
+            netSignals.Sort();
+            int nSig = netSignals.Count;
+            float p95 = nSig > 0 ? netSignals[Math.Clamp((int)(nSig * 0.95f), 0, nSig - 1)] : 8f;
+            float p98 = nSig > 0 ? netSignals[Math.Clamp((int)(nSig * 0.98f), 0, nSig - 1)] : 15f;
+            float p99 = nSig > 0 ? netSignals[Math.Clamp((int)(nSig * 0.99f), 0, nSig - 1)] : 30f;
+            float p995 = nSig > 0 ? netSignals[Math.Clamp((int)(nSig * 0.995f), 0, nSig - 1)] : 50f;
+            float p999 = nSig > 0 ? netSignals[Math.Clamp((int)(nSig * 0.999f), 0, nSig - 1)] : 100f;
+            float p9997 = nSig > 0 ? netSignals[Math.Clamp((int)(nSig * 0.9997f), 0, nSig - 1)] : 150f;
+
+            ExposureState state;
+            if (globalMedianBg > 45.0f)
+            {
+                state = ExposureState.TooBright;
+            }
+            else if (p999 < 110.0f ||
+                     p995 < 42.0f ||
+                     (globalMedianBg < 14.0f && p98 < 30.0f) ||
+                     (globalMedianBg < 24.0f && p95 < 12.0f && p99 < 55.0f))
+            {
+                state = ExposureState.TooDark;
+            }
+            else if (p999 < 140.0f && p995 < 60.0f)
+            {
+                state = ExposureState.LowContrast;
+            }
+            else
+            {
+                state = ExposureState.Optimal;
+            }
+
+            bool tr = AstroCounter.Core.Astrometry.CataloguePlateSolver.UseTurkishLanguage;
+
+            if (state == ExposureState.Optimal)
+            {
+                info = new BrightnessCorrectionInfo(
+                    ExposureState.Optimal,
+                    false,
+                    globalMedianBg,
+                    p999,
+                    tr
+                        ? $"Parlaklık dengeli (Arka plan: {globalMedianBg:F0}, Yıldız kontrastı: +{p999:F0})"
+                        : $"Optimal exposure (Background: {globalMedianBg:F0}, Star contrast: +{p999:F0})");
+                return source.Copy();
+            }
+
+            var result = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+            byte* dstPtr = (byte*)result.GetPixels();
+            int dstStride = result.RowBytes;
+
+            // Precompute 4096-entry MTF lookup table for fast per-pixel transformation
+            const int lutSize = 4096;
+            float[] lut = new float[lutSize + 1];
+
+            float whiteSpan;
+            float targetFloor;
+
+            if (state == ExposureState.TooBright)
+            {
+                // For overly bright / light-polluted images:
+                // Subtract local sky glow and expand star peaks
+                for (int i = 0; i <= lutSize; i++)
+                {
+                    float t = i / (float)lutSize;
+                    lut[i] = MathF.Pow(t, 0.80f);
+                }
+                whiteSpan = Math.Max(14.0f, p9997 * 1.02f);
+                targetFloor = 10.0f;
+            }
+            else
+            {
+                // For overly dark / low-contrast images:
+                // Astronomical Midtone Transfer Function (MTF): MTF(t, m) = (m - 1)*t / ((2*m - 1)*t - m)
+                // Lower m (0.06..0.14) gives a strong PixInsight/Siril STF stretch for very dark images.
+                float m = p99 < 10.0f ? 0.06f
+                        : p99 < 22.0f ? 0.09f
+                        : 0.14f;
+
+                for (int i = 0; i <= lutSize; i++)
+                {
+                    float t = i / (float)lutSize;
+                    float denom = (((2.0f * m) - 1.0f) * t) - m;
+                    lut[i] = Math.Abs(denom) > 1e-6f ? Math.Clamp(((m - 1.0f) * t) / denom, 0f, 1f) : t;
+                }
+
+                // Anchor white point to p99/p995 so a few saturated pixels at 255 never prevent faint stars from stretching
+                whiteSpan = Math.Clamp(Math.Max(p99 * 2.2f, Math.Min(p995 * 1.6f, 95.0f)), 6.0f, 95.0f);
+                targetFloor = 18.0f;
+            }
+
+            float invWhite = lutSize / whiteSpan;
+
+            Parallel.For(0, height, y =>
+            {
+                byte* sRow = srcPtr + (y * stride);
+                byte* dRow = dstPtr + (y * dstStride);
+
+                // Bilinear grid coordinates in Y
+                float fy = ((y + 0.5f) / gridSize) - 0.5f;
+                int gy0 = Math.Clamp((int)MathF.Floor(fy), 0, gridRows - 1);
+                int gy1 = Math.Clamp(gy0 + 1, 0, gridRows - 1);
+                float wy = Math.Clamp(fy - gy0, 0f, 1f);
+
+                for (int x = 0; x < width; x++)
+                {
+                    byte b = sRow[(x * 4) + 0];
+                    byte g = sRow[(x * 4) + 1];
+                    byte r = sRow[(x * 4) + 2];
+                    byte a = sRow[(x * 4) + 3];
+
+                    float fx = ((x + 0.5f) / gridSize) - 0.5f;
+                    int gx0 = Math.Clamp((int)MathF.Floor(fx), 0, gridCols - 1);
+                    int gx1 = Math.Clamp(gx0 + 1, 0, gridCols - 1);
+                    float wx = Math.Clamp(fx - gx0, 0f, 1f);
+
+                    int i00 = (gy0 * gridCols) + gx0;
+                    int i10 = (gy0 * gridCols) + gx1;
+                    int i01 = (gy1 * gridCols) + gx0;
+                    int i11 = (gy1 * gridCols) + gx1;
+
+                    // Preserve pure black panorama void borders only in invalid outer cells
+                    if (r == 0 && g == 0 && b == 0 && (!gridValid[i00] || !gridValid[i11]))
+                    {
+                        dRow[(x * 4) + 0] = 0;
+                        dRow[(x * 4) + 1] = 0;
+                        dRow[(x * 4) + 2] = 0;
+                        dRow[(x * 4) + 3] = a;
+                        continue;
+                    }
+
+                    float w00 = (1f - wx) * (1f - wy);
+                    float w10 = wx * (1f - wy);
+                    float w01 = (1f - wx) * wy;
+                    float w11 = wx * wy;
+
+                    float locBgR = (w00 * gridBgR[i00]) + (w10 * gridBgR[i10]) + (w01 * gridBgR[i01]) + (w11 * gridBgR[i11]);
+                    float locBgG = (w00 * gridBgG[i00]) + (w10 * gridBgG[i10]) + (w01 * gridBgG[i01]) + (w11 * gridBgG[i11]);
+                    float locBgB = (w00 * gridBgB[i00]) + (w10 * gridBgB[i10]) + (w01 * gridBgB[i01]) + (w11 * gridBgB[i11]);
+                    float locSig = (w00 * gridSigma[i00]) + (w10 * gridSigma[i10]) + (w01 * gridSigma[i01]) + (w11 * gridSigma[i11]);
+
+                    float netR, netG, netB;
+                    if (state == ExposureState.TooBright)
+                    {
+                        float noisePedestal = 0.85f * locSig;
+                        netR = Math.Max(0f, r - (locBgR + noisePedestal));
+                        netG = Math.Max(0f, g - (locBgG + noisePedestal));
+                        netB = Math.Max(0f, b - (locBgB + noisePedestal));
+                    }
+                    else
+                    {
+                        // In dark images, subtract only a soft fraction of the background pedestal so faint stars and nebulae are never crushed
+                        float darkPedR = Math.Max(0f, locBgR - 1.5f) * 0.65f;
+                        float darkPedG = Math.Max(0f, locBgG - 1.5f) * 0.65f;
+                        float darkPedB = Math.Max(0f, locBgB - 1.5f) * 0.65f;
+                        netR = Math.Max(0f, r - darkPedR);
+                        netG = Math.Max(0f, g - darkPedG);
+                        netB = Math.Max(0f, b - darkPedB);
+                    }
+
+                    int idxR = Math.Clamp((int)(netR * invWhite), 0, lutSize);
+                    int idxG = Math.Clamp((int)(netG * invWhite), 0, lutSize);
+                    int idxB = Math.Clamp((int)(netB * invWhite), 0, lutSize);
+
+                    float spanOut = 255.0f - targetFloor;
+                    dRow[(x * 4) + 0] = (byte)Math.Clamp(targetFloor + (spanOut * lut[idxB]), 0f, 255f);
+                    dRow[(x * 4) + 1] = (byte)Math.Clamp(targetFloor + (spanOut * lut[idxG]), 0f, 255f);
+                    dRow[(x * 4) + 2] = (byte)Math.Clamp(targetFloor + (spanOut * lut[idxR]), 0f, 255f);
+                    dRow[(x * 4) + 3] = a;
+                }
+            });
+
+            string desc = state switch
+            {
+                ExposureState.TooDark => tr
+                    ? $"Çok karanlık görüntü otomatik aydınlatıldı (MTF Stretch: Arka plan {globalMedianBg:F1} -> {targetFloor:F0})"
+                    : $"Underexposed image stretched automatically (MTF Stretch: Background {globalMedianBg:F1} -> {targetFloor:F0})",
+                ExposureState.TooBright => tr
+                    ? $"Çok parlak arka plan temizlendi ve yıldızlar belirginleştirildi (Arka plan {globalMedianBg:F0} -> {targetFloor:F0})"
+                    : $"Overexposed sky glow subtracted and star contrast enhanced (Background {globalMedianBg:F0} -> {targetFloor:F0})",
+                ExposureState.LowContrast => tr
+                    ? $"Düşük kontrastlı yıldız alanı otomatik güçlendirildi (+{p999:F0} -> +245)"
+                    : $"Low-contrast star field enhanced automatically (+{p999:F0} -> +245)",
+                _ => tr ? "Parlaklık dengelendi" : "Brightness balanced"
+            };
+
+            info = new BrightnessCorrectionInfo(state, true, globalMedianBg, p999, desc);
+            return result;
+        }
     }
 }

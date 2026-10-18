@@ -130,4 +130,40 @@ public class InferenceEngineTests
         Assert.True(new FileInfo(tempPng).Length > 1000);
         File.Delete(tempPng);
     }
+
+    [Fact]
+    public void DetectStars_BrightStarVsFaintStars_BrightStarGetsTier1Green()
+    {
+        // Create a 200x200 synthetic image with:
+        // Background sky = 15
+        // A very bright star at (60, 60) with saturated peak 255 and halo
+        // A faint star at (140, 140) with peak 40
+        using var bmp = new SkiaSharp.SKBitmap(200, 200, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Premul);
+        using var canvas = new SkiaSharp.SKCanvas(bmp);
+        canvas.Clear(new SkiaSharp.SKColor(15, 15, 15));
+
+        // Draw bright star with halo
+        using var brightPaint = new SkiaSharp.SKPaint { Color = new SkiaSharp.SKColor(255, 255, 255), IsAntialias = true };
+        canvas.DrawCircle(60, 60, 6, brightPaint);
+
+        // Draw faint star
+        using var faintPaint = new SkiaSharp.SKPaint { Color = new SkiaSharp.SKColor(40, 40, 40), IsAntialias = true };
+        canvas.DrawCircle(140, 140, 2, faintPaint);
+
+        var config = new TilingConfig(MinConfidence: 0.10f);
+        var stars = PhotometricStarFinder.DetectStars(bmp, config);
+
+        Assert.True(stars.Count >= 2, $"Expected at least 2 stars, found {stars.Count}");
+
+        var brightStar = stars.OrderBy(s => Math.Abs(s.CenterX - 60) + Math.Abs(s.CenterY - 60)).First();
+        var faintStar = stars.OrderBy(s => Math.Abs(s.CenterX - 140) + Math.Abs(s.CenterY - 140)).First();
+
+        // The brightest star must be Tier 1 High (confidence >= 0.80 -> Green)
+        Assert.Equal(ConfidenceTier.Tier1_High, brightStar.Tier);
+        Assert.True(brightStar.Confidence >= 0.85f, $"Bright star confidence was {brightStar.Confidence:P0}, expected >= 85%");
+
+        // The bright star must have strictly higher confidence than the faint star
+        Assert.True(brightStar.Confidence > faintStar.Confidence,
+            $"Bright star confidence ({brightStar.Confidence}) should be higher than faint star ({faintStar.Confidence})");
+    }
 }

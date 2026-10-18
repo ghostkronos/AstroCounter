@@ -64,22 +64,57 @@ public static class PhotometricStarFinder
                 (float median, float std) = ComputeSigmaClippedStats(sampleBuffer, sampleCount);
                 int gridIdx = (gy * gridCols) + gx;
                 bgGrid[gridIdx] = median;
-                stdGrid[gridIdx] = Math.Max(0.75f, std);
+                stdGrid[gridIdx] = Math.Max(0.5f, std);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
         }
 
+        // Clamp any outlier local noise to avoid distortion from dense clusters or nebulosity
+        var allStds = (float[])stdGrid.Clone();
+        Array.Sort(allStds);
+        float globalMedianStd = allStds[allStds.Length / 2];
+        float maxAllowedStd = Math.Max(4.0f, globalMedianStd * 2.8f);
+        for (int i = 0; i < stdGrid.Length; i++)
+        {
+            stdGrid[i] = Math.Clamp(stdGrid[i], 0.5f, maxAllowedStd);
+        }
+
         progress?.Report(0.35f);
+
+        // Smooth bilinear interpolation helper for local background and noise
+        (float localBg, float localStd) GetLocalBackgroundAndNoise(int px, int py)
+        {
+            float fy = ((py + 0.5f) / GridSize) - 0.5f;
+            int gy0 = Math.Clamp((int)MathF.Floor(fy), 0, gridRows - 1);
+            int gy1 = Math.Clamp(gy0 + 1, 0, gridRows - 1);
+            float wy = Math.Clamp(fy - gy0, 0f, 1f);
+
+            float fx = ((px + 0.5f) / GridSize) - 0.5f;
+            int gx0 = Math.Clamp((int)MathF.Floor(fx), 0, gridCols - 1);
+            int gx1 = Math.Clamp(gx0 + 1, 0, gridCols - 1);
+            float wx = Math.Clamp(fx - gx0, 0f, 1f);
+
+            int i00 = (gy0 * gridCols) + gx0;
+            int i10 = (gy0 * gridCols) + gx1;
+            int i01 = (gy1 * gridCols) + gx0;
+            int i11 = (gy1 * gridCols) + gx1;
+
+            float w00 = (1f - wx) * (1f - wy);
+            float w10 = wx * (1f - wy);
+            float w01 = (1f - wx) * wy;
+            float w11 = wx * wy;
+
+            float bg = (w00 * bgGrid[i00]) + (w10 * bgGrid[i10]) + (w01 * bgGrid[i01]) + (w11 * bgGrid[i11]);
+            float std = (w00 * stdGrid[i00]) + (w10 * stdGrid[i10]) + (w01 * stdGrid[i01]) + (w11 * stdGrid[i11]);
+            return (bg, Math.Max(0.5f, std));
+        }
 
         // 3. Peak Detection with 5x5 strict local maximum filter
         var candidates = new List<AstrophotographyObject>();
         int id = 1;
         int border = 4;
         float minConfidence = config?.MinConfidence ?? 0.02f;
-        // 3.0 sigma maps to confidence 0.25 (i.e. 25%).
-        // For confidence C < 0.25, SNR sigma = (C / 0.25) * 3.0.
-        // We set a minimum sigma floor of 0.20 to prevent detecting flat noise.
         float minSigma = Math.Clamp((minConfidence / 0.25f) * 3.0f, 0.20f, 3.0f);
 
         for (int y = border; y < height - border; y++)
@@ -90,16 +125,11 @@ public static class PhotometricStarFinder
                 progress?.Report(0.35f + (0.50f * ((float)y / height)));
             }
 
-            int gy = Math.Clamp(y / GridSize, 0, gridRows - 1);
             int rowOffset = y * width;
 
             for (int x = border; x < width - border; x++)
             {
-                int gx = Math.Clamp(x / GridSize, 0, gridCols - 1);
-                int gridIdx = (gy * gridCols) + gx;
-
-                float localBg = bgGrid[gridIdx];
-                float localStd = stdGrid[gridIdx];
+                var (localBg, localStd) = GetLocalBackgroundAndNoise(x, y);
                 float threshold = localBg + (minSigma * localStd);
 
                 float centerVal = luminance[rowOffset + x];
@@ -130,40 +160,72 @@ public static class PhotometricStarFinder
                 float snr = netPeak / localStd;
 
                 // Astronomical Confidence score mapping:
-                // SNR >= 10 sigma -> Tier 1 (c >= 0.80)
-                // 5 - 10 sigma    -> Tier 2 (0.50 <= c < 0.80)
-                // 3 - 5 sigma     -> Tier 3 (0.25 <= c < 0.50)
-                // < 3 sigma       -> Noise (< 0.25)
+                // Tier 1 High (Green, >= 0.80): Prominent / Bright stars (SNR >= 10 sigma OR netPeak >= 90)
+                // Scales smoothly from 0.80 up to 1.00 based on both SNR and peak star brightness
+                // Tier 2 Medium (Yellow, 0.50 - 0.79): Medium stars (SNR 5-10 sigma)
+                // Tier 3 Low (Orange, 0.25 - 0.49): Faint stars (SNR 3-5 sigma)
+                // Filtered Noise (Red, < 0.25): Noise (< 3 sigma)
                 float confidence;
-                if (snr >= 10.0f)
+                if (snr >= 10.0f || netPeak >= 90.0f)
                 {
-                    confidence = Math.Clamp(0.80f + (((snr - 10.0f) / 10.0f) * 0.20f), 0.80f, 1.0f);
+                    float snrScore = Math.Clamp((snr - 10.0f) / 60.0f, 0f, 1f);
+                    float peakScore = Math.Clamp(netPeak / 235.0f, 0f, 1f);
+                    confidence = Math.Clamp(0.80f + (0.10f * snrScore) + (0.10f * peakScore), 0.80f, 1.0f);
                 }
                 else if (snr >= 5.0f)
                 {
-                    confidence = 0.50f + (((snr - 5.0f) / 5.0f) * 0.30f);
+                    confidence = 0.50f + (((snr - 5.0f) / 5.0f) * 0.29f);
                 }
                 else if (snr >= 3.0f)
                 {
-                    confidence = 0.25f + (((snr - 3.0f) / 2.0f) * 0.25f);
+                    confidence = 0.25f + (((snr - 3.0f) / 2.0f) * 0.24f);
                 }
                 else
                 {
-                    confidence = Math.Max(0.01f, (snr / 3.0f) * 0.25f);
+                    confidence = Math.Max(0.01f, (snr / 3.0f) * 0.24f);
                 }
 
                 if (confidence < minConfidence) continue;
 
+                // Centroid refinement for saturated or bright stars
+                float starCenterX = x;
+                float starCenterY = y;
+                if (centerVal >= 235f)
+                {
+                    float sumW = 0f, sumX = 0f, sumY = 0f;
+                    int rCentroid = 4;
+                    for (int cdy = -rCentroid; cdy <= rCentroid; cdy++)
+                    {
+                        int cy = y + cdy;
+                        if (cy < 0 || cy >= height) continue;
+                        int crow = cy * width;
+                        for (int cdx = -rCentroid; cdx <= rCentroid; cdx++)
+                        {
+                            int cx = x + cdx;
+                            if (cx < 0 || cx >= width) continue;
+                            float wgt = Math.Max(0f, luminance[crow + cx] - localBg);
+                            sumW += wgt;
+                            sumX += cx * wgt;
+                            sumY += cy * wgt;
+                        }
+                    }
+                    if (sumW > 0)
+                    {
+                        starCenterX = sumX / sumW;
+                        starCenterY = sumY / sumW;
+                    }
+                }
+
                 // Estimate Point Spread Function (PSF) size / star diameter
                 float halfMax = localBg + (netPeak / 2.0f);
-                float radius = MeasureFwhmRadius(luminance, width, height, x, y, halfMax);
-                float boxSize = Math.Clamp(radius * 2.4f, 6.0f, 48.0f);
+                float radius = MeasureFwhmRadius(luminance, width, height, (int)Math.Round(starCenterX), (int)Math.Round(starCenterY), halfMax);
+                float boxSize = Math.Clamp(radius * 2.4f, 6.0f, 54.0f);
 
-                float boxX = Math.Max(0, x - (boxSize / 2.0f));
-                float boxY = Math.Max(0, y - (boxSize / 2.0f));
+                float boxX = Math.Max(0, starCenterX - (boxSize / 2.0f));
+                float boxY = Math.Max(0, starCenterY - (boxSize / 2.0f));
 
                 string classification;
-                if (boxSize > 30.0f && snr < 12.0f)
+                if (boxSize > 36.0f && netPeak < 45.0f && snr < 9.0f)
                 {
                     classification = "galaxy";
                 }
@@ -290,42 +352,30 @@ public static class PhotometricStarFinder
         Array.Sort(buffer, 0, count);
         float median = buffer[count / 2];
 
-        // Standard deviation around median
-        float sumSq = 0f;
-        for (int i = 0; i < count; i++)
+        // In astronomical images, stars only contribute POSITIVE flux above the sky background.
+        // Therefore, pixels below the median (buffer[0..count/2]) are pure, uncontaminated sky noise.
+        // For a Gaussian distribution, the variance of the lower half around the median is identically sigma^2.
+        int halfCount = count / 2;
+        if (halfCount > 0)
         {
-            float diff = buffer[i] - median;
-            sumSq += diff * diff;
-        }
-        float std = (float)Math.Sqrt(sumSq / count);
-
-        // One-iteration sigma clip at 2.5 sigma
-        float lower = median - (2.5f * std);
-        float upper = median + (2.5f * std);
-
-        float clippedSum = 0f;
-        float clippedSumSq = 0f;
-        int clippedCount = 0;
-
-        for (int i = 0; i < count; i++)
-        {
-            float v = buffer[i];
-            if (v >= lower && v <= upper)
+            double lowerHalfSumSq = 0;
+            for (int i = 0; i < halfCount; i++)
             {
-                clippedSum += v;
-                clippedSumSq += v * v;
-                clippedCount++;
+                float diff = buffer[i] - median;
+                lowerHalfSumSq += diff * diff;
             }
+            float lowerHalfStd = (float)Math.Sqrt(lowerHalfSumSq / halfCount);
+
+            // Also compute lower quartile IQR: P50 - P25 = 0.6745 * sigma -> sigma = IQR * 1.4826
+            int q1Idx = count / 4;
+            float iqrStd = (median - buffer[q1Idx]) * 1.4826f;
+
+            // Use the robust lower-half estimator; this will NEVER be inflated by bright star flux
+            float robustStd = Math.Max(0.5f, Math.Min(lowerHalfStd, iqrStd > 0.05f ? iqrStd : lowerHalfStd));
+            return (median, robustStd);
         }
 
-        if (clippedCount > 0)
-        {
-            float mean = clippedSum / clippedCount;
-            float var = (clippedSumSq / clippedCount) - (mean * mean);
-            return (mean, (float)Math.Sqrt(Math.Max(0.25f, var)));
-        }
-
-        return (median, Math.Max(0.5f, std));
+        return (median, 1.0f);
     }
 
     private static float MeasureFwhmRadius(float[] lum, int width, int height, int cx, int cy, float halfMax)
