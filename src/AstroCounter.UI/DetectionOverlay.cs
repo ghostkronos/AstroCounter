@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Windows;
 using System.Windows.Media;
+using AstroCounter.Core.Astrometry;
 using AstroCounter.Core.Models;
 
 /// <summary>
@@ -36,6 +37,22 @@ public sealed class DetectionOverlay : FrameworkElement
     public static readonly DependencyProperty ShowLabelsProperty = DependencyProperty.Register(
         nameof(ShowLabels), typeof(bool), typeof(DetectionOverlay),
         new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty ShowSphericalGridProperty = DependencyProperty.Register(
+        nameof(ShowSphericalGrid), typeof(bool), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty WcsProperty = DependencyProperty.Register(
+        nameof(Wcs), typeof(WcsMatrix), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty TargetMarkerPixelProperty = DependencyProperty.Register(
+        nameof(TargetMarkerPixel), typeof(Point?), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty TargetMarkerLabelProperty = DependencyProperty.Register(
+        nameof(TargetMarkerLabel), typeof(string), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
     private static readonly Brush[] TierBrushes =
     {
@@ -84,6 +101,30 @@ public sealed class DetectionOverlay : FrameworkElement
         set => SetValue(ShowLabelsProperty, value);
     }
 
+    public bool ShowSphericalGrid
+    {
+        get => (bool)GetValue(ShowSphericalGridProperty);
+        set => SetValue(ShowSphericalGridProperty, value);
+    }
+
+    public WcsMatrix? Wcs
+    {
+        get => (WcsMatrix?)GetValue(WcsProperty);
+        set => SetValue(WcsProperty, value);
+    }
+
+    public Point? TargetMarkerPixel
+    {
+        get => (Point?)GetValue(TargetMarkerPixelProperty);
+        set => SetValue(TargetMarkerPixelProperty, value);
+    }
+
+    public string? TargetMarkerLabel
+    {
+        get => (string?)GetValue(TargetMarkerLabelProperty);
+        set => SetValue(TargetMarkerLabelProperty, value);
+    }
+
     /// <summary>Current zoom factor of the surrounding scale transform.</summary>
     public double Zoom
     {
@@ -129,12 +170,19 @@ public sealed class DetectionOverlay : FrameworkElement
 
         double inv = 1.0 / Math.Max(_zoom, 0.005);
 
+        if (ShowSphericalGrid && Wcs != null)
+        {
+            DrawSphericalGrid(dc, inv, width, height);
+        }
+
         DrawRegions(dc, inv);
 
         if (ShowBoxes)
         {
             DrawObjects(dc, inv, width, height);
         }
+
+        DrawTargetMarker(dc, inv);
 
         DrawPreview(dc, inv);
     }
@@ -200,7 +248,10 @@ public sealed class DetectionOverlay : FrameworkElement
 
         if (labelObjects.Count > MaxLabels)
         {
-            DrawHint(dc, inv, $"Etiketler için yakınlaştırın (görünür yıldız: {labelObjects.Count})");
+            string hint = CataloguePlateSolver.UseTurkishLanguage
+                ? $"Etiketler için yakınlaştırın (görünür yıldız: {labelObjects.Count})"
+                : $"Zoom in to display labels (visible stars: {labelObjects.Count})";
+            DrawHint(dc, inv, hint);
             return;
         }
 
@@ -290,6 +341,112 @@ public sealed class DetectionOverlay : FrameworkElement
         }
         geometry.Freeze();
         return geometry;
+    }
+
+    private void DrawSphericalGrid(DrawingContext dc, double inv, double width, double height)
+    {
+        var wcs = Wcs;
+        if (wcs == null) return;
+
+        var gridLines = wcs.GenerateSphericalGrid();
+        if (gridLines.Count == 0) return;
+
+        var gridPen = new Pen(MakeBrush(56, 189, 248, 100), 1.2 * inv);
+        gridPen.Freeze();
+
+        var labelBrush = MakeBrush(56, 189, 248, 220);
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+        double fontSize = Math.Max(9.0, 11.0 * inv);
+
+        foreach (var line in gridLines)
+        {
+            if (line.Points.Length < 2) continue;
+
+            var streamGeom = new StreamGeometry();
+            using (var ctx = streamGeom.Open())
+            {
+                ctx.BeginFigure(new Point(line.Points[0].X, line.Points[0].Y), isFilled: false, isClosed: false);
+                for (int i = 1; i < line.Points.Length; i++)
+                {
+                    ctx.LineTo(new Point(line.Points[i].X, line.Points[i].Y), isStroked: true, isSmoothJoin: true);
+                }
+            }
+            streamGeom.Freeze();
+            dc.DrawGeometry(null, gridPen, streamGeom);
+
+            // Draw coordinate label near the middle of the line
+            int midIdx = line.Points.Length / 2;
+            var midPt = line.Points[midIdx];
+            if (midPt.X >= 0 && midPt.X <= width && midPt.Y >= 0 && midPt.Y <= height)
+            {
+                var ft = new FormattedText(
+                    line.Label,
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    typeface,
+                    fontSize,
+                    labelBrush,
+                    dpi);
+
+                dc.DrawRectangle(LabelBackground, null, new Rect(midPt.X + (4 * inv), midPt.Y - (ft.Height / 2), ft.Width + (6 * inv), ft.Height));
+                dc.DrawText(ft, new Point(midPt.X + (7 * inv), midPt.Y - (ft.Height / 2)));
+            }
+        }
+    }
+
+    private void DrawTargetMarker(DrawingContext dc, double inv)
+    {
+        if (!TargetMarkerPixel.HasValue) return;
+
+        Point pt = TargetMarkerPixel.Value;
+        double outerRad = 22.0 * inv;
+        double innerRad = 10.0 * inv;
+        double tickLen = 9.0 * inv;
+
+        var shadowPen = new Pen(MakeBrush(0, 0, 0, 210), 4.0 * inv);
+        shadowPen.Freeze();
+        var cyanPen = new Pen(MakeBrush(56, 189, 248, 255), 2.2 * inv);
+        cyanPen.Freeze();
+        var goldPen = new Pen(MakeBrush(250, 204, 21, 240), 1.6 * inv) { DashStyle = DashStyles.Dash };
+        goldPen.Freeze();
+
+        // Outer dashed ring + inner solid reticle ring
+        dc.DrawEllipse(null, shadowPen, pt, outerRad, outerRad);
+        dc.DrawEllipse(null, goldPen, pt, outerRad, outerRad);
+        dc.DrawEllipse(null, shadowPen, pt, innerRad, innerRad);
+        dc.DrawEllipse(null, cyanPen, pt, innerRad, innerRad);
+
+        // 4 cardinal crosshair ticks outside inner ring
+        dc.DrawLine(shadowPen, new Point(pt.X - innerRad - tickLen, pt.Y), new Point(pt.X - innerRad, pt.Y));
+        dc.DrawLine(shadowPen, new Point(pt.X + innerRad, pt.Y), new Point(pt.X + innerRad + tickLen, pt.Y));
+        dc.DrawLine(shadowPen, new Point(pt.X, pt.Y - innerRad - tickLen), new Point(pt.X, pt.Y - innerRad));
+        dc.DrawLine(shadowPen, new Point(pt.X, pt.Y + innerRad), new Point(pt.X, pt.Y + innerRad + tickLen));
+
+        dc.DrawLine(cyanPen, new Point(pt.X - innerRad - tickLen, pt.Y), new Point(pt.X - innerRad, pt.Y));
+        dc.DrawLine(cyanPen, new Point(pt.X + innerRad, pt.Y), new Point(pt.X + innerRad + tickLen, pt.Y));
+        dc.DrawLine(cyanPen, new Point(pt.X, pt.Y - innerRad - tickLen), new Point(pt.X, pt.Y - innerRad));
+        dc.DrawLine(cyanPen, new Point(pt.X, pt.Y + innerRad), new Point(pt.X, pt.Y + innerRad + tickLen));
+
+        if (!string.IsNullOrWhiteSpace(TargetMarkerLabel))
+        {
+            double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+            var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+            var ft = new FormattedText(
+                TargetMarkerLabel,
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                typeface,
+                13.0 * inv,
+                MakeBrush(250, 204, 21, 255),
+                dpi);
+
+            double lx = pt.X + outerRad + (6 * inv);
+            double ly = pt.Y - (ft.Height / 2.0);
+            var bgRect = new Rect(lx - (6 * inv), ly - (3 * inv), ft.Width + (12 * inv), ft.Height + (6 * inv));
+            dc.DrawRoundedRectangle(LabelBackground, cyanPen, bgRect, 4 * inv, 4 * inv);
+            dc.DrawText(ft, new Point(lx, ly));
+        }
     }
 
     private static SolidColorBrush MakeBrush(byte r, byte g, byte b, byte a = 255)

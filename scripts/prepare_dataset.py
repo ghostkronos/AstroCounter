@@ -280,12 +280,11 @@ def prepare_dataset(
 
         print(f"    --> Üretilen dilim: {tiles_for_image}")
 
-    # Generate astro_data.yaml
-    yaml_path = Path("astro_data.yaml").resolve()
-    base_dataset_path = Path(output_dir).resolve()
+    # Generate astro_data.yaml using relative path for privacy and portability
+    yaml_path = Path("astro_data.yaml")
 
-    yaml_content = f"""# AstroCounter - YOLO11 Dataset Configuration
-path: {base_dataset_path.as_posix()}
+    yaml_content = """# AstroCounter - YOLO11 Dataset Configuration
+path: ./dataset
 train: images/train
 val: images/val
 

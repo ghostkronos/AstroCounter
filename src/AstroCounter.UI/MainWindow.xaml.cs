@@ -19,6 +19,8 @@ public partial class MainWindow : Window
     private Point _lastDragPoint;
     private bool _isPanning;
     private double _currentZoom = 1.0;
+    private bool _isUpdatingZoomOrRotation;
+    private Point _lastCenterPixel;
 
     private Point? _rectStart;
     private bool _isDrawingRect;
@@ -31,12 +33,75 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         PreviewKeyDown += Window_PreviewKeyDown;
+        Closed += (s, e) => Vm?.Dispose();
 
         if (Vm != null)
         {
             Vm.PropertyChanged += Vm_PropertyChanged;
+            Vm.RequestCenterOnPixel += CenterOnPixel;
+            Vm.RequestSetVisiblePixelsHeight += SetVisiblePixelsHeightFromStellarium;
+            Vm.RequestInvalidateOverlay += () => Overlay.InvalidateVisual();
         }
         ApplyToolCursor();
+    }
+
+    private void SetVisiblePixelsHeightFromStellarium(double targetVisiblePixelsHeight)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (Vm?.ImageBitmap == null || targetVisiblePixelsHeight <= 1.0) return;
+            double viewH = ViewerScrollViewer.ViewportHeight > 0 ? ViewerScrollViewer.ViewportHeight : ViewerScrollViewer.ActualHeight;
+            if (viewH <= 10.0) return;
+
+            double targetZoom = Math.Clamp(viewH / targetVisiblePixelsHeight, MinZoom, MaxZoom);
+            if (Math.Abs(targetZoom - _currentZoom) / Math.Max(0.01, _currentZoom) < 0.01) return;
+
+            Point keepCenter = _lastCenterPixel;
+            _isUpdatingZoomOrRotation = true;
+            try
+            {
+                SetZoom(targetZoom, updateViewport: false);
+                ViewerScrollViewer.UpdateLayout();
+                if (keepCenter.X != 0 || keepCenter.Y != 0)
+                {
+                    double viewW = ViewerScrollViewer.ViewportWidth > 0 ? ViewerScrollViewer.ViewportWidth : ViewerScrollViewer.ActualWidth;
+                    Point targetInViewer = Overlay.TranslatePoint(keepCenter, ViewerScrollViewer);
+                    ViewerScrollViewer.ScrollToHorizontalOffset(ViewerScrollViewer.HorizontalOffset + (targetInViewer.X - (viewW / 2.0)));
+                    ViewerScrollViewer.ScrollToVerticalOffset(ViewerScrollViewer.VerticalOffset + (targetInViewer.Y - (viewH / 2.0)));
+                }
+            }
+            finally
+            {
+                _isUpdatingZoomOrRotation = false;
+            }
+            UpdateViewport(notifyStellarium: false);
+        });
+    }
+
+    private void CenterOnPixel(double px, double py)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            if (Vm?.ImageBitmap == null) return;
+            _isUpdatingZoomOrRotation = true;
+            try
+            {
+                ViewerScrollViewer.UpdateLayout();
+                double viewW = ViewerScrollViewer.ViewportWidth > 0 ? ViewerScrollViewer.ViewportWidth : ViewerScrollViewer.ActualWidth;
+                double viewH = ViewerScrollViewer.ViewportHeight > 0 ? ViewerScrollViewer.ViewportHeight : ViewerScrollViewer.ActualHeight;
+                Point targetInViewer = Overlay.TranslatePoint(new Point(px, py), ViewerScrollViewer);
+                double deltaX = targetInViewer.X - (viewW / 2.0);
+                double deltaY = targetInViewer.Y - (viewH / 2.0);
+                ViewerScrollViewer.ScrollToHorizontalOffset(ViewerScrollViewer.HorizontalOffset + deltaX);
+                ViewerScrollViewer.ScrollToVerticalOffset(ViewerScrollViewer.VerticalOffset + deltaY);
+                _lastCenterPixel = new Point(px, py);
+            }
+            finally
+            {
+                _isUpdatingZoomOrRotation = false;
+            }
+            UpdateViewport(notifyStellarium: false);
+        });
     }
 
     private void Vm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -45,8 +110,24 @@ public partial class MainWindow : Window
         {
             case nameof(MainViewModel.ImageBitmap):
                 CancelDrawing();
+                if (Vm != null && Vm.ImageBitmap != null)
+                {
+                    ImageSurface.Margin = new Thickness(3000);
+                    _lastCenterPixel = new Point(Vm.ImageWidth / 2.0, Vm.ImageHeight / 2.0);
+                }
+                else
+                {
+                    ImageSurface.Margin = new Thickness(0);
+                }
                 // Wait for layout so the viewport size is known, then fit the new image to the window.
                 Dispatcher.BeginInvoke(new Action(FitToView), DispatcherPriority.Loaded);
+                break;
+            case nameof(MainViewModel.ImageRotationAngle):
+                if (Vm?.ImageBitmap != null)
+                {
+                    Point keepCenter = _lastCenterPixel;
+                    Dispatcher.BeginInvoke(new Action(() => CenterOnPixel(keepCenter.X, keepCenter.Y)), DispatcherPriority.Loaded);
+                }
                 break;
             case nameof(MainViewModel.Tool):
                 CancelDrawing();
@@ -91,7 +172,14 @@ public partial class MainWindow : Window
                 }
                 else
                 {
-                    MessageBox.Show("Lütfen geçerli bir görsel dosyası sürükleyin (PNG, JPG, TIFF, BMP, FITS).", "Desteklenmeyen Dosya", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    bool tr = AstroCounter.Core.Astrometry.CataloguePlateSolver.UseTurkishLanguage;
+                    MessageBox.Show(
+                        tr
+                            ? "Lütfen geçerli bir görsel dosyası sürükleyin (PNG, JPG, TIFF, BMP, FITS)."
+                            : "Please drop a valid image file (PNG, JPG, TIFF, BMP, FITS).",
+                        tr ? "Desteklenmeyen Dosya" : "Unsupported File",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
                 }
             }
         }
@@ -99,24 +187,46 @@ public partial class MainWindow : Window
 
     // ---------------------------------------------------------------- zoom / pan
 
-    private void SetZoom(double zoom)
+    private void SetZoom(double zoom, bool updateViewport = true)
     {
         _currentZoom = Math.Clamp(zoom, MinZoom, MaxZoom);
         CanvasScale.ScaleX = _currentZoom;
         CanvasScale.ScaleY = _currentZoom;
         ZoomPercentText.Text = $"{(int)Math.Round(_currentZoom * 100)}%";
         Overlay.Zoom = _currentZoom;
-        UpdateViewport();
+        if (updateViewport)
+        {
+            UpdateViewport(notifyStellarium: false);
+        }
     }
 
-    private void UpdateViewport()
+    private void UpdateViewport(bool notifyStellarium = false)
     {
+        if (_isUpdatingZoomOrRotation) return;
+
         double z = _currentZoom;
-        Overlay.Viewport = new Rect(
-            ViewerScrollViewer.HorizontalOffset / z,
-            ViewerScrollViewer.VerticalOffset / z,
-            ViewerScrollViewer.ViewportWidth / z,
-            ViewerScrollViewer.ViewportHeight / z);
+        double viewW = ViewerScrollViewer.ViewportWidth > 0 ? ViewerScrollViewer.ViewportWidth : ViewerScrollViewer.ActualWidth;
+        double viewH = ViewerScrollViewer.ViewportHeight > 0 ? ViewerScrollViewer.ViewportHeight : ViewerScrollViewer.ActualHeight;
+
+        if (Vm != null && Vm.ImageWidth > 0 && Vm.ImageHeight > 0 && viewW > 0 && viewH > 0)
+        {
+            Point viewCenter = new(viewW / 2.0, viewH / 2.0);
+            Point centerInImage = ViewerScrollViewer.TranslatePoint(viewCenter, Overlay);
+            double centerPxX = Math.Clamp(centerInImage.X, -Vm.ImageWidth * 0.5, Vm.ImageWidth * 1.5);
+            double centerPxY = Math.Clamp(centerInImage.Y, -Vm.ImageHeight * 0.5, Vm.ImageHeight * 1.5);
+            _lastCenterPixel = new Point(centerPxX, centerPxY);
+
+            double visibleW = viewW / z;
+            double visibleH = viewH / z;
+            double diag = Math.Sqrt((visibleW * visibleW) + (visibleH * visibleH));
+            Overlay.Viewport = new Rect(
+                centerPxX - (diag / 2.0),
+                centerPxY - (diag / 2.0),
+                diag,
+                diag);
+
+            Vm.OnViewportMoved(centerPxX, centerPxY, visibleH, notifyStellarium);
+        }
     }
 
     private void FitToView()
@@ -128,28 +238,53 @@ public partial class MainWindow : Window
         double viewH = ViewerScrollViewer.ViewportHeight > 0 ? ViewerScrollViewer.ViewportHeight : ViewerScrollViewer.ActualHeight;
         if (viewW <= 0 || viewH <= 0) return;
 
-        SetZoom(Math.Min(viewW / vm.ImageWidth, viewH / vm.ImageHeight) * 0.98);
+        _lastCenterPixel = new Point(vm.ImageWidth / 2.0, vm.ImageHeight / 2.0);
+        SetZoom(Math.Min(viewW / vm.ImageWidth, viewH / vm.ImageHeight) * 0.92, updateViewport: false);
+        CenterOnPixel(_lastCenterPixel.X, _lastCenterPixel.Y);
+        UpdateViewport(notifyStellarium: false);
     }
 
     private void ViewerScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
     {
-        UpdateViewport();
+        if (_isUpdatingZoomOrRotation) return;
+        UpdateViewport(notifyStellarium: _isPanning);
     }
 
     private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (Vm?.ImageBitmap == null) return;
 
-        // Zoom in or out around the mouse cursor
-        double zoomFactor = e.Delta > 0 ? 1.2 : 1.0 / 1.2;
-        Point anchorInViewer = e.GetPosition(ViewerScrollViewer);
-        Point anchorInImage = e.GetPosition(CanvasContainer);
+        double zoomFactor = e.Delta > 0 ? 1.18 : 1.0 / 1.18;
+        double newZoom = Math.Clamp(_currentZoom * zoomFactor, MinZoom, MaxZoom);
+        if (Math.Abs(newZoom - _currentZoom) < 1e-6)
+        {
+            e.Handled = true;
+            return;
+        }
 
-        SetZoom(_currentZoom * zoomFactor);
-        ViewerScrollViewer.UpdateLayout();
-        ViewerScrollViewer.ScrollToHorizontalOffset((anchorInImage.X * _currentZoom) - anchorInViewer.X);
-        ViewerScrollViewer.ScrollToVerticalOffset((anchorInImage.Y * _currentZoom) - anchorInViewer.Y);
+        Point mouseInViewer = e.GetPosition(ViewerScrollViewer);
+        Point pixelUnderMouse = e.GetPosition(Overlay);
 
+        _isUpdatingZoomOrRotation = true;
+        try
+        {
+            SetZoom(newZoom, updateViewport: false);
+            ViewerScrollViewer.UpdateLayout();
+
+            Point newMouseInViewer = Overlay.TranslatePoint(pixelUnderMouse, ViewerScrollViewer);
+            double deltaX = newMouseInViewer.X - mouseInViewer.X;
+            double deltaY = newMouseInViewer.Y - mouseInViewer.Y;
+
+            ViewerScrollViewer.ScrollToHorizontalOffset(ViewerScrollViewer.HorizontalOffset + deltaX);
+            ViewerScrollViewer.ScrollToVerticalOffset(ViewerScrollViewer.VerticalOffset + deltaY);
+            ViewerScrollViewer.UpdateLayout();
+        }
+        finally
+        {
+            _isUpdatingZoomOrRotation = false;
+        }
+
+        UpdateViewport(notifyStellarium: true);
         e.Handled = true;
     }
 
@@ -164,7 +299,7 @@ public partial class MainWindow : Window
         if (vm?.ImageBitmap == null) return;
 
         bool overImage = Overlay.IsMouseOver;
-        bool leftPan = e.ChangedButton == MouseButton.Left && overImage &&
+        bool leftPan = e.ChangedButton == MouseButton.Left &&
                        (vm.Tool == ScanTool.Pan || Keyboard.Modifiers == ModifierKeys.Alt);
 
         if (e.ChangedButton == MouseButton.Middle || leftPan)
@@ -219,6 +354,15 @@ public partial class MainWindow : Window
 
     private void ScrollViewer_PreviewMouseMove(object sender, MouseEventArgs e)
     {
+        if (Vm != null && Vm.ImageWidth > 0 && Vm.ImageHeight > 0)
+        {
+            Point p = e.GetPosition(Overlay);
+            if (p.X >= 0 && p.X <= Vm.ImageWidth && p.Y >= 0 && p.Y <= Vm.ImageHeight)
+            {
+                Vm.OnMouseMoveOnImage(p.X, p.Y);
+            }
+        }
+
         if (_isPanning)
         {
             var currentPoint = e.GetPosition(ViewerScrollViewer);
@@ -345,11 +489,18 @@ public partial class MainWindow : Window
 
     private void ResetZoom_Click(object sender, RoutedEventArgs e)
     {
-        SetZoom(1.0);
+        Point keepCenter = _lastCenterPixel;
+        SetZoom(1.0, updateViewport: false);
+        if (keepCenter.X > 0 && keepCenter.Y > 0)
+        {
+            CenterOnPixel(keepCenter.X, keepCenter.Y);
+        }
+        UpdateViewport(notifyStellarium: true);
     }
 
     private void FitZoom_Click(object sender, RoutedEventArgs e)
     {
         FitToView();
+        UpdateViewport(notifyStellarium: true);
     }
 }
