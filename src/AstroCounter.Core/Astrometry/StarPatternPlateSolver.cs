@@ -24,7 +24,7 @@ public class StarPatternPlateSolver : IPlateSolver
 
     public record DetectedStar(double X, double Y, double Flux);
 
-    private static readonly CatalogStar[] BrightStarCatalog =
+    public static readonly CatalogStar[] BrightStarCatalog =
     [
         // === Andromeda / Pegasus / Triangulum / Aries / Pisces ===
         new("Alpheratz (α And)", 2.097, 29.090, 2.06),
@@ -300,7 +300,7 @@ public class StarPatternPlateSolver : IPlateSolver
 
     public record struct CandidateRegion(string RegionName, double RaDeg, double DecDeg, double MaxRadiusDeg = 36.0);
 
-    private static readonly CandidateRegion[] CandidateSkyRegions =
+    public static readonly CandidateRegion[] CandidateSkyRegions =
     [
         // Targeted Deep Fields / Zoomed Telephoto (narrow radius 8° - 14°)
         new("M31 Andromeda Deep Field", 10.68, 41.27, 9.0),
