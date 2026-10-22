@@ -36,7 +36,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private BitmapSource? _imageBitmap;
     private double _imageWidth;
     private double _imageHeight;
-    private float _confidenceThreshold = 0.50f;
+    private float _confidenceThreshold = 0.25f;
     private bool _isLoading;
     private double _progressValue;
     private string _statusMessage = string.Empty;
@@ -441,16 +441,20 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public SolidColorBrush ConfidenceBrush =>
-        _confidenceThreshold < 0.20f ? RedConfidenceBrush :
-        _confidenceThreshold <= 0.25f ? YellowConfidenceBrush :
+        _confidenceThreshold < 0.15f ? RedConfidenceBrush :
+        _confidenceThreshold < 0.25f ? YellowConfidenceBrush :
         CyanConfidenceBrush;
 
     public string ConfidenceStatusText =>
-        _confidenceThreshold < 0.20f
-            ? (IsTurkish ? "Yüksek Gürültü Riski (<2.4σ)" : "High Noise Risk (<2.4σ)")
-            : _confidenceThreshold <= 0.25f
-                ? (IsTurkish ? "Düşük Eşik (2.4σ–3.0σ)" : "Low Threshold (2.4σ–3.0σ)")
-                : (IsTurkish ? "Kararlı Tespit (≥3.0σ)" : "Stable Detection (≥3.0σ)");
+        _confidenceThreshold < 0.15f
+            ? (IsTurkish ? "Aşırı Duyarlı / Gürültü Riski (<2.0σ)" : "Ultra-Sensitive / Noise Risk (<2.0σ)")
+            : _confidenceThreshold < 0.25f
+                ? (IsTurkish ? "Derin Alan / Çok Sönük (2.0σ–3.0σ)" : "Deep Field / Very Faint (2.0σ–3.0σ)")
+                : _confidenceThreshold < 0.50f
+                    ? (IsTurkish ? "Standart Astronomik Tespit (≥3.0σ)" : "Standard Astronomical Detection (≥3.0σ)")
+                    : _confidenceThreshold < 0.80f
+                        ? (IsTurkish ? "Belirgin Yıldızlar (≥5.0σ)" : "Prominent Stars (≥5.0σ)")
+                        : (IsTurkish ? "Parlak Yıldızlar (≥10.0σ)" : "Bright Stars (≥10.0σ)");
 
     public bool IsLoading
     {
@@ -1253,13 +1257,15 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         TargetMarkerPixel = new Point(px, py);
         TargetMarkerLabel = target.CommonName;
 
+        double maxFov = Math.Max(0.1, _currentWcs.FovHeightDegrees * 0.75);
+        double minFov = Math.Min(0.15, maxFov * 0.2);
         double targetFovDeg = Math.Clamp(
-            target.TypicalFovDegrees * 4.0,
-            3.5,
-            Math.Max(4.0, Math.Min(28.0, _currentWcs.FovHeightDegrees * 0.65)));
+            Math.Min(target.TypicalFovDegrees * 2.5, _currentWcs.FovHeightDegrees * 0.5),
+            minFov,
+            maxFov);
         double targetVisiblePixelsH = Math.Clamp(
             (targetFovDeg * 3600.0) / Math.Max(0.05, _currentWcs.PixelScaleArcsec),
-            160.0,
+            80.0,
             ImageHeight);
 
         _isSyncingFromStellarium = true;

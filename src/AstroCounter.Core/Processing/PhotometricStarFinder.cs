@@ -26,8 +26,9 @@ public static class PhotometricStarFinder
         int width = bitmap.Width;
         int height = bitmap.Height;
 
-        // 1. Extract luminance matrix from image and smooth it (noise suppression)
-        float[] luminance = Smooth3x3(ExtractLuminance(bitmap), width, height);
+        // 1. Extract raw luminance matrix from image and create smoothed version for noise-immune background modeling
+        float[] rawLuminance = ExtractLuminance(bitmap);
+        float[] smoothedLuminance = Smooth3x3(rawLuminance, width, height);
         progress?.Report(0.15f);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -56,7 +57,7 @@ public static class PhotometricStarFinder
                     int rowOffset = y * width;
                     for (int x = x0; x < x1; x++)
                     {
-                        sampleBuffer[sampleCount++] = luminance[rowOffset + x];
+                        sampleBuffer[sampleCount++] = smoothedLuminance[rowOffset + x];
                     }
                 }
 
@@ -132,10 +133,13 @@ public static class PhotometricStarFinder
                 var (localBg, localStd) = GetLocalBackgroundAndNoise(x, y);
                 float threshold = localBg + (minSigma * localStd);
 
-                float centerVal = luminance[rowOffset + x];
+                float rawCenter = rawLuminance[rowOffset + x];
+                float smoothCenter = smoothedLuminance[rowOffset + x];
+                float centerVal = Math.Max(rawCenter, smoothCenter);
+
                 if (centerVal <= threshold) continue;
 
-                // Check 5x5 neighborhood strict local peak
+                // Check 5x5 neighborhood strict local peak on smoothed luminance (to reject pixel noise)
                 bool isPeak = true;
                 for (int dy = -2; dy <= 2 && isPeak; dy++)
                 {
@@ -143,9 +147,8 @@ public static class PhotometricStarFinder
                     for (int dx = -2; dx <= 2; dx++)
                     {
                         if (dx == 0 && dy == 0) continue;
-                        float neighborVal = luminance[nRow + (x + dx)];
-                        // Must be greater than or equal, and break ties strictly
-                        if (neighborVal > centerVal || (neighborVal == centerVal && (dy < 0 || (dy == 0 && dx < 0))))
+                        float neighborVal = smoothedLuminance[nRow + (x + dx)];
+                        if (neighborVal > smoothCenter || (neighborVal == smoothCenter && (dy < 0 || (dy == 0 && dx < 0))))
                         {
                             isPeak = false;
                             break;
@@ -155,8 +158,22 @@ public static class PhotometricStarFinder
 
                 if (!isPeak) continue;
 
-                // Compute precise Signal-to-Noise Ratio (SNR)
-                float netPeak = centerVal - localBg;
+                // Hot pixel / sensor defect rejection:
+                // An optical star has a point spread function (PSF) that extends across adjacent pixels.
+                // An isolated single hot pixel has zero or near-zero signal in all its 4 immediate cross neighbors.
+                float rawCrossMax = Math.Max(
+                    Math.Max(rawLuminance[rowOffset + x - 1], rawLuminance[rowOffset + x + 1]),
+                    Math.Max(rawLuminance[rowOffset - width + x], rawLuminance[rowOffset + width + x])
+                );
+                float rawNet = rawCenter - localBg;
+                if (rawNet > 3.0f * localStd && (rawCrossMax - localBg) < 0.10f * rawNet)
+                {
+                    // Isolated hot pixel with no optical PSF
+                    continue;
+                }
+
+                // Compute precise Signal-to-Noise Ratio (SNR) using un-attenuated net peak
+                float netPeak = Math.Max(rawNet, smoothCenter - localBg);
                 float snr = netPeak / localStd;
 
                 // Astronomical Confidence score mapping:
@@ -187,38 +204,40 @@ public static class PhotometricStarFinder
 
                 if (confidence < minConfidence) continue;
 
-                // Centroid refinement for saturated or bright stars
+                // Universal sub-pixel centroid refinement for ALL stars
                 float starCenterX = x;
                 float starCenterY = y;
-                if (centerVal >= 235f)
+                float sumW = 0f, sumX = 0f, sumY = 0f;
+                int rCentroid = centerVal >= 235f ? 4 : 2;
+                for (int cdy = -rCentroid; cdy <= rCentroid; cdy++)
                 {
-                    float sumW = 0f, sumX = 0f, sumY = 0f;
-                    int rCentroid = 4;
-                    for (int cdy = -rCentroid; cdy <= rCentroid; cdy++)
+                    int cy = y + cdy;
+                    if (cy < 0 || cy >= height) continue;
+                    int crow = cy * width;
+                    for (int cdx = -rCentroid; cdx <= rCentroid; cdx++)
                     {
-                        int cy = y + cdy;
-                        if (cy < 0 || cy >= height) continue;
-                        int crow = cy * width;
-                        for (int cdx = -rCentroid; cdx <= rCentroid; cdx++)
-                        {
-                            int cx = x + cdx;
-                            if (cx < 0 || cx >= width) continue;
-                            float wgt = Math.Max(0f, luminance[crow + cx] - localBg);
-                            sumW += wgt;
-                            sumX += cx * wgt;
-                            sumY += cy * wgt;
-                        }
+                        int cx = x + cdx;
+                        if (cx < 0 || cx >= width) continue;
+                        float wgt = Math.Max(0f, rawLuminance[crow + cx] - localBg);
+                        sumW += wgt;
+                        sumX += cx * wgt;
+                        sumY += cy * wgt;
                     }
-                    if (sumW > 0)
+                }
+                if (sumW > 0f)
+                {
+                    float refinedX = sumX / sumW;
+                    float refinedY = sumY / sumW;
+                    if (Math.Abs(refinedX - x) <= 1.8f && Math.Abs(refinedY - y) <= 1.8f)
                     {
-                        starCenterX = sumX / sumW;
-                        starCenterY = sumY / sumW;
+                        starCenterX = refinedX;
+                        starCenterY = refinedY;
                     }
                 }
 
                 // Estimate Point Spread Function (PSF) size / star diameter
                 float halfMax = localBg + (netPeak / 2.0f);
-                float radius = MeasureFwhmRadius(luminance, width, height, (int)Math.Round(starCenterX), (int)Math.Round(starCenterY), halfMax);
+                float radius = MeasureFwhmRadius(rawLuminance, width, height, (int)Math.Round(starCenterX), (int)Math.Round(starCenterY), halfMax);
                 float boxSize = Math.Clamp(radius * 2.4f, 6.0f, 54.0f);
 
                 float boxX = Math.Max(0, starCenterX - (boxSize / 2.0f));

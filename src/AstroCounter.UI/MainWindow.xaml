@@ -634,10 +634,10 @@
                             <CheckBox IsChecked="{Binding ShowLabels}" Content="{Binding L_Labels}" Foreground="#94A3B8" VerticalAlignment="Center"/>
                         </StackPanel>
 
-                        <!-- Slider with Dynamic Color (Red <20%, Yellow 20-25%, Cyan >25%) -->
+                        <!-- Slider with Dynamic Color (Red <15%, Yellow 15-25%, Cyan >=25%) -->
                         <Slider Grid.Row="1" Grid.ColumnSpan="2"
                                 Style="{StaticResource ConfidenceSliderStyle}"
-                                Minimum="0.02" Maximum="0.95"
+                                Minimum="0.01" Maximum="0.99"
                                 Value="{Binding ConfidenceThreshold, Mode=TwoWay}"
                                 SmallChange="0.01" LargeChange="0.05"
                                 TickFrequency="0.05" IsSnapToTickEnabled="False"

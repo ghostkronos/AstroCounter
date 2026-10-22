@@ -216,24 +216,96 @@ public class StarPatternPlateSolver : IPlateSolver
         new("Polaris (α UMi)", 37.954, 89.264, 1.98),
         new("Kochab (β UMi)", 222.676, 74.156, 2.08),
         new("Pherkad (γ UMi)", 230.182, 71.834, 3.05),
+        new("Yildun (δ UMi)", 260.065, 86.586, 4.35),
+        new("Urodelus (ε UMi)", 252.483, 82.037, 4.21),
+        new("Akhfa (ζ UMi)", 236.438, 77.794, 4.28),
+        new("Anwar (η UMi)", 244.600, 75.755, 4.95),
+        new("5 UMi", 213.913, 75.696, 4.25),
+        new("4 UMi", 212.871, 77.798, 5.00),
+        new("HR 286", 14.869, 86.255, 5.86),
+        new("HR 1662", 76.541, 88.026, 5.76),
+
+        // === Leo / Leo Minor / Coma Berenices ===
+        new("Regulus (α Leo)", 152.093, 11.967, 1.36),
+        new("Algieba (γ Leo)", 154.993, 19.841, 2.01),
+        new("Denebola (β Leo)", 177.265, 14.572, 2.14),
+        new("Zosma (δ Leo)", 168.527, 20.524, 2.56),
+        new("Chertan (θ Leo)", 168.827, 15.429, 3.32),
+        new("Adhafera (ζ Leo)", 154.173, 23.417, 3.44),
+        new("Al Jabhah (η Leo)", 151.833, 16.763, 3.48),
+        new("Subra (ο Leo)", 147.669, 9.890, 3.52),
+        new("Rasalas (μ Leo)", 148.190, 26.007, 3.88),
+        new("Alterf (λ Leo)", 143.125, 22.968, 4.32),
+        new("ρ Leo", 158.223, 9.307, 3.84),
+        new("Diadem (α Com)", 197.982, 17.528, 4.32),
+        new("β Com", 197.868, 27.878, 4.23),
+
+        // === Canis Major / Canis Minor / Monoceros ===
+        new("Sirius (α CMa)", 101.287, -16.716, -1.46),
+        new("Adhara (ε CMa)", 104.656, -28.972, 1.50),
+        new("Wezen (δ CMa)", 107.098, -26.393, 1.83),
+        new("Murzim (β CMa)", 95.675, -17.956, 1.98),
+        new("Aludra (η CMa)", 111.024, -29.303, 2.45),
+        new("Furud (ζ CMa)", 95.033, -30.063, 3.02),
+        new("Muliphein (γ CMa)", 106.037, -15.633, 4.11),
+        new("Procyon (α CMi)", 114.825, 5.225, 0.38),
+        new("Gomeisa (β CMi)", 111.787, 8.289, 2.89),
+
+        // === Virgo / Corvus ===
+        new("Spica (α Vir)", 201.298, -11.161, 0.98),
+        new("Porrima (γ Vir)", 190.415, -1.449, 2.74),
+        new("Vindemiatrix (ε Vir)", 195.544, 10.959, 2.85),
+        new("Heze (ζ Vir)", 203.896, -0.667, 3.38),
+        new("Zavijava (β Vir)", 177.674, 1.765, 3.59),
+        new("Zaniah (η Vir)", 184.977, -0.667, 3.89),
+        new("Gienah Corvi (γ Crv)", 183.951, -17.542, 2.58),
+        new("Kraz (β Crv)", 188.960, -23.397, 2.65),
+        new("Algorab (δ Crv)", 187.466, -16.515, 2.94),
+
+        // === Sagittarius / Scutum ===
+        new("Kaus Australis (ε Sgr)", 276.043, -34.384, 1.79),
+        new("Nunki (σ Sgr)", 283.816, -26.297, 2.05),
+        new("Ascella (ζ Sgr)", 285.653, -29.880, 2.60),
+        new("Kaus Media (δ Sgr)", 275.242, -29.828, 2.72),
+        new("Kaus Borealis (λ Sgr)", 276.993, -25.421, 2.82),
+        new("Alnasl (γ2 Sgr)", 271.438, -30.424, 2.98),
+        new("Arkab Prior (β1 Sgr)", 290.672, -44.460, 3.96),
+        new("α Sct", 279.791, -8.243, 3.85),
+        new("β Sct", 281.764, -4.747, 4.22),
     ];
 
-    private static readonly (string RegionName, double RaDeg, double DecDeg)[] CandidateSkyRegions =
+    public record struct CandidateRegion(string RegionName, double RaDeg, double DecDeg, double MaxRadiusDeg = 36.0);
+
+    private static readonly CandidateRegion[] CandidateSkyRegions =
     [
-        ("Andromeda - Triangulum - Cassiopeia", 14.0, 38.0),
-        ("Cassiopeia - Perseus - Andromeda", 28.0, 54.0),
-        ("Perseus - Cassiopeia - Auriga", 48.0, 48.0),
-        ("Perseus - Taurus - Pleiades", 56.0, 32.0),
-        ("Pegasus - Andromeda - Pisces", 350.0, 26.0),
-        ("Summer Triangle: Cygnus - Lyra - Aquila", 298.0, 30.0),
-        ("Cygnus - Lyra - Vulpecula", 295.0, 38.0),
-        ("Hercules - Lyra - Draco - Ophiuchus", 265.0, 32.0),
-        ("Aquila - Delphinus - Sagitta", 298.0, 12.0),
-        ("Cygnus - Cepheus - Lacerta", 320.0, 50.0),
-        ("Hercules - Corona Borealis - Boötes", 242.0, 30.0),
-        ("Orion - Taurus", 82.0, 4.0),
-        ("Auriga - Gemini - Taurus", 88.0, 32.0),
-        ("Ursa Major - Draco - Ursa Minor", 190.0, 58.0),
+        // Targeted Deep Fields / Zoomed Telephoto (narrow radius 8° - 14°)
+        new("M31 Andromeda Deep Field", 10.68, 41.27, 9.0),
+        new("M42 Orion Nebula Deep Field", 83.82, -5.39, 9.0),
+        new("M45 Pleiades Deep Field", 56.87, 24.11, 8.0),
+        new("North Celestial Pole - Polaris Vicinity", 0.0, 89.0, 14.0),
+        new("Double Cluster - Perseus Deep Field", 34.75, 57.15, 9.0),
+        new("Cygnus Sadr / Veil Deep Field", 308.0, 38.0, 12.0),
+
+        // Broad Constellation Regions (radius 32° - 38°)
+        new("Andromeda - Triangulum - Cassiopeia", 14.0, 38.0, 36.0),
+        new("Cassiopeia - Perseus - Andromeda", 28.0, 54.0, 36.0),
+        new("Perseus - Cassiopeia - Auriga", 48.0, 48.0, 36.0),
+        new("Perseus - Taurus - Pleiades", 56.0, 32.0, 36.0),
+        new("Pegasus - Andromeda - Pisces", 350.0, 26.0, 36.0),
+        new("Summer Triangle: Cygnus - Lyra - Aquila", 298.0, 30.0, 36.0),
+        new("Cygnus - Lyra - Vulpecula", 295.0, 38.0, 36.0),
+        new("Hercules - Lyra - Draco - Ophiuchus", 265.0, 32.0, 36.0),
+        new("Aquila - Delphinus - Sagitta", 298.0, 12.0, 36.0),
+        new("Cygnus - Cepheus - Lacerta", 320.0, 50.0, 36.0),
+        new("Hercules - Corona Borealis - Boötes", 242.0, 30.0, 36.0),
+        new("Orion - Taurus", 82.0, 4.0, 36.0),
+        new("Auriga - Gemini - Taurus", 88.0, 32.0, 36.0),
+        new("Ursa Major - Draco - Ursa Minor", 190.0, 58.0, 36.0),
+        new("Leo - Leo Minor - Coma Berenices", 165.0, 18.0, 34.0),
+        new("Virgo - Corvus - Spica", 195.0, -5.0, 34.0),
+        new("Canis Major - Monoceros - Sirius", 102.0, -16.0, 32.0),
+        new("Sagittarius - Scutum - Milky Way Core", 276.0, -25.0, 32.0),
+        new("Boötes - Corona Borealis - Canes Venatici", 210.0, 35.0, 34.0),
     ];
 
     private readonly record struct StarTriangle(
@@ -577,7 +649,7 @@ public class StarPatternPlateSolver : IPlateSolver
             {
                 var sc = new CelestialCoordinates(cs.RaDeg, cs.DecDeg);
                 double angDist = regionCenter.AngularDistanceTo(sc);
-                if (angDist <= 38.0 && refTangentWcs.EquatorialToPixel(sc, out double u, out double v))
+                if (angDist <= region.MaxRadiusDeg && refTangentWcs.EquatorialToPixel(sc, out double u, out double v))
                 {
                     double wgt = Math.Max(0.6, 5.2 - cs.Mag);
                     regionalCat.Add((cs, u, v, wgt));
@@ -591,13 +663,15 @@ public class StarPatternPlateSolver : IPlateSolver
             int nCatAll = Math.Min(32, regionalCat.Count);
             int nCatTri = Math.Min(20, nCatAll);
 
+            double minCatSep = region.MaxRadiusDeg <= 15.0 ? 0.35 : 2.0;
             var catTriangles = BuildTriangles(
                 nCatTri,
                 i => (regionalCat[i].U, regionalCat[i].V),
-                2.0,   // min 2.0 degrees separation
+                minCatSep,
                 52.0); // max 52 degrees separation
 
             const double ratioTol = 0.018;
+            double minAllowedFov = region.MaxRadiusDeg <= 15.0 ? 0.4 : 6.0;
 
             foreach (var it in imgTriangles)
             {
@@ -609,7 +683,7 @@ public class StarPatternPlateSolver : IPlateSolver
 
                     double degPerPx = ct.Perimeter / it.Perimeter;
                     double impliedFovDiag = degPerPx * imgDiag;
-                    if (impliedFovDiag < 8.0 || impliedFovDiag > 105.0) continue;
+                    if (impliedFovDiag < minAllowedFov || impliedFovDiag > 75.0) continue;
 
                     Span<(double X, double Y, double U, double V, double W)> triPairs =
                     [
@@ -645,7 +719,8 @@ public class StarPatternPlateSolver : IPlateSolver
                                 out int refinedInliers,
                                 out double refinedScore);
 
-                            if (candidateWcs != null && refinedInliers >= 8 && refinedScore > bestScore)
+                            int minInliersReq = (candidateWcs != null && candidateWcs.FovHeightDegrees > 28.0) ? 10 : 8;
+                            if (candidateWcs != null && refinedInliers >= minInliersReq && refinedScore > bestScore)
                             {
                                 bestScore = refinedScore;
                                 bestInlierCount = refinedInliers;
@@ -902,7 +977,7 @@ public class StarPatternPlateSolver : IPlateSolver
         int brightMatched = 0;
         double marginX = imageWidth * 0.06;
         double marginY = imageHeight * 0.06;
-        int topCheckCount = Math.Min(12, regionalCat.Count);
+        int topCheckCount = Math.Min(16, regionalCat.Count);
 
         for (int i = 0; i < topCheckCount; i++)
         {
@@ -924,7 +999,13 @@ public class StarPatternPlateSolver : IPlateSolver
             }
         }
 
-        if (brightInFrame >= 4 && brightMatched < Math.Max(2, (int)Math.Ceiling(brightInFrame * 0.38)))
+        // Broad fields must contain prominent catalog stars
+        if (candidateWcs.FovHeightDegrees > 20.0 && brightInFrame < 4)
+        {
+            return null;
+        }
+
+        if (brightInFrame >= 4 && brightMatched < Math.Max(3, (int)Math.Ceiling(brightInFrame * 0.45)))
         {
             return null;
         }

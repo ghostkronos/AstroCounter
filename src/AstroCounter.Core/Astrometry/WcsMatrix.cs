@@ -118,13 +118,22 @@ public class WcsMatrix
 
         double sinD0 = Math.Sin(d0);
         double cosD0 = Math.Cos(d0);
+        double sinA0 = Math.Sin(a0);
+        double cosA0 = Math.Cos(a0);
 
-        // De-project tangent plane (TAN) back to spherical celestial coordinates
-        double denom = cosD0 - (eta * sinD0);
-        if (Math.Abs(denom) < 1e-12) denom = 1e-12;
+        // Standard gnomonic (TAN) projection 3D unit vector mapping:
+        // Center direction r0 = (cosD0 * cosA0, cosD0 * sinA0, sinD0)
+        // Tangent East basis uXi = (-sinA0, cosA0, 0)
+        // Tangent North basis uEta = (-sinD0 * cosA0, -sinD0 * sinA0, cosD0)
+        // V = r0 + xi * uXi + eta * uEta
+        // Singularity-free across celestial poles (Dec -> +/-90 deg).
+        double vx = (cosD0 * cosA0) - (xi * sinA0) - (eta * sinD0 * cosA0);
+        double vy = (cosD0 * sinA0) + (xi * cosA0) - (eta * sinD0 * sinA0);
+        double vz = sinD0 + (eta * cosD0);
 
-        double raRad = a0 + Math.Atan2(xi, denom);
-        double decRad = Math.Atan2((sinD0 + (eta * cosD0)) * Math.Cos(raRad - a0), denom);
+        double raRad = Math.Atan2(vy, vx);
+        double hyp = Math.Sqrt((vx * vx) + (vy * vy));
+        double decRad = Math.Atan2(vz, hyp);
 
         return CelestialCoordinates.FromRadians(raRad, decRad);
     }
@@ -211,8 +220,8 @@ public class WcsMatrix
         double centerDec = CenterCoordinates.DecDegrees;
         double halfFov = (fov * 0.8) + stepDeg;
 
-        double minDec = Math.Max(-89.0, centerDec - halfFov);
-        double maxDec = Math.Min(89.0, centerDec + halfFov);
+        double minDec = Math.Max(-89.85, centerDec - halfFov);
+        double maxDec = Math.Min(89.85, centerDec + halfFov);
 
         // 1. Generate Right Ascension Meridians (lines of constant RA)
         double startRa = (Math.Floor((centerRa - halfFov) / stepDeg) * stepDeg);
@@ -246,7 +255,7 @@ public class WcsMatrix
 
         for (double dec = startDec; dec <= endDec; dec += stepDeg)
         {
-            if (dec < -89.5 || dec > 89.5) continue;
+            if (dec < -89.85 || dec > 89.85) continue;
 
             var pts = new List<System.Numerics.Vector2>();
             int samples = 45;

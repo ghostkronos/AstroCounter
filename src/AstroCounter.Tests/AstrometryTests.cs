@@ -259,4 +259,53 @@ public class AstrometryTests
         Assert.False(res.IsSuccess);
         Assert.Null(res.Wcs);
     }
+
+    [Fact]
+    public void WcsMatrix_NearNorthPole_NoSingularityOrSignFlip()
+    {
+        // Tangent plane centered near North Celestial Pole
+        var center = new CelestialCoordinates(0.0, 89.5);
+        int width = 2000;
+        int height = 2000;
+        double pixelScale = 2.0; // 2 arcsec/px -> 4000 arcsec = 1.11 degrees FOV
+
+        var wcs = new WcsMatrix(
+            centerCoordinates: center,
+            referencePixelX: width / 2.0,
+            referencePixelY: height / 2.0,
+            pixelScaleArcsec: pixelScale,
+            rotationDegrees: 0.0,
+            imageWidth: width,
+            imageHeight: height);
+
+        // Center pixel should be at Dec +89.5
+        var centerEq = wcs.PixelToEquatorial(width / 2.0, height / 2.0);
+        Assert.Equal(89.5, centerEq.DecDegrees, precision: 3);
+
+        // Pixel north of center (towards and across the pole, dy < 0)
+        // 1500 pixels up is 3000 arcsec = 0.833 deg north of Dec 89.5 deg -> across the pole into Dec ~89.67 deg!
+        var pastPoleEq = wcs.PixelToEquatorial(width / 2.0, (height / 2.0) - 1500.0);
+
+        // Must remain in northern hemisphere (positive Dec > 80 deg), NEVER flipping to negative/south
+        Assert.True(pastPoleEq.DecDegrees > 80.0, $"Dec flipped sign: {pastPoleEq.DecDegrees}");
+        Assert.True(pastPoleEq.DecDegrees <= 90.0, $"Dec out of range: {pastPoleEq.DecDegrees}");
+
+        // Round-trip back to pixel
+        bool back = wcs.EquatorialToPixel(pastPoleEq, out double bx, out double by);
+        Assert.True(back);
+        Assert.Equal(width / 2.0, bx, precision: 1);
+        Assert.Equal((height / 2.0) - 1500.0, by, precision: 1);
+    }
+
+    [Fact]
+    public void CataloguePlateSolver_ContainsExpandedTargets()
+    {
+        var targets = CataloguePlateSolver.KnownCatalogues;
+        Assert.Contains(targets, t => t.Id == "Sirius");
+        Assert.Contains(targets, t => t.Id == "Regulus");
+        Assert.Contains(targets, t => t.Id == "Spica");
+        Assert.Contains(targets, t => t.Id == "M84");
+        Assert.Contains(targets, t => t.Id == "NGC3628");
+        Assert.Contains(targets, t => t.Id == "Polaris");
+    }
 }
