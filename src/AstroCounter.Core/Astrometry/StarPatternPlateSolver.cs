@@ -526,10 +526,18 @@ public class StarPatternPlateSolver : IPlateSolver
         float[] lum = new float[w * h];
         var pixels = small.Pixels;
 
+        double totalLum = 0;
         for (int i = 0; i < pixels.Length; i++)
         {
             var c = pixels[i];
-            lum[i] = (0.299f * c.Red) + (0.587f * c.Green) + (0.114f * c.Blue);
+            float l = (0.299f * c.Red) + (0.587f * c.Green) + (0.114f * c.Blue);
+            lum[i] = l;
+            totalLum += l;
+        }
+
+        if ((totalLum / pixels.Length) > 130.0)
+        {
+            return []; // Reject overexposed / daytime / non-astronomical images
         }
 
         double[] integral = new double[(w + 1) * (h + 1)];
@@ -721,7 +729,7 @@ public class StarPatternPlateSolver : IPlateSolver
                 double angDist = regionCenter.AngularDistanceTo(sc);
                 if (angDist <= region.MaxRadiusDeg && refTangentWcs.EquatorialToPixel(sc, out double u, out double v))
                 {
-                    double wgt = Math.Max(0.6, 5.2 - cs.Mag);
+                    double wgt = Math.Pow(Math.Max(0.6, 5.5 - cs.Mag), 1.8);
                     regionalCat.Add((cs, u, v, wgt));
                 }
             }
@@ -742,6 +750,7 @@ public class StarPatternPlateSolver : IPlateSolver
 
             const double ratioTol = 0.018;
             double minAllowedFov = 0.4;
+            double maxAllowedFov = region.MaxRadiusDeg <= 15.0 ? 22.0 : 115.0;
 
             foreach (var it in imgTriangles)
             {
@@ -753,7 +762,7 @@ public class StarPatternPlateSolver : IPlateSolver
 
                     double degPerPx = ct.Perimeter / it.Perimeter;
                     double impliedFovDiag = degPerPx * imgDiag;
-                    if (impliedFovDiag < minAllowedFov || impliedFovDiag > 95.0) continue;
+                    if (impliedFovDiag < minAllowedFov || impliedFovDiag > maxAllowedFov) continue;
 
                     Span<(double X, double Y, double U, double V, double W)> triPairs =
                     [
@@ -772,7 +781,7 @@ public class StarPatternPlateSolver : IPlateSolver
                     var matchedPairs = CollectUniqueInlierPairs(
                         imageStars, nImgAll, regionalCat, nCatAll, a, b, tu, tv, tolDeg);
 
-                    int reqPairs = region.MaxRadiusDeg <= 15.0 ? 6 : 7;
+                    int reqPairs = region.MaxRadiusDeg <= 15.0 ? 6 : (impliedFovDiag > 45.0 ? 8 : 7);
                     if (matchedPairs.Count >= reqPairs)
                     {
                         double rawScore = matchedPairs.Sum(p => p.W);
@@ -1072,13 +1081,17 @@ public class StarPatternPlateSolver : IPlateSolver
             imageHeight,
             radialDistortionK1: k1);
 
-        // Bright-star concordance verification:
-        // Ensure prominent catalog stars that project inside the frame are not systematically missing.
+        // Dual Bright-Star Concordance Verification:
+        // 1. Catalog Super-bright Anchor Check: Any super-prominent catalog star (Mag <= 1.8) that
+        // falls within the inner 85% of the frame MUST be matched. A photo cannot display empty space where a 1st-mag beacon exists.
+        // 2. Image Bright-Star Concordance: At least one of the top 3 brightest detected image stars must match a catalog star.
+        // 3. Proportional Concordance: Prominent catalog stars projecting in frame must achieve sufficient concordance.
+
+        double marginX = imageWidth * 0.075;
+        double marginY = imageHeight * 0.075;
         int brightInFrame = 0;
         int brightMatched = 0;
-        double marginX = imageWidth * 0.06;
-        double marginY = imageHeight * 0.06;
-        int topCheckCount = Math.Min(16, regionalCat.Count);
+        int topCheckCount = Math.Min(20, regionalCat.Count);
 
         for (int i = 0; i < topCheckCount; i++)
         {
@@ -1089,9 +1102,16 @@ public class StarPatternPlateSolver : IPlateSolver
                 if (px >= marginX && px <= imageWidth - marginX &&
                     py >= marginY && py <= imageHeight - marginY)
                 {
-                    brightInFrame++;
                     bool isMatched = initialPairs.Any(p =>
                         Math.Abs(p.U - catItem.U) < 1e-4 && Math.Abs(p.V - catItem.V) < 1e-4);
+
+                    if (catItem.Star.Mag <= 1.8 && !isMatched)
+                    {
+                        // Missing primary celestial anchor (e.g. Sirius, Vega, Arcturus) -> reject false positive
+                        return null;
+                    }
+
+                    brightInFrame++;
                     if (isMatched)
                     {
                         brightMatched++;
@@ -1100,10 +1120,36 @@ public class StarPatternPlateSolver : IPlateSolver
             }
         }
 
-        // Concordance verification: ensure prominent catalog stars are matched when abundant
-        if (brightInFrame >= 6 && brightMatched < Math.Max(2, (int)Math.Ceiling(brightInFrame * 0.30)))
+        if (brightInFrame >= 3 && brightMatched == 0)
         {
             return null;
+        }
+
+        if (brightInFrame >= 5 && brightMatched < Math.Max(2, (int)Math.Ceiling(brightInFrame * 0.35)))
+        {
+            return null;
+        }
+
+        // Image Bright-Star Concordance: Ensure the photo's prominent beacons match.
+        // On wide-angle exposures, the brightest stars can be distributed across constellations (e.g. Corona Borealis + Boötes).
+        // Check top 6 image stars: at least 1 must match a catalog star.
+        if (imageStars.Count >= 6 && initialPairs.Count >= 6)
+        {
+            int topImgToCheck = Math.Min(6, imageStars.Count);
+            int topImgMatched = 0;
+            for (int i = 0; i < topImgToCheck; i++)
+            {
+                var s = imageStars[i];
+                if (initialPairs.Any(p => Math.Abs(p.X - s.X) < 1e-4 && Math.Abs(p.Y - s.Y) < 1e-4))
+                {
+                    topImgMatched++;
+                }
+            }
+
+            if (topImgMatched == 0)
+            {
+                return null; // None of the top brightest image objects matched any catalog star
+            }
         }
 
         finalInliers = initialPairs.Count;
