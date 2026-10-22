@@ -308,4 +308,86 @@ public class AstrometryTests
         Assert.Contains(targets, t => t.Id == "NGC3628");
         Assert.Contains(targets, t => t.Id == "Polaris");
     }
+    [Fact]
+    public void WcsMatrix_WithRadialDistortion_RoundTripsPixelCoordinates()
+    {
+        var center = new CelestialCoordinates(220.0, 35.0);
+        int width = 4000;
+        int height = 3000;
+        double pixelScale = 70.0;
+        double k1 = -0.035; // typical wide-angle barrel distortion
+
+        var wcs = new WcsMatrix(
+            center,
+            width / 2.0,
+            height / 2.0,
+            pixelScale,
+            rotationDegrees: 45.0,
+            width,
+            height,
+            radialDistortionK1: k1);
+
+        Assert.Equal(k1, wcs.RadialDistortionK1);
+
+        // Center pixel should round-trip perfectly
+        var centerEq = wcs.PixelToEquatorial(width / 2.0, height / 2.0);
+        Assert.Equal(center.RaDegrees, centerEq.RaDegrees, precision: 3);
+        Assert.Equal(center.DecDegrees, centerEq.DecDegrees, precision: 3);
+
+        // Near-corner pixel with radial distortion
+        double px = 300.0;
+        double py = 400.0;
+        var cornerEq = wcs.PixelToEquatorial(px, py);
+        bool projected = wcs.EquatorialToPixel(cornerEq, out double bx, out double by);
+
+        Assert.True(projected);
+        Assert.Equal(px, bx, precision: 1);
+        Assert.Equal(py, by, precision: 1);
+    }
+
+    [Fact]
+    public void ImagePreprocessor_CorrectLensDistortion_DeWarpsImage()
+    {
+        int w = 200, h = 200;
+        using var bmp = new SkiaSharp.SKBitmap(w, h, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Premul);
+        bmp.Erase(new SkiaSharp.SKColor(10, 10, 10, 255));
+
+        // Draw a test star at corner
+        bmp.SetPixel(20, 20, new SkiaSharp.SKColor(250, 250, 250, 255));
+
+        // Correct barrel distortion (k1 > 0 expands corners outward)
+        using var dewarped = AstroCounter.Core.Processing.ImagePreprocessor.CorrectLensDistortion(bmp, 0.05f);
+        Assert.NotNull(dewarped);
+        Assert.Equal(w, dewarped.Width);
+        Assert.Equal(h, dewarped.Height);
+
+        // Center pixel should remain undisturbed dark background
+        Assert.Equal(10, dewarped.GetPixel(100, 100).Red);
+    }
+
+    [Fact]
+    public async Task StarPatternPlateSolver_GeneratesFailureDiagnostics()
+    {
+        var solver = new StarPatternPlateSolver();
+        // Zero stars
+        var resEmpty = await solver.SolveAsync("", 1000, 1000, Array.Empty<AstroCounter.Core.Models.AstrophotographyObject>());
+        Assert.False(resEmpty.IsSuccess);
+        Assert.NotNull(resEmpty.DiagnosticReason);
+        Assert.True(resEmpty.DiagnosticReason.Contains("Yetersiz") || resEmpty.DiagnosticReason.Contains("Insufficient") || resEmpty.DiagnosticReason.Contains("Could not"));
+
+        // High resolution failure diagnostics
+        var res108M = await solver.SolveAsync("", 9000, 12000, new List<AstroCounter.Core.Models.AstrophotographyObject>
+        {
+            new(1, new(100, 100, 10, 10), 0.9f),
+            new(2, new(200, 200, 10, 10), 0.9f),
+            new(3, new(300, 300, 10, 10), 0.9f),
+            new(4, new(400, 400, 10, 10), 0.9f),
+            new(5, new(500, 500, 10, 10), 0.9f),
+            new(6, new(600, 600, 10, 10), 0.9f),
+            new(7, new(700, 700, 10, 10), 0.9f),
+        });
+        Assert.False(res108M.IsSuccess);
+        Assert.NotNull(res108M.DiagnosticReason);
+        Assert.Contains("108M", res108M.DiagnosticReason);
+    }
 }

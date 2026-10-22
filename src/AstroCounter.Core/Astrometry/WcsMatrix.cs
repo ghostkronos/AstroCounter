@@ -16,6 +16,7 @@ public class WcsMatrix
     public double RotationDegrees { get; }
     public int ImageWidth { get; }
     public int ImageHeight { get; }
+    public double RadialDistortionK1 { get; }
 
     // Derived CD matrix elements (degrees per pixel)
     private readonly double _cd11;
@@ -23,6 +24,7 @@ public class WcsMatrix
     private readonly double _cd21;
     private readonly double _cd22;
     private readonly double _detCd;
+    private readonly double _normRadius;
 
     public double FovWidthDegrees => (ImageWidth * PixelScaleArcsec) / 3600.0;
     public double FovHeightDegrees => (ImageHeight * PixelScaleArcsec) / 3600.0;
@@ -34,7 +36,8 @@ public class WcsMatrix
         double pixelScaleArcsec,
         double rotationDegrees,
         int imageWidth,
-        int imageHeight)
+        int imageHeight,
+        double radialDistortionK1 = 0.0)
     {
         CenterCoordinates = centerCoordinates;
         ReferencePixelX = referencePixelX;
@@ -43,6 +46,8 @@ public class WcsMatrix
         RotationDegrees = rotationDegrees;
         ImageWidth = imageWidth;
         ImageHeight = imageHeight;
+        RadialDistortionK1 = radialDistortionK1;
+        _normRadius = Math.Max(1.0, 0.5 * Math.Sqrt(((double)imageWidth * imageWidth) + ((double)imageHeight * imageHeight)));
 
         // Pixel scale in degrees
         double degPerPixel = PixelScaleArcsec / 3600.0;
@@ -81,7 +86,8 @@ public class WcsMatrix
             newScale,
             newRot,
             ImageWidth,
-            ImageHeight);
+            ImageHeight,
+            RadialDistortionK1);
     }
 
     /// <summary>
@@ -105,6 +111,15 @@ public class WcsMatrix
     {
         double dx = x - ReferencePixelX;
         double dy = y - ReferencePixelY;
+
+        if (Math.Abs(RadialDistortionK1) > 1e-6)
+        {
+            // Radial un-distortion: push radially distorted points back to rectilinear TAN plane
+            double rNormSq = ((dx * dx) + (dy * dy)) / (_normRadius * _normRadius);
+            double factor = 1.0 + (RadialDistortionK1 * rNormSq);
+            dx *= factor;
+            dy *= factor;
+        }
 
         // Intermediate celestial coordinates (xi, eta) in degrees on the tangent plane
         double xiDeg = (_cd11 * dx) + (_cd12 * dy);
@@ -182,6 +197,25 @@ public class WcsMatrix
         // Inverse CD matrix transformation
         double dx = ((_cd22 * xiDeg) - (_cd12 * etaDeg)) / _detCd;
         double dy = ((-_cd21 * xiDeg) + (_cd11 * etaDeg)) / _detCd;
+
+        if (Math.Abs(RadialDistortionK1) > 1e-6)
+        {
+            // Invert ru = rd * (1 + k1 * rd^2) using high-precision 2-step Newton-Raphson
+            double ruNorm = Math.Sqrt((dx * dx) + (dy * dy)) / _normRadius;
+            if (ruNorm > 1e-8)
+            {
+                double rd = ruNorm;
+                for (int iter = 0; iter < 2; iter++)
+                {
+                    double f = rd * (1.0 + (RadialDistortionK1 * rd * rd)) - ruNorm;
+                    double fPrime = 1.0 + (3.0 * RadialDistortionK1 * rd * rd);
+                    rd -= f / fPrime;
+                }
+                double factor = rd / ruNorm;
+                dx *= factor;
+                dy *= factor;
+            }
+        }
 
         x = ReferencePixelX + dx;
         y = ReferencePixelY + dy;

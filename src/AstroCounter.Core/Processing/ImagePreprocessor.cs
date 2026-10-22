@@ -711,4 +711,81 @@ public static class ImagePreprocessor
             return result;
         }
     }
-}
+
+        /// <summary>
+        /// Corrects radial lens distortion (barrel / pincushion) on an astronomical image.
+        /// Uses polynomial radial re-mapping with bilinear pixel interpolation.
+        /// Positive k1 expands corners (fixes barrel distortion). Negative k1 pulls corners in (fixes pincushion).
+        /// </summary>
+        public static unsafe SKBitmap CorrectLensDistortion(SKBitmap source, float k1)
+        {
+            if (Math.Abs(k1) < 1e-4f)
+            {
+                return source.Copy();
+            }
+
+            int width = source.Width;
+            int height = source.Height;
+            float cx = width / 2.0f;
+            float cy = height / 2.0f;
+            float normRadius = 0.5f * (float)Math.Sqrt((width * width) + (height * height));
+            float normRadiusSq = normRadius * normRadius;
+
+            var result = new SKBitmap(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+            byte* srcPtr = (byte*)source.GetPixels();
+            byte* dstPtr = (byte*)result.GetPixels();
+            int srcStride = source.RowBytes;
+            int dstStride = result.RowBytes;
+
+            Parallel.For(0, height, y =>
+            {
+                byte* dstRow = dstPtr + (y * dstStride);
+                float dy = y - cy;
+
+                for (int x = 0; x < width; x++)
+                {
+                    float dx = x - cx;
+                    float rNormSq = ((dx * dx) + (dy * dy)) / normRadiusSq;
+
+                    // Radial polynomial inverse mapping to source distorted coordinates
+                    float factor = 1.0f / (1.0f + (k1 * rNormSq));
+                    float srcX = cx + (dx * factor);
+                    float srcY = cy + (dy * factor);
+
+                    int x0 = (int)Math.Floor(srcX);
+                    int y0 = (int)Math.Floor(srcY);
+                    int x1 = x0 + 1;
+                    int y1 = y0 + 1;
+
+                    if (x0 >= 0 && x1 < width && y0 >= 0 && y1 < height)
+                    {
+                        float fx = srcX - x0;
+                        float fy = srcY - y0;
+                        float w00 = (1.0f - fx) * (1.0f - fy);
+                        float w10 = fx * (1.0f - fy);
+                        float w01 = (1.0f - fx) * fy;
+                        float w11 = fx * fy;
+
+                        byte* p00 = srcPtr + (y0 * srcStride) + (x0 * 4);
+                        byte* p10 = srcPtr + (y0 * srcStride) + (x1 * 4);
+                        byte* p01 = srcPtr + (y1 * srcStride) + (x0 * 4);
+                        byte* p11 = srcPtr + (y1 * srcStride) + (x1 * 4);
+
+                        dstRow[(x * 4) + 0] = (byte)((w00 * p00[0]) + (w10 * p10[0]) + (w01 * p01[0]) + (w11 * p11[0]));
+                        dstRow[(x * 4) + 1] = (byte)((w00 * p00[1]) + (w10 * p10[1]) + (w01 * p01[1]) + (w11 * p11[1]));
+                        dstRow[(x * 4) + 2] = (byte)((w00 * p00[2]) + (w10 * p10[2]) + (w01 * p01[2]) + (w11 * p11[2]));
+                        dstRow[(x * 4) + 3] = (byte)((w00 * p00[3]) + (w10 * p10[3]) + (w01 * p01[3]) + (w11 * p11[3]));
+                    }
+                    else
+                    {
+                        dstRow[(x * 4) + 0] = 0;
+                        dstRow[(x * 4) + 1] = 0;
+                        dstRow[(x * 4) + 2] = 0;
+                        dstRow[(x * 4) + 3] = 255;
+                    }
+                }
+            });
+
+            return result;
+        }
+    }

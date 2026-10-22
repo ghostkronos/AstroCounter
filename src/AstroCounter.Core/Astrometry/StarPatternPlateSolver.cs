@@ -362,9 +362,15 @@ public class StarPatternPlateSolver : IPlateSolver
             var candidateStarSets = ExtractCandidateStarSets(imagePath, imageWidth, imageHeight, detectedStars);
             if (candidateStarSets.Count == 0)
             {
+                int count = detectedStars?.Count ?? 0;
+                string diag = tr
+                    ? $"Hata Nedeni: Yıldız üçgen deseni kurulamadı (Görselde {count} yıldız bulundu). Yıldız tespiti için pozlama süresini veya ISO değerini artırmanız gerekebilir (en az 6 referans yıldız gereklidir)."
+                    : $"Failure Reason: Could not extract star pattern ({count} stars found). Image may be underexposed (at least 6 reference stars required).";
+
                 return PlateSolvingResult.Failed(
                     tr ? "Yıldız üçgen eşlemesi için yeterli yıldız bulunamadı." : "Insufficient stars detected for triangle pattern matching.",
-                    sw.Elapsed);
+                    sw.Elapsed,
+                    diagnosticReason: diag);
             }
 
             WcsMatrix? bestWcs = null;
@@ -387,10 +393,47 @@ public class StarPatternPlateSolver : IPlateSolver
 
             if (bestWcs == null || bestInliers < 6)
             {
+                int starCount = candidateStarSets.Count > 0 ? candidateStarSets.Max(s => s.Count) : (detectedStars?.Count ?? 0);
+                string diagnostic;
+                if (starCount < 6)
+                {
+                    diagnostic = tr
+                        ? $"Hata Nedeni: Yetersiz yıldız sayısı (Yalnızca {starCount} yıldız bulundu). Fotoğraf aşırı karanlık veya ISO çok düşük olabilir (minimum 6 yıldız gereklidir)."
+                        : $"Failure Reason: Insufficient stars detected ({starCount} stars). Image may be underexposed or ISO/shutter too low.";
+                }
+                else if (imageWidth >= 6000 || imageHeight >= 6000)
+                {
+                    diagnostic = tr
+                        ? $"Hata Nedeni: Devasa çözünürlük ({imageWidth}x{imageHeight}) ve işlenmemiş optik bükülme tespit edildi. Telefonunuzun 108M/Ultra HD modu lens düzeltmesini kapatmış olabilir; 12MP veya Ambilight modu önerilir."
+                        : $"Failure Reason: Ultra-high resolution ({imageWidth}x{imageHeight}) with uncorrected optical distortion. Phone 108M mode may have disabled lens correction.";
+                }
+                else
+                {
+                    diagnostic = tr
+                        ? $"Hata Nedeni: Yıldız üçgen oranları katalogdaki 20 ana gökyüzü bölgesiyle örtüşmedi. Kadraj aşırı dar (<0.4°), aşırı geniş (>95°) veya derin uzay yönelimi katalog kapsamı dışında olabilir."
+                        : $"Failure Reason: Star triangle ratios did not match catalog sky regions. Field may be out of range or uncataloged.";
+                }
+
                 return PlateSolvingResult.Failed(
                     tr ? "Yıldız konumlarından eşleşen gökyüzü üçgen deseni bulunamadı." : "No matching sky triangle pattern found from star positions.",
-                    sw.Elapsed);
+                    sw.Elapsed,
+                    diagnosticReason: diagnostic);
             }
+
+            string? warningMsg = null;
+            if (Math.Abs(bestWcs.RadialDistortionK1) >= 0.008)
+            {
+                double pct = Math.Abs(bestWcs.RadialDistortionK1) * 100.0;
+                warningMsg = tr
+                    ? $"Geniş açı optik fıçı distorsiyonu (barrel distortion) algılandı (köşelerde %{pct:F1} radyal sapma). WCS koordinatları radyal polinom ile otomatik uyarlandı."
+                    : $"Wide-angle optical barrel distortion detected ({pct:F1}% radial corner drift). WCS coordinates automatically adapted with radial polynomial.";
+            }
+
+            double fovH = bestWcs.FovHeightDegrees;
+            double roll = bestWcs.RotationDegrees;
+            string stellariumGuide = tr
+                ? $"Stellarium Kılavuzu: FOV: ~{fovH:F0}°, Kamera Açısı: {roll:F0}° (Stellarium'da bu değerlere ayarlayarak birebir örtüşme elde edebilirsiniz)."
+                : $"Stellarium Guide: FOV: ~{fovH:F0}°, Camera Angle: {roll:F0}° (Match Stellarium FOV/Roll for 1:1 view).";
 
             return PlateSolvingResult.Success(
                 wcs: bestWcs,
@@ -399,7 +442,10 @@ public class StarPatternPlateSolver : IPlateSolver
                 matchedStars: bestInliers,
                 message: tr
                     ? $"{bestRegion} alanı yıldız üçgen geometrisiyle çözümlendi ({bestInliers} yıldız eşleşti)."
-                    : $"{bestRegion} field solved via star triangle geometry ({bestInliers} stars matched).");
+                    : $"{bestRegion} field solved via star triangle geometry ({bestInliers} stars matched).",
+                warningMessage: warningMsg,
+                stellariumGuide: stellariumGuide,
+                radialDistortion: bestWcs.RadialDistortionK1);
         }, cancellationToken);
     }
 
@@ -987,6 +1033,35 @@ public class StarPatternPlateSolver : IPlateSolver
         double rotationDeg = Math.Atan2(b, a) * (180.0 / Math.PI);
         rotationDeg = ((rotationDeg % 360.0) + 360.0) % 360.0;
 
+        double normRadius = Math.Max(1.0, 0.5 * imgDiag);
+        double impliedFovDiag = finalDegPerPx * imgDiag;
+
+        // Estimate radial optical distortion (k1) if field of view is wide (> 35°)
+        double k1 = 0.0;
+        if (impliedFovDiag > 35.0 && initialPairs.Count >= 6)
+        {
+            double num = 0.0;
+            double den = 0.0;
+            foreach (var p in initialPairs)
+            {
+                double dx = p.X - cx;
+                double dy = p.Y - cy;
+                double rd = Math.Sqrt((dx * dx) + (dy * dy)) / normRadius;
+
+                // Ideal undistorted radius from predicted (u, v) on centered tangent plane
+                double ru = Math.Sqrt((p.U * p.U) + (p.V * p.V)) / (finalDegPerPx * normRadius);
+                double deltaR = ru - rd;
+                double rd3 = rd * rd * rd;
+                num += deltaR * rd3;
+                den += rd3 * rd3;
+            }
+
+            if (den > 1e-6)
+            {
+                k1 = Math.Clamp(num / den, -0.15, 0.15);
+            }
+        }
+
         var candidateWcs = new WcsMatrix(
             centerCoord,
             cx,
@@ -994,7 +1069,8 @@ public class StarPatternPlateSolver : IPlateSolver
             pixelScaleArcsec,
             rotationDeg,
             imageWidth,
-            imageHeight);
+            imageHeight,
+            radialDistortionK1: k1);
 
         // Bright-star concordance verification:
         // Ensure prominent catalog stars that project inside the frame are not systematically missing.

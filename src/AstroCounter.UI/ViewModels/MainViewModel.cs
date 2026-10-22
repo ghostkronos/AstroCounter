@@ -686,6 +686,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         SpeculativeCount = 0;
         CurrentWcs = null;
         SolvedCoordinatesText = "-";
+        DiagnosticWarningText = null;
+        StellariumGuideText = null;
         TargetDetailsText = "";
         CursorCelestialText = "-";
         _isStarPatternSolved = false;
@@ -1154,6 +1156,29 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         set => SetProperty(ref _cursorCelestialText, value);
     }
 
+    private string? _diagnosticWarningText;
+    private string? _stellariumGuideText;
+
+    public string? DiagnosticWarningText
+    {
+        get => _diagnosticWarningText;
+        private set
+        {
+            if (SetProperty(ref _diagnosticWarningText, value))
+            {
+                OnPropertyChanged(nameof(HasDiagnosticWarning));
+            }
+        }
+    }
+
+    public bool HasDiagnosticWarning => !string.IsNullOrEmpty(DiagnosticWarningText);
+
+    public string? StellariumGuideText
+    {
+        get => _stellariumGuideText;
+        private set => SetProperty(ref _stellariumGuideText, value);
+    }
+
     public WcsMatrix? CurrentWcs
     {
         get => _currentWcs;
@@ -1497,6 +1522,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 _solvedCameraAngle = result.Wcs.RotationDegrees;
                 _userManualAngleOffset = 0.0;
                 CurrentWcs = result.Wcs;
+                DiagnosticWarningText = result.WarningMessage;
+                StellariumGuideText = result.StellariumGuide;
 
                 // Immediately orient photo to North-Up (plus Stellarium sky roll if connected)
                 ApplyStellariumSkyAngle(_stellariumSkyAngle);
@@ -1510,9 +1537,17 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 TargetDetailsText = IsTurkish
                     ? $"{result.TargetName} ({result.MatchedStarCount} yıldız eşleşti, Kadrajda {AvailableTargetsInPhoto.Count} gök cismi bulundu, FOV: {result.Wcs.FovWidthDegrees:F1}°x{result.Wcs.FovHeightDegrees:F1}°)"
                     : $"{result.TargetName} ({result.MatchedStarCount} stars matched, {AvailableTargetsInPhoto.Count} catalog objects in frame, FOV: {result.Wcs.FovWidthDegrees:F1}°x{result.Wcs.FovHeightDegrees:F1}°)";
-                StatusMessage = IsTurkish
-                    ? $"Yıldızlardan çözümlendi: {TargetDetailsText}"
-                    : $"Solved from star pattern: {TargetDetailsText}";
+                
+                if (!string.IsNullOrEmpty(result.WarningMessage))
+                {
+                    StatusMessage = $"⚠️ {result.WarningMessage}";
+                }
+                else
+                {
+                    StatusMessage = IsTurkish
+                        ? $"Yıldızlardan çözümlendi: {TargetDetailsText}"
+                        : $"Solved from star pattern: {TargetDetailsText}";
+                }
 
                 if (IsStellariumConnected)
                 {
@@ -1532,10 +1567,9 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 CurrentWcs = null;
                 SolvedCoordinatesText = IsTurkish ? "Eşleşme Yok" : "No Match";
-                TargetDetailsText = IsTurkish ? "Yıldız üçgen deseni katalogda bulunamadı" : "Star triangle pattern not found in catalog";
-                StatusMessage = IsTurkish
-                    ? "Fotoğraftaki yıldız deseni katalog ile eşleştirilemedi."
-                    : "The star pattern in the image could not be matched with the catalog.";
+                DiagnosticWarningText = result.DiagnosticReason ?? (IsTurkish ? "Yıldız üçgen deseni katalogda bulunamadı." : "Star triangle pattern not found in catalog.");
+                TargetDetailsText = DiagnosticWarningText;
+                StatusMessage = $"⚠️ {DiagnosticWarningText}";
             }
         }
         catch (Exception ex)

@@ -23,6 +23,34 @@ public static class PhotometricStarFinder
         IProgress<float>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        // Smart downscaling for ultra-high-resolution images (> 4096 px, e.g. 108 Megapixels).
+        // Simulates sensor pixel binning to avoid allocating gigabytes of RAM while preserving SNR.
+        if (bitmap.Width > 4096 || bitmap.Height > 4096)
+        {
+            float scale = 4000f / Math.Max(bitmap.Width, bitmap.Height);
+            int newW = (int)Math.Round(bitmap.Width * scale);
+            int newH = (int)Math.Round(bitmap.Height * scale);
+            using var scaledBmp = bitmap.Resize(new SKImageInfo(newW, newH, bitmap.ColorType, bitmap.AlphaType), SKSamplingOptions.Default);
+            if (scaledBmp != null)
+            {
+                var scaledStars = DetectStars(scaledBmp, config, progress, cancellationToken);
+                float invScale = 1.0f / scale;
+                var rescaledList = new List<AstrophotographyObject>(scaledStars.Count);
+                foreach (var s in scaledStars)
+                {
+                    rescaledList.Add(s with
+                    {
+                        Box = new BoundingBox(
+                            s.Box.X * invScale,
+                            s.Box.Y * invScale,
+                            s.Box.Width * invScale,
+                            s.Box.Height * invScale)
+                    });
+                }
+                return rescaledList;
+            }
+        }
+
         int width = bitmap.Width;
         int height = bitmap.Height;
 
