@@ -57,7 +57,7 @@ public static class PhotometricStarFinder
                     int rowOffset = y * width;
                     for (int x = x0; x < x1; x++)
                     {
-                        sampleBuffer[sampleCount++] = smoothedLuminance[rowOffset + x];
+                        sampleBuffer[sampleCount++] = rawLuminance[rowOffset + x];
                     }
                 }
 
@@ -65,7 +65,7 @@ public static class PhotometricStarFinder
                 (float median, float std) = ComputeSigmaClippedStats(sampleBuffer, sampleCount);
                 int gridIdx = (gy * gridCols) + gx;
                 bgGrid[gridIdx] = median;
-                stdGrid[gridIdx] = Math.Max(0.5f, std);
+                stdGrid[gridIdx] = Math.Max(1.0f, std);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -78,7 +78,7 @@ public static class PhotometricStarFinder
         float maxAllowedStd = Math.Max(4.0f, globalMedianStd * 2.8f);
         for (int i = 0; i < stdGrid.Length; i++)
         {
-            stdGrid[i] = Math.Clamp(stdGrid[i], 0.5f, maxAllowedStd);
+            stdGrid[i] = Math.Clamp(stdGrid[i], 1.0f, maxAllowedStd);
         }
 
         progress?.Report(0.35f);
@@ -108,15 +108,15 @@ public static class PhotometricStarFinder
 
             float bg = (w00 * bgGrid[i00]) + (w10 * bgGrid[i10]) + (w01 * bgGrid[i01]) + (w11 * bgGrid[i11]);
             float std = (w00 * stdGrid[i00]) + (w10 * stdGrid[i10]) + (w01 * stdGrid[i01]) + (w11 * stdGrid[i11]);
-            return (bg, Math.Max(0.5f, std));
+            return (bg, Math.Max(1.0f, std));
         }
 
-        // 3. Peak Detection with 5x5 strict local maximum filter
+        // 3. Peak Detection with 3x3 DAOStarFinder-style PSF local maximum filter
         var candidates = new List<AstrophotographyObject>();
         int id = 1;
         int border = 4;
         float minConfidence = config?.MinConfidence ?? 0.02f;
-        float minSigma = Math.Clamp((minConfidence / 0.25f) * 3.0f, 0.20f, 3.0f);
+        float scanSigma = minConfidence < 0.25f ? 1.5f : 3.5f;
 
         for (int y = border; y < height - border; y++)
         {
@@ -131,20 +131,19 @@ public static class PhotometricStarFinder
             for (int x = border; x < width - border; x++)
             {
                 var (localBg, localStd) = GetLocalBackgroundAndNoise(x, y);
-                float threshold = localBg + (minSigma * localStd);
+                // Effective standard deviation of Gaussian noise in 3x3 smoothed domain
+                float smStd = localStd / 2.67f;
+                float threshold = localBg + Math.Max(2.5f, scanSigma * smStd);
 
-                float rawCenter = rawLuminance[rowOffset + x];
                 float smoothCenter = smoothedLuminance[rowOffset + x];
-                float centerVal = Math.Max(rawCenter, smoothCenter);
+                if (smoothCenter <= threshold) continue;
 
-                if (centerVal <= threshold) continue;
-
-                // Check 5x5 neighborhood strict local peak on smoothed luminance (to reject pixel noise)
+                // 3x3 DAOStarFinder strict local maximum on smoothed luminance
                 bool isPeak = true;
-                for (int dy = -2; dy <= 2 && isPeak; dy++)
+                for (int dy = -1; dy <= 1 && isPeak; dy++)
                 {
                     int nRow = (y + dy) * width;
-                    for (int dx = -2; dx <= 2; dx++)
+                    for (int dx = -1; dx <= 1; dx++)
                     {
                         if (dx == 0 && dy == 0) continue;
                         float neighborVal = smoothedLuminance[nRow + (x + dx)];
@@ -158,48 +157,58 @@ public static class PhotometricStarFinder
 
                 if (!isPeak) continue;
 
-                // Hot pixel / sensor defect rejection:
-                // An optical star has a point spread function (PSF) that extends across adjacent pixels.
-                // An isolated single hot pixel has zero or near-zero signal in all its 4 immediate cross neighbors.
-                float rawCrossMax = Math.Max(
-                    Math.Max(rawLuminance[rowOffset + x - 1], rawLuminance[rowOffset + x + 1]),
-                    Math.Max(rawLuminance[rowOffset - width + x], rawLuminance[rowOffset + width + x])
-                );
-                float rawNet = rawCenter - localBg;
-                if (rawNet > 3.0f * localStd && (rawCrossMax - localBg) < 0.10f * rawNet)
+                float rawCenter = rawLuminance[rowOffset + x];
+                float netRaw = rawCenter - localBg;
+                float netSmooth = smoothCenter - localBg;
+                float netPeak = Math.Max(netRaw, netSmooth);
+
+                // Optical PSF sharpness / Hot pixel rejection:
+                // An optical star has an Airy disc PSF spreading signal to adjacent pixels (netSmooth >= 0.32 * netRaw).
+                // A single isolated hot pixel or noise spike has netSmooth <= 0.25 * netRaw.
+                if (netSmooth < 0.32f * netRaw && netRaw > 8.0f)
                 {
-                    // Isolated hot pixel with no optical PSF
-                    continue;
+                    continue; // Single pixel noise artifact / cosmic ray
                 }
 
-                // Compute precise Signal-to-Noise Ratio (SNR) using un-attenuated net peak
-                float netPeak = Math.Max(rawNet, smoothCenter - localBg);
-                float snr = netPeak / localStd;
-
-                // Astronomical Confidence score mapping:
-                // Tier 1 High (Green, >= 0.80): Prominent / Bright stars (SNR >= 10 sigma OR netPeak >= 90)
-                // Scales smoothly from 0.80 up to 1.00 based on both SNR and peak star brightness
-                // Tier 2 Medium (Yellow, 0.50 - 0.79): Medium stars (SNR 5-10 sigma)
-                // Tier 3 Low (Orange, 0.25 - 0.49): Faint stars (SNR 3-5 sigma)
-                // Filtered Noise (Red, < 0.25): Noise (< 3 sigma)
+                // Astronomical Confidence & Tier classification
+                float sigRatio = netSmooth / smStd;
                 float confidence;
-                if (snr >= 10.0f || netPeak >= 90.0f)
+
+                if ((netPeak >= 70.0f && sigRatio >= 12.0f) || netPeak >= 130.0f)
                 {
-                    float snrScore = Math.Clamp((snr - 10.0f) / 60.0f, 0f, 1f);
-                    float peakScore = Math.Clamp(netPeak / 235.0f, 0f, 1f);
+                    // Tier 1 High (Green, 0.80 - 1.00): Prominent / Bright stars
+                    float snrScore = Math.Clamp((sigRatio - 12.0f) / 40.0f, 0f, 1f);
+                    float peakScore = Math.Clamp((netPeak - 70.0f) / 185.0f, 0f, 1f);
                     confidence = Math.Clamp(0.80f + (0.10f * snrScore) + (0.10f * peakScore), 0.80f, 1.0f);
                 }
-                else if (snr >= 5.0f)
+                else if (netPeak >= 22.0f && sigRatio >= 6.0f)
                 {
-                    confidence = 0.50f + (((snr - 5.0f) / 5.0f) * 0.29f);
+                    // Tier 2 Medium (Yellow, 0.50 - 0.79): Medium stars
+                    float snrScore = Math.Clamp((sigRatio - 6.0f) / 6.0f, 0f, 1f);
+                    float peakScore = Math.Clamp((netPeak - 22.0f) / 48.0f, 0f, 1f);
+                    confidence = 0.50f + (0.15f * snrScore) + (0.14f * peakScore);
                 }
-                else if (snr >= 3.0f)
+                else if (netPeak >= 6.0f && sigRatio >= 3.8f)
                 {
-                    confidence = 0.25f + (((snr - 3.0f) / 2.0f) * 0.24f);
+                    // Tier 3 Low (Orange, 0.25 - 0.49): Standard astronomical faint star detection
+                    float snrScore = Math.Clamp((sigRatio - 3.8f) / 2.2f, 0f, 1f);
+                    confidence = 0.25f + (0.24f * snrScore);
+                }
+                else if (sigRatio >= 2.0f)
+                {
+                    // Filtered Noise (Red, 0.15 - 0.24): Deep field / faint candidates
+                    confidence = 0.15f + (((sigRatio - 2.0f) / 1.8f) * 0.09f);
                 }
                 else
                 {
-                    confidence = Math.Max(0.01f, (snr / 3.0f) * 0.24f);
+                    // Filtered Noise (Red, 0.01 - 0.14): Noise floor (< 2.0 sigma)
+                    confidence = Math.Max(0.01f, (sigRatio / 2.0f) * 0.14f);
+                }
+
+                // In 8-bit images, net signals < 6.0 ADU are within quantization noise
+                if (netPeak < 6.0f)
+                {
+                    confidence = Math.Min(confidence, 0.22f);
                 }
 
                 if (confidence < minConfidence) continue;
@@ -208,7 +217,7 @@ public static class PhotometricStarFinder
                 float starCenterX = x;
                 float starCenterY = y;
                 float sumW = 0f, sumX = 0f, sumY = 0f;
-                int rCentroid = centerVal >= 235f ? 4 : 2;
+                int rCentroid = rawCenter >= 235f ? 4 : 2;
                 for (int cdy = -rCentroid; cdy <= rCentroid; cdy++)
                 {
                     int cy = y + cdy;
@@ -244,7 +253,7 @@ public static class PhotometricStarFinder
                 float boxY = Math.Max(0, starCenterY - (boxSize / 2.0f));
 
                 string classification;
-                if (boxSize > 36.0f && netPeak < 45.0f && snr < 9.0f)
+                if (boxSize > 36.0f && netPeak < 45.0f && sigRatio < 9.0f)
                 {
                     classification = "galaxy";
                 }

@@ -203,6 +203,30 @@ public class StarPatternPlateSolver : IPlateSolver
         new("Alnitak (ζ Ori)", 85.190, -1.943, 1.77),
         new("Saiph (κ Ori)", 86.939, -9.669, 2.06),
         new("M42 (Orion Nebula)", 83.822, -5.391, 3.00),
+        new("Hatysa (ι Ori)", 84.730, -5.910, 2.75),
+        new("Saif al Jabbar (η Ori)", 83.784, -2.397, 3.35),
+        new("σ Ori", 84.687, -2.600, 3.77),
+        new("τ Ori", 83.273, -6.837, 3.59),
+        new("Meissa (λ Ori)", 88.793, 9.934, 3.39),
+        new("Tabit (π3 Ori)", 73.063, 6.961, 3.16),
+        new("π4 Ori", 72.801, 5.605, 3.69),
+        new("π5 Ori", 73.543, 2.441, 3.70),
+        new("Trapezium (θ1 Ori)", 83.819, -5.387, 4.98),
+        new("θ2 Ori", 83.857, -5.415, 5.02),
+        new("Atlas (27 Tau)", 57.291, 24.053, 3.63),
+        new("Electra (17 Tau)", 56.219, 24.114, 3.70),
+        new("Maia (20 Tau)", 56.491, 24.368, 3.87),
+        new("Merope (23 Tau)", 56.634, 23.948, 4.18),
+        new("Taygeta (19 Tau)", 56.326, 24.468, 4.30),
+        new("Pleione (28 Tau)", 57.295, 24.135, 5.05),
+        new("Celaeno (16 Tau)", 56.104, 24.292, 5.45),
+        new("Alcor (80 UMa)", 201.298, 54.988, 3.99),
+        new("Tania Australis (μ UMa)", 157.564, 41.499, 3.06),
+        new("Tania Borealis (λ UMa)", 154.274, 42.915, 3.45),
+        new("Talitha (ι UMa)", 134.869, 48.042, 3.12),
+        new("Theta UMa", 143.208, 51.677, 3.17),
+        new("Muscida (ο UMa)", 128.966, 60.718, 3.35),
+        new("Psi UMa", 166.427, 44.498, 3.00),
         new("Castor (α Gem)", 113.650, 31.888, 1.58),
         new("Pollux (β Gem)", 116.329, 28.026, 1.14),
         new("Alhena (γ Gem)", 99.428, 16.399, 1.93),
@@ -361,7 +385,7 @@ public class StarPatternPlateSolver : IPlateSolver
 
             sw.Stop();
 
-            if (bestWcs == null || bestInliers < 8)
+            if (bestWcs == null || bestInliers < 6)
             {
                 return PlateSolvingResult.Failed(
                     tr ? "Yıldız konumlarından eşleşen gökyüzü üçgen deseni bulunamadı." : "No matching sky triangle pattern found from star positions.",
@@ -663,7 +687,7 @@ public class StarPatternPlateSolver : IPlateSolver
             int nCatAll = Math.Min(32, regionalCat.Count);
             int nCatTri = Math.Min(20, nCatAll);
 
-            double minCatSep = region.MaxRadiusDeg <= 15.0 ? 0.35 : 2.0;
+            double minCatSep = 0.35;
             var catTriangles = BuildTriangles(
                 nCatTri,
                 i => (regionalCat[i].U, regionalCat[i].V),
@@ -671,7 +695,7 @@ public class StarPatternPlateSolver : IPlateSolver
                 52.0); // max 52 degrees separation
 
             const double ratioTol = 0.018;
-            double minAllowedFov = region.MaxRadiusDeg <= 15.0 ? 0.4 : 6.0;
+            double minAllowedFov = 0.4;
 
             foreach (var it in imgTriangles)
             {
@@ -683,7 +707,7 @@ public class StarPatternPlateSolver : IPlateSolver
 
                     double degPerPx = ct.Perimeter / it.Perimeter;
                     double impliedFovDiag = degPerPx * imgDiag;
-                    if (impliedFovDiag < minAllowedFov || impliedFovDiag > 75.0) continue;
+                    if (impliedFovDiag < minAllowedFov || impliedFovDiag > 95.0) continue;
 
                     Span<(double X, double Y, double U, double V, double W)> triPairs =
                     [
@@ -702,7 +726,8 @@ public class StarPatternPlateSolver : IPlateSolver
                     var matchedPairs = CollectUniqueInlierPairs(
                         imageStars, nImgAll, regionalCat, nCatAll, a, b, tu, tv, tolDeg);
 
-                    if (matchedPairs.Count >= 7)
+                    int reqPairs = region.MaxRadiusDeg <= 15.0 ? 6 : 7;
+                    if (matchedPairs.Count >= reqPairs)
                     {
                         double rawScore = matchedPairs.Sum(p => p.W);
                         if (rawScore > bestScore * 0.85 &&
@@ -719,7 +744,7 @@ public class StarPatternPlateSolver : IPlateSolver
                                 out int refinedInliers,
                                 out double refinedScore);
 
-                            int minInliersReq = (candidateWcs != null && candidateWcs.FovHeightDegrees > 28.0) ? 10 : 8;
+                            int minInliersReq = reqPairs;
                             if (candidateWcs != null && refinedInliers >= minInliersReq && refinedScore > bestScore)
                             {
                                 bestScore = refinedScore;
@@ -923,7 +948,7 @@ public class StarPatternPlateSolver : IPlateSolver
                 a, b, tu, tv,
                 tolDeg);
 
-            if (refinedPairs.Count >= 7 &&
+            if (refinedPairs.Count >= 6 &&
                 FitSimilarityTransform(refinedPairs.ToArray(), out a, out b, out tu, out tv))
             {
                 initialPairs = refinedPairs;
@@ -953,7 +978,7 @@ public class StarPatternPlateSolver : IPlateSolver
         }
         double rmsDeg = Math.Sqrt(sumErrSq / initialPairs.Count);
         double rmsNormDiag = rmsDeg / (finalDegPerPx * imgDiag);
-        if (rmsNormDiag > 0.0085)
+        if (rmsNormDiag > 0.015)
         {
             return null; // Reject high-residual accidental alignments
         }
@@ -999,13 +1024,8 @@ public class StarPatternPlateSolver : IPlateSolver
             }
         }
 
-        // Broad fields must contain prominent catalog stars
-        if (candidateWcs.FovHeightDegrees > 20.0 && brightInFrame < 4)
-        {
-            return null;
-        }
-
-        if (brightInFrame >= 4 && brightMatched < Math.Max(3, (int)Math.Ceiling(brightInFrame * 0.45)))
+        // Concordance verification: ensure prominent catalog stars are matched when abundant
+        if (brightInFrame >= 6 && brightMatched < Math.Max(2, (int)Math.Ceiling(brightInFrame * 0.30)))
         {
             return null;
         }
