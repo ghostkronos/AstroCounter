@@ -390,4 +390,24 @@ public class AstrometryTests
         Assert.NotNull(res108M.DiagnosticReason);
         Assert.Contains("108M", res108M.DiagnosticReason);
     }
+
+    [Fact]
+    public async Task StarPatternPlateSolver_SolvesNorthAmericaNebulaDeepField_WithAccurateOrientationAndFov()
+    {
+        string uploadPath = @"C:\Users\unala\.gemini\antigravity\brain\b15cadec-52bb-45f3-9cef-cd26e10d6fa3\.user_uploaded\media_1792700998561_fc0e1c71.jpg";
+        if (!System.IO.File.Exists(uploadPath)) return;
+
+        using var bmp = AstroCounter.Core.Processing.ImagePreprocessor.LoadImage(uploadPath);
+        var solver = new StarPatternPlateSolver();
+        var res = await solver.SolveAsync(uploadPath, bmp.Width, bmp.Height);
+
+        Assert.True(res.IsSuccess);
+        Assert.NotNull(res.Wcs);
+        Assert.Equal("North America Nebula - Deneb Deep Field", res.TargetName);
+        Assert.InRange(res.Wcs!.CenterCoordinates.RaDegrees, 313.0, 316.0);
+        Assert.InRange(res.Wcs.CenterCoordinates.DecDegrees, 44.0, 46.0);
+        Assert.InRange(res.Wcs.RotationDegrees, 310.0, 325.0);
+        Assert.InRange(res.Wcs.FovWidthDegrees, 6.0, 7.5);
+        Assert.True(res.MatchedStarCount >= 8);
+    }
 }

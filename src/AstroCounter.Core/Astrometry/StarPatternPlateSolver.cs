@@ -122,6 +122,19 @@ public class StarPatternPlateSolver : IPlateSolver
         new("η Cyg", 299.077, 35.083, 3.89),
         new("ν Cyg", 314.293, 41.167, 3.94),
         new("ο1 Cyg", 303.408, 46.741, 3.79),
+        new("ο2 Cyg", 303.883, 47.700, 3.98),
+        new("55 Cyg", 312.235, 46.114, 4.81),
+        new("56 Cyg", 312.520, 44.059, 5.06),
+        new("57 Cyg", 313.311, 44.387, 4.77),
+        new("59 Cyg", 314.956, 47.521, 4.74),
+        new("60 Cyg", 315.295, 46.156, 5.37),
+        new("63 Cyg", 316.942, 47.653, 4.56),
+        new("68 Cyg", 319.613, 43.946, 4.98),
+        new("HD 199478", 313.897, 47.396, 5.68),
+        new("HR 8023", 314.145, 44.925, 5.15),
+        new("HR 8035", 314.581, 44.472, 5.55),
+        new("HR 8003", 313.328, 45.182, 5.45),
+        new("HD 200527", 315.601, 44.791, 6.18),
         new("Altair (α Aql)", 297.696, 8.868, 0.77),
         new("Tarazed (γ Aql)", 296.565, 10.613, 2.72),
         new("Alshain (β Aql)", 298.828, 6.407, 3.71),
@@ -308,6 +321,7 @@ public class StarPatternPlateSolver : IPlateSolver
         new("M45 Pleiades Deep Field", 56.87, 24.11, 8.0),
         new("North Celestial Pole - Polaris Vicinity", 0.0, 89.0, 14.0),
         new("Double Cluster - Perseus Deep Field", 34.75, 57.15, 9.0),
+        new("North America Nebula - Deneb Deep Field", 314.0, 45.0, 6.0),
         new("Cygnus Sadr / Veil Deep Field", 308.0, 38.0, 12.0),
 
         // Broad Constellation Regions (radius 32° - 38°)
@@ -741,7 +755,7 @@ public class StarPatternPlateSolver : IPlateSolver
             int nCatAll = Math.Min(32, regionalCat.Count);
             int nCatTri = Math.Min(20, nCatAll);
 
-            double minCatSep = 0.35;
+            double minCatSep = region.MaxRadiusDeg <= 15.0 ? 0.20 : 0.35;
             var catTriangles = BuildTriangles(
                 nCatTri,
                 i => (regionalCat[i].U, regionalCat[i].V),
@@ -781,7 +795,7 @@ public class StarPatternPlateSolver : IPlateSolver
                     var matchedPairs = CollectUniqueInlierPairs(
                         imageStars, nImgAll, regionalCat, nCatAll, a, b, tu, tv, tolDeg);
 
-                    int reqPairs = region.MaxRadiusDeg <= 15.0 ? 6 : (impliedFovDiag > 45.0 ? 8 : 7);
+                    int reqPairs = region.MaxRadiusDeg <= 15.0 ? 7 : (impliedFovDiag > 45.0 ? 8 : 7);
                     if (matchedPairs.Count >= reqPairs)
                     {
                         double rawScore = matchedPairs.Sum(p => p.W);
