@@ -25,9 +25,9 @@ public static class PhotometricStarFinder
     {
         // Smart downscaling for ultra-high-resolution images (> 4096 px, e.g. 108 Megapixels).
         // Simulates sensor pixel binning to avoid allocating gigabytes of RAM while preserving SNR.
-        if (bitmap.Width > 4096 || bitmap.Height > 4096)
+        if (bitmap.Width > 16384 || bitmap.Height > 16384)
         {
-            float scale = 4000f / Math.Max(bitmap.Width, bitmap.Height);
+            float scale = 16000f / Math.Max(bitmap.Width, bitmap.Height);
             int newW = (int)Math.Round(bitmap.Width * scale);
             int newH = (int)Math.Round(bitmap.Height * scale);
             using var scaledBmp = bitmap.Resize(new SKImageInfo(newW, newH, bitmap.ColorType, bitmap.AlphaType), SKSamplingOptions.Default);
@@ -144,7 +144,7 @@ public static class PhotometricStarFinder
         int id = 1;
         int border = 4;
         float minConfidence = config?.MinConfidence ?? 0.02f;
-        float scanSigma = minConfidence < 0.25f ? 1.5f : 3.5f;
+        float scanSigma = minConfidence < 0.25f ? 1.8f : 3.5f;
 
         for (int y = border; y < height - border; y++)
         {
@@ -202,41 +202,31 @@ public static class PhotometricStarFinder
                 float sigRatio = netSmooth / smStd;
                 float confidence;
 
-                if ((netPeak >= 70.0f && sigRatio >= 12.0f) || netPeak >= 130.0f)
+                if ((netPeak >= 50.0f && sigRatio >= 10.0f) || netPeak >= 100.0f)
                 {
                     // Tier 1 High (Green, 0.80 - 1.00): Prominent / Bright stars
-                    float snrScore = Math.Clamp((sigRatio - 12.0f) / 40.0f, 0f, 1f);
-                    float peakScore = Math.Clamp((netPeak - 70.0f) / 185.0f, 0f, 1f);
+                    float snrScore = Math.Clamp((sigRatio - 10.0f) / 35.0f, 0f, 1f);
+                    float peakScore = Math.Clamp((netPeak - 50.0f) / 150.0f, 0f, 1f);
                     confidence = Math.Clamp(0.80f + (0.10f * snrScore) + (0.10f * peakScore), 0.80f, 1.0f);
                 }
-                else if (netPeak >= 22.0f && sigRatio >= 6.0f)
+                else if (netPeak >= 16.0f && sigRatio >= 4.5f)
                 {
                     // Tier 2 Medium (Yellow, 0.50 - 0.79): Medium stars
-                    float snrScore = Math.Clamp((sigRatio - 6.0f) / 6.0f, 0f, 1f);
-                    float peakScore = Math.Clamp((netPeak - 22.0f) / 48.0f, 0f, 1f);
+                    float snrScore = Math.Clamp((sigRatio - 4.5f) / 5.5f, 0f, 1f);
+                    float peakScore = Math.Clamp((netPeak - 16.0f) / 34.0f, 0f, 1f);
                     confidence = 0.50f + (0.15f * snrScore) + (0.14f * peakScore);
                 }
-                else if (netPeak >= 6.0f && sigRatio >= 3.8f)
+                else if (sigRatio >= 2.5f)
                 {
-                    // Tier 3 Low (Orange, 0.25 - 0.49): Standard astronomical faint star detection
-                    float snrScore = Math.Clamp((sigRatio - 3.8f) / 2.2f, 0f, 1f);
+                    // Tier 3 Low (Orange, 0.25 - 0.49): Standard astronomical faint star detection (2.5 - 4.5 sigma)
+                    float snrScore = Math.Clamp((sigRatio - 2.5f) / 2.0f, 0f, 1f);
                     confidence = 0.25f + (0.24f * snrScore);
-                }
-                else if (sigRatio >= 2.0f)
-                {
-                    // Filtered Noise (Red, 0.15 - 0.24): Deep field / faint candidates
-                    confidence = 0.15f + (((sigRatio - 2.0f) / 1.8f) * 0.09f);
                 }
                 else
                 {
-                    // Filtered Noise (Red, 0.01 - 0.14): Noise floor (< 2.0 sigma)
-                    confidence = Math.Max(0.01f, (sigRatio / 2.0f) * 0.14f);
-                }
-
-                // In 8-bit images, net signals < 6.0 ADU are within quantization noise
-                if (netPeak < 6.0f)
-                {
-                    confidence = Math.Min(confidence, 0.22f);
+                    // Filtered Noise (Red, 0.05 - 0.24): Noise floor (< 2.5 sigma)
+                    float snrScore = Math.Clamp(sigRatio / 2.5f, 0f, 1f);
+                    confidence = 0.05f + (0.19f * snrScore);
                 }
 
                 if (confidence < minConfidence) continue;
@@ -304,7 +294,8 @@ public static class PhotometricStarFinder
                     Confidence: confidence,
                     ClassName: classification,
                     TileOffsetX: 0,
-                    TileOffsetY: 0
+                    TileOffsetY: 0,
+                    Snr: sigRatio
                 ));
             }
         }

@@ -357,6 +357,53 @@ public static class ImagePreprocessor
         string SummaryText);
 
     /// <summary>
+    /// Applies real-time visual brightness (-100..100), exposure/gamma (0.2..3.0), and contrast (0.5..2.5)
+    /// to an SKBitmap for interactive UI rendering, completely isolated from raw detection algorithms.
+    /// </summary>
+    public static SKBitmap ApplyDisplayToneAdjustment(SKBitmap source, double brightness, double exposure, double contrast)
+    {
+        if (Math.Abs(brightness) < 0.5 && Math.Abs(exposure - 1.0) < 0.01 && Math.Abs(contrast - 1.0) < 0.01)
+        {
+            return source.Copy();
+        }
+
+        int width = source.Width;
+        int height = source.Height;
+        var result = new SKBitmap(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+
+        byte[] lut = new byte[256];
+        double invGamma = 1.0 / Math.Max(0.1, exposure);
+
+        for (int i = 0; i < 256; i++)
+        {
+            double v = Math.Pow(i / 255.0, invGamma);
+            v = ((v - 0.5) * contrast) + 0.5;
+            int outVal = (int)Math.Round((v * 255.0) + brightness);
+            lut[i] = (byte)Math.Clamp(outVal, 0, 255);
+        }
+
+        using var bgraSource = source.ColorType == SKColorType.Bgra8888 ? null : source.Copy(SKColorType.Bgra8888);
+        SKBitmap src = bgraSource ?? source;
+
+        unsafe
+        {
+            byte* srcPtr = (byte*)src.GetPixels();
+            byte* dstPtr = (byte*)result.GetPixels();
+            int totalBytes = width * height * 4;
+
+            for (int i = 0; i < totalBytes; i += 4)
+            {
+                dstPtr[i + 0] = lut[srcPtr[i + 0]];
+                dstPtr[i + 1] = lut[srcPtr[i + 1]];
+                dstPtr[i + 2] = lut[srcPtr[i + 2]];
+                dstPtr[i + 3] = srcPtr[i + 3];
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Automatically analyzes the astronomical image's sky background mesh and star signal dynamic range.
     /// - If the image is TOO DARK (underexposed / linear stack), applies local black-point subtraction
     ///   and an astronomical Midtone Transfer Function (MTF) stretch so faint/medium stars become clearly detectable.
