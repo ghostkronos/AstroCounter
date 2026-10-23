@@ -14,6 +14,7 @@ public interface IPlateSolver
         int imageWidth,
         int imageHeight,
         IReadOnlyList<AstrophotographyObject>? detectedStars = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        CelestialCoordinates? hintCoordinates = null);
 }
 

@@ -240,49 +240,62 @@ public class CataloguePlateSolver : IPlateSolver
         int imageWidth,
         int imageHeight,
         IReadOnlyList<AstrophotographyObject>? detectedStars = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CelestialCoordinates? hintCoordinates = null)
     {
         var sw = Stopwatch.StartNew();
 
         string filename = Path.GetFileNameWithoutExtension(imagePath).ToLowerInvariant();
 
-        AstronomicalTarget? matchedTarget = KnownCatalogues.FirstOrDefault(t =>
-            filename.Contains(t.Id.ToLowerInvariant()) ||
-            filename.Contains(t.NameEn.Split(' ')[0].ToLowerInvariant()) ||
-            filename.Contains(t.NameTr.Split(' ')[0].ToLowerInvariant()));
+        AstronomicalTarget? matchedTarget = null;
 
-        if (matchedTarget == null)
+        // Strict tokenized filename matching (eliminates false-positive substring matches like "de" from "deep" matching M43)
+        if (!string.IsNullOrEmpty(filename))
         {
-            if (filename.Contains("andromeda"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M31");
-            else if (filename.Contains("perseid") || filename.Contains("perseus"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "Perseus");
-            else if (filename.Contains("orion"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M42");
-            else if (filename.Contains("pleiad") || filename.Contains("ulker"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M45");
-            else if (filename.Contains("triangulum"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M33");
-            else if (filename.Contains("whirlpool"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M51");
-            else if (filename.Contains("rosette") || filename.Contains("rozet"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "NGC2237");
-            else if (filename.Contains("veil"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "NGC6960");
-            else if (filename.Contains("polaris") || filename.Contains("kutup"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "Polaris");
-            else if (filename.Contains("sirius") || filename.Contains("akyildiz"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "Sirius");
-            else if (filename.Contains("leo") || filename.Contains("aslan"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M65");
-            else if (filename.Contains("bode"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M81");
-            else if (filename.Contains("cigar"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M82");
-            else if (filename.Contains("pinwheel") || filename.Contains("firildak"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M101");
-            else if (filename.Contains("sombrero"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M104");
+            var tokens = System.Text.RegularExpressions.Regex.Matches(filename, @"[a-z0-9]+")
+                .Select(m => m.Value)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // Direct Catalog ID token match (e.g. "m31", "m42", "ngc7000", "ic434", "m45")
+            matchedTarget = KnownCatalogues.FirstOrDefault(t => tokens.Contains(t.Id.ToLowerInvariant()));
+
+            if (matchedTarget == null)
+            {
+                if (tokens.Contains("andromeda"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M31");
+                else if (tokens.Contains("orion") || tokens.Contains("deepsky") || filename.Contains("deep_sky"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M42");
+                else if (tokens.Contains("pleiades") || tokens.Contains("pleiad") || tokens.Contains("ulker"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M45");
+                else if (tokens.Contains("perseus") || tokens.Contains("perseid"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "Perseus");
+                else if (tokens.Contains("triangulum"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M33");
+                else if (tokens.Contains("whirlpool"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M51");
+                else if (tokens.Contains("rosette") || tokens.Contains("rozet"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "NGC2237");
+                else if (tokens.Contains("horsehead") || tokens.Contains("atbasi"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "IC434");
+                else if (tokens.Contains("veil"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "NGC6960");
+                else if (tokens.Contains("polaris") || tokens.Contains("demirkazik"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "Polaris");
+                else if (tokens.Contains("sirius") || tokens.Contains("akyildiz"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "Sirius");
+                else if (tokens.Contains("sombrero"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M104");
+                else if (tokens.Contains("pinwheel") || tokens.Contains("firildak"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M101");
+                else if (tokens.Contains("california") || tokens.Contains("kaliforniya"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "NGC1499");
+                else if (tokens.Contains("helix"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "NGC7293");
+                else if (tokens.Contains("bode"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M81");
+                else if (tokens.Contains("dumbbell"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M27");
+            }
         }
 
         if (matchedTarget == null)

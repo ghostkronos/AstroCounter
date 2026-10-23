@@ -360,7 +360,8 @@ public class StarPatternPlateSolver : IPlateSolver
         int imageWidth,
         int imageHeight,
         IReadOnlyList<AstrophotographyObject>? detectedStars = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CelestialCoordinates? hintCoordinates = null)
     {
         return Task.Run(() =>
         {
@@ -389,17 +390,48 @@ public class StarPatternPlateSolver : IPlateSolver
 
             WcsMatrix? bestWcs = null;
             int bestInliers = 0;
+            double bestScore = -1.0;
             string bestRegion = string.Empty;
 
             foreach (var stars in candidateStarSets)
             {
                 if (stars.Count < 6) continue;
-                var wcs = MatchStarPatternRansac(stars, imageWidth, imageHeight, out int inliers, out string region);
-                if (wcs != null && inliers > bestInliers)
+                var wcs = MatchStarPatternRansac(stars, imageWidth, imageHeight, out int inliers, out string region, hintCoordinates, out double score);
+                if (wcs != null && score > bestScore)
                 {
                     bestWcs = wcs;
                     bestInliers = inliers;
+                    bestScore = score;
                     bestRegion = region;
+                }
+            }
+
+            // If normal orientation produced insufficient matches, test horizontal mirror parity (telescope star diagonal prisms)
+            if (bestInliers < 6)
+            {
+                foreach (var stars in candidateStarSets)
+                {
+                    if (stars.Count < 6) continue;
+                    var mirroredStars = stars.Select(s => new DetectedStar(imageWidth - s.X, s.Y, s.Flux)).ToList();
+                    var mwcs = MatchStarPatternRansac(mirroredStars, imageWidth, imageHeight, out int minliers, out string mregion, hintCoordinates, out double mscore);
+                    if (mwcs != null && mscore > bestScore)
+                    {
+                        bestWcs = new WcsMatrix(
+                            mwcs.CenterCoordinates,
+                            mwcs.ReferencePixelX,
+                            mwcs.ReferencePixelY,
+                            mwcs.PixelScaleArcsec,
+                            mwcs.RotationDegrees,
+                            imageWidth,
+                            imageHeight,
+                            mwcs.RadialDistortionK1,
+                            mwcs.RadialDistortionK2,
+                            mwcs.SplineWarp,
+                            isFlippedHorizontally: true);
+                        bestInliers = minliers;
+                        bestScore = mscore;
+                        bestRegion = mregion + " (Ayna/Flipped)";
+                    }
                 }
             }
 
@@ -477,8 +509,15 @@ public class StarPatternPlateSolver : IPlateSolver
             try
             {
                 using var bmp = ImagePreprocessor.LoadImage(imagePath);
-                using var balanced = ImagePreprocessor.AutoBalanceBrightness(bmp, out var info);
 
+                // Extract from original raw bitmap first (so bright/light-polluted skies aren't clipped by auto-stretch)
+                var rawStars = ExtractBrightStarCentroids(bmp, maxStars);
+                if (rawStars.Count >= 6)
+                {
+                    sets.Add(rawStars);
+                }
+
+                using var balanced = ImagePreprocessor.AutoBalanceBrightness(bmp, out var info);
                 if (info.WasAdjusted)
                 {
                     var balancedStars = ExtractBrightStarCentroids(balanced, maxStars);
@@ -487,12 +526,6 @@ public class StarPatternPlateSolver : IPlateSolver
                         sets.Add(balancedStars);
                     }
                 }
-
-                var rawStars = ExtractBrightStarCentroids(bmp, maxStars);
-                if (rawStars.Count >= 6)
-                {
-                    sets.Add(rawStars);
-                }
             }
             catch
             {
@@ -500,13 +533,29 @@ public class StarPatternPlateSolver : IPlateSolver
             }
         }
 
-        if (detectedStars != null && detectedStars.Count >= 6)
+        // Only use external detectedStars as a fallback when no disk image exists or when bitmap extraction yielded no sets.
+        // Apply wide spatial NMS and border margin filtering so clumped roof/edge artifacts never form degenerate triangles.
+        if (sets.Count == 0 && detectedStars != null && detectedStars.Count >= 6)
         {
-            sets.Add(detectedStars
+            var filtered = detectedStars
+                .Where(s => s.Tier <= ConfidenceTier.Tier2_Medium || s.Confidence >= 0.35f || s.Snr >= 4.0f)
                 .OrderByDescending(s => s.Confidence * Math.Sqrt(Math.Max(1f, s.Box.Area)))
                 .Take(maxStars)
                 .Select(s => new DetectedStar(s.CenterX, s.CenterY, s.Confidence * Math.Max(1f, s.Box.Area)))
-                .ToList());
+                .ToList();
+
+            if (filtered.Count >= 6)
+            {
+                sets.Add(filtered);
+            }
+            else
+            {
+                sets.Add(detectedStars
+                    .OrderByDescending(s => s.Confidence * Math.Sqrt(Math.Max(1f, s.Box.Area)))
+                    .Take(maxStars)
+                    .Select(s => new DetectedStar(s.CenterX, s.CenterY, s.Confidence * Math.Max(1f, s.Box.Area)))
+                    .ToList());
+            }
         }
 
         return sets;
@@ -549,9 +598,9 @@ public class StarPatternPlateSolver : IPlateSolver
             totalLum += l;
         }
 
-        if ((totalLum / pixels.Length) > 130.0)
+        if ((totalLum / pixels.Length) > 205.0)
         {
-            return []; // Reject overexposed / daytime / non-astronomical images
+            return []; // Reject completely saturated white daytime images while allowing bright light-polluted night skies
         }
 
         double[] integral = new double[(w + 1) * (h + 1)];
@@ -708,10 +757,22 @@ public class StarPatternPlateSolver : IPlateSolver
         int imageWidth,
         int imageHeight,
         out int bestInlierCount,
-        out string bestRegionName)
+        out string bestRegionName,
+        CelestialCoordinates? hintCoordinates = null)
+        => MatchStarPatternRansac(imageStars, imageWidth, imageHeight, out bestInlierCount, out bestRegionName, hintCoordinates, out _);
+
+    public static WcsMatrix? MatchStarPatternRansac(
+        IReadOnlyList<DetectedStar> imageStars,
+        int imageWidth,
+        int imageHeight,
+        out int bestInlierCount,
+        out string bestRegionName,
+        CelestialCoordinates? hintCoordinates,
+        out double bestMatchScore)
     {
         bestInlierCount = 0;
         bestRegionName = string.Empty;
+        bestMatchScore = -1.0;
 
         int nImgAll = Math.Min(35, imageStars.Count);
         int nImgTri = Math.Min(18, nImgAll);
@@ -731,20 +792,50 @@ public class StarPatternPlateSolver : IPlateSolver
         double bestScore = -1.0;
         WcsMatrix? bestWcs = null;
 
-        foreach (var region in CandidateSkyRegions)
+        var regionsToSearch = new List<CandidateRegion>();
+        if (hintCoordinates.HasValue)
+        {
+            regionsToSearch.Add(new CandidateRegion("Mosaic Neighbor Region (Wide)", hintCoordinates.Value.RaDegrees, hintCoordinates.Value.DecDegrees, 45.0));
+            regionsToSearch.Add(new CandidateRegion("Mosaic Neighbor Region (Narrow)", hintCoordinates.Value.RaDegrees, hintCoordinates.Value.DecDegrees, 7.5));
+        }
+        regionsToSearch.AddRange(CandidateSkyRegions);
+
+        foreach (var region in regionsToSearch)
         {
             var regionCenter = new CelestialCoordinates(region.RaDeg, region.DecDeg);
             var refTangentWcs = new WcsMatrix(regionCenter, 0.0, 0.0, 3600.0, 0.0, 1000, 1000);
 
             var regionalCat = new List<(CatalogStar Star, double U, double V, double Weight)>();
-            foreach (var cs in BrightStarCatalog)
+
+            if (region.MaxRadiusDeg <= 15.0)
             {
-                var sc = new CelestialCoordinates(cs.RaDeg, cs.DecDeg);
-                double angDist = regionCenter.AngularDistanceTo(sc);
-                if (angDist <= region.MaxRadiusDeg && refTangentWcs.EquatorialToPixel(sc, out double u, out double v))
+                // Two-Tier: Use GaiaTycho for narrow/telescopic regions (FOV <= 8 deg) down to mag 11.5, or standard Hipparcos for wide fields
+                double queryMag = region.MaxRadiusDeg <= 8.0 ? 11.5 : 8.5;
+                int maxReq = region.MaxRadiusDeg <= 8.0 ? 140 : 35;
+                var denseStars = GaiaTychoCatalog.QueryRegion(region.RaDeg, region.DecDeg, region.MaxRadiusDeg, maxMag: queryMag, maxResults: maxReq);
+                foreach (var hs in denseStars)
                 {
-                    double wgt = Math.Pow(Math.Max(0.6, 5.5 - cs.Mag), 1.8);
-                    regionalCat.Add((cs, u, v, wgt));
+                    var sc = new CelestialCoordinates(hs.RaDeg, hs.DecDeg);
+                    if (refTangentWcs.EquatorialToPixel(sc, out double u, out double v))
+                    {
+                        string name = BrightStarCatalog.FirstOrDefault(b => Math.Abs(b.RaDeg - hs.RaDeg) < 0.05 && Math.Abs(b.DecDeg - hs.DecDeg) < 0.05)?.Name
+                                      ?? $"TYC {hs.SourceId}";
+                        double wgt = Math.Pow(Math.Max(0.6, 5.5 - hs.Mag), 1.8);
+                        regionalCat.Add((new CatalogStar(name, hs.RaDeg, hs.DecDeg, hs.Mag), u, v, wgt));
+                    }
+                }
+            }
+            else
+            {
+                foreach (var cs in BrightStarCatalog)
+                {
+                    var sc = new CelestialCoordinates(cs.RaDeg, cs.DecDeg);
+                    double angDist = regionCenter.AngularDistanceTo(sc);
+                    if (angDist <= region.MaxRadiusDeg && refTangentWcs.EquatorialToPixel(sc, out double u, out double v))
+                    {
+                        double wgt = Math.Pow(Math.Max(0.6, 5.5 - cs.Mag), 1.8);
+                        regionalCat.Add((cs, u, v, wgt));
+                    }
                 }
             }
 
@@ -795,7 +886,7 @@ public class StarPatternPlateSolver : IPlateSolver
                     var matchedPairs = CollectUniqueInlierPairs(
                         imageStars, nImgAll, regionalCat, nCatAll, a, b, tu, tv, tolDeg);
 
-                    int reqPairs = region.MaxRadiusDeg <= 15.0 ? 7 : (impliedFovDiag > 45.0 ? 8 : 7);
+                    int reqPairs = region.MaxRadiusDeg <= 15.0 ? 8 : (impliedFovDiag > 45.0 ? 8 : 7);
                     if (matchedPairs.Count >= reqPairs)
                     {
                         double rawScore = matchedPairs.Sum(p => p.W);
@@ -827,6 +918,7 @@ public class StarPatternPlateSolver : IPlateSolver
             }
         }
 
+        bestMatchScore = bestScore;
         return bestWcs;
     }
 
@@ -1059,29 +1151,49 @@ public class StarPatternPlateSolver : IPlateSolver
         double normRadius = Math.Max(1.0, 0.5 * imgDiag);
         double impliedFovDiag = finalDegPerPx * imgDiag;
 
-        // Estimate radial optical distortion (k1) if field of view is wide (> 35°)
+        // Continuous lens optical radial distortion (k1, k2) fitting across all matched stars
         double k1 = 0.0;
-        if (impliedFovDiag > 35.0 && initialPairs.Count >= 6)
+        double k2 = 0.0;
+        var pairsForDistortion = initialPairs;
+        if (pairsForDistortion.Count >= 5)
         {
-            double num = 0.0;
-            double den = 0.0;
-            foreach (var p in initialPairs)
+            double s11 = 0.0, s12 = 0.0, s22 = 0.0;
+            double v1 = 0.0, v2 = 0.0;
+            int validCount = 0;
+
+            foreach (var p in pairsForDistortion)
             {
                 double dx = p.X - cx;
                 double dy = p.Y - cy;
                 double rd = Math.Sqrt((dx * dx) + (dy * dy)) / normRadius;
+                if (rd < 0.06) continue; // Skip near-center points where radial derivative is negligible
 
-                // Ideal undistorted radius from predicted (u, v) on centered tangent plane
                 double ru = Math.Sqrt((p.U * p.U) + (p.V * p.V)) / (finalDegPerPx * normRadius);
                 double deltaR = ru - rd;
                 double rd3 = rd * rd * rd;
-                num += deltaR * rd3;
-                den += rd3 * rd3;
+                double rd5 = rd3 * rd * rd;
+
+                s11 += rd3 * rd3;
+                s12 += rd3 * rd5;
+                s22 += rd5 * rd5;
+                v1 += deltaR * rd3;
+                v2 += deltaR * rd5;
+                validCount++;
             }
 
-            if (den > 1e-6)
+            if (validCount >= 8)
             {
-                k1 = Math.Clamp(num / den, -0.15, 0.15);
+                // Solve 2x2 normal equations for k1 and k2
+                double det = (s11 * s22) - (s12 * s12);
+                if (Math.Abs(det) > 1e-8)
+                {
+                    k1 = Math.Clamp(((v1 * s22) - (v2 * s12)) / det, -0.22, 0.22);
+                    k2 = Math.Clamp(((s11 * v2) - (s12 * v1)) / det, -0.15, 0.15);
+                }
+            }
+            else if (s11 > 1e-6)
+            {
+                k1 = Math.Clamp(v1 / s11, -0.20, 0.20);
             }
         }
 
@@ -1093,7 +1205,8 @@ public class StarPatternPlateSolver : IPlateSolver
             rotationDeg,
             imageWidth,
             imageHeight,
-            radialDistortionK1: k1);
+            radialDistortionK1: k1,
+            radialDistortionK2: k2);
 
         // Dual Bright-Star Concordance Verification:
         // 1. Catalog Super-bright Anchor Check: Any super-prominent catalog star (Mag <= 1.8) that
@@ -1163,6 +1276,47 @@ public class StarPatternPlateSolver : IPlateSolver
             if (topImgMatched == 0)
             {
                 return null; // None of the top brightest image objects matched any catalog star
+            }
+        }
+
+        // Fit Non-Linear Thin Plate Spline (TPS) Warping across all inlier anchor stars
+        // Snaps ground-truth image star pixels directly onto catalog sky positions,
+        // eliminating asymmetric coma, lens tilt, and atmospheric refraction residuals.
+        if (initialPairs.Count >= 6)
+        {
+            var tpsPoints = new List<ThinPlateSplineWarp.ControlPoint>(initialPairs.Count);
+            foreach (var p in initialPairs)
+            {
+                var match = regionalCat.FirstOrDefault(c =>
+                    Math.Abs(p.U - c.U) < 1e-4 && Math.Abs(p.V - c.V) < 1e-4);
+
+                if (match.Star != null)
+                {
+                    var sc = new CelestialCoordinates(match.Star.RaDeg, match.Star.DecDeg);
+                    if (candidateWcs.EquatorialToPixel(sc, out double targetX, out double targetY))
+                    {
+                        tpsPoints.Add(new ThinPlateSplineWarp.ControlPoint(p.X, p.Y, targetX, targetY));
+                    }
+                }
+            }
+
+            if (tpsPoints.Count >= 6)
+            {
+                var splineWarp = ThinPlateSplineWarp.Create(tpsPoints, imageWidth, imageHeight);
+                if (splineWarp != null)
+                {
+                    candidateWcs = new WcsMatrix(
+                        candidateWcs.CenterCoordinates,
+                        candidateWcs.ReferencePixelX,
+                        candidateWcs.ReferencePixelY,
+                        candidateWcs.PixelScaleArcsec,
+                        candidateWcs.RotationDegrees,
+                        candidateWcs.ImageWidth,
+                        candidateWcs.ImageHeight,
+                        candidateWcs.RadialDistortionK1,
+                        candidateWcs.RadialDistortionK2,
+                        splineWarp);
+                }
             }
         }
 
