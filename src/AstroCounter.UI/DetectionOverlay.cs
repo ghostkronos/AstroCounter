@@ -1,3 +1,4 @@
+using AstroCounter.Core.Processing;
 namespace AstroCounter.UI;
 
 using System;
@@ -16,7 +17,7 @@ using AstroCounter.Core.Models;
 /// </summary>
 public sealed class DetectionOverlay : FrameworkElement
 {
-    private const int MaxLabels = 700;
+    private const int MaxLabels = 1000;
     private const int HaloLimit = 8000;
     private const double MinMarkerScreenPx = 10.0;
     private const double StrokeScreenPx = 1.6;
@@ -24,7 +25,15 @@ public sealed class DetectionOverlay : FrameworkElement
 
     public static readonly DependencyProperty ObjectsProperty = DependencyProperty.Register(
         nameof(Objects), typeof(IReadOnlyList<AstrophotographyObject>), typeof(DetectionOverlay),
-        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnObjectsChanged));
+
+    private static void OnObjectsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is DetectionOverlay overlay)
+        {
+            overlay.RebuildSpatialIndex(e.NewValue as IReadOnlyList<AstrophotographyObject>);
+        }
+    }
 
     public static readonly DependencyProperty RegionsProperty = DependencyProperty.Register(
         nameof(Regions), typeof(IReadOnlyList<SelectionRegion>), typeof(DetectionOverlay),
@@ -32,7 +41,7 @@ public sealed class DetectionOverlay : FrameworkElement
 
     public static readonly DependencyProperty ShowBoxesProperty = DependencyProperty.Register(
         nameof(ShowBoxes), typeof(bool), typeof(DetectionOverlay),
-        new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+        new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
 
     public static readonly DependencyProperty ShowLabelsProperty = DependencyProperty.Register(
         nameof(ShowLabels), typeof(bool), typeof(DetectionOverlay),
@@ -41,6 +50,26 @@ public sealed class DetectionOverlay : FrameworkElement
     public static readonly DependencyProperty ShowSphericalGridProperty = DependencyProperty.Register(
         nameof(ShowSphericalGrid), typeof(bool), typeof(DetectionOverlay),
         new FrameworkPropertyMetadata(false, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty ShowHipparcosStarsProperty = DependencyProperty.Register(
+        nameof(ShowHipparcosStars), typeof(bool), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty ShowConstellationsProperty = DependencyProperty.Register(
+        nameof(ShowConstellations), typeof(bool), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty ShowDsoMarkersProperty = DependencyProperty.Register(
+        nameof(ShowDsoMarkers), typeof(bool), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty ActiveFilePathProperty = DependencyProperty.Register(
+        nameof(ActiveFilePath), typeof(string), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty MosaicPanelsProperty = DependencyProperty.Register(
+        nameof(MosaicPanels), typeof(IReadOnlyList<MosaicPanel>), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
     public static readonly DependencyProperty WcsProperty = DependencyProperty.Register(
         nameof(Wcs), typeof(WcsMatrix), typeof(DetectionOverlay),
@@ -53,6 +82,17 @@ public sealed class DetectionOverlay : FrameworkElement
     public static readonly DependencyProperty TargetMarkerLabelProperty = DependencyProperty.Register(
         nameof(TargetMarkerLabel), typeof(string), typeof(DetectionOverlay),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public static readonly DependencyProperty UseFeatheredBlendingProperty = DependencyProperty.Register(
+        nameof(UseFeatheredBlending), typeof(bool), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public bool UseFeatheredBlending
+    {
+        get => (bool)GetValue(UseFeatheredBlendingProperty);
+        set => SetValue(UseFeatheredBlendingProperty, value);
+    }
+
 
     private static readonly Brush[] TierBrushes =
     {
@@ -69,8 +109,71 @@ public sealed class DetectionOverlay : FrameworkElement
     private static readonly Color ExcludeColor = Color.FromRgb(248, 113, 113);
     private static readonly Color IncludeColor = Color.FromRgb(52, 211, 153);
 
+    private static readonly Brush ConstellationLineBrush = MakeBrush(56, 189, 248, 175);
+    private static readonly Brush ConstellationTextBrush = MakeBrush(125, 211, 252, 245);
+    private static readonly Brush ConstellationBackground = MakeBrush(15, 23, 42, 215);
+
+    private static readonly Brush DsoCircleBrush = MakeBrush(250, 204, 21, 210);
+    private static readonly Brush DsoFillBrush = MakeBrush(250, 204, 21, 30);
+    private static readonly Brush DsoTextBrush = MakeBrush(254, 240, 138, 250);
+    private static readonly Brush DsoLabelBackground = MakeBrush(15, 23, 42, 220);
+
+    private static readonly Brush StarLabelBrush = MakeBrush(226, 232, 240, 235);
+    private static readonly Brush StarLabelBackground = MakeBrush(15, 23, 42, 205);
+
+    private static readonly Brush StarBlueBrush = MakeBrush(147, 197, 253, 255);
+    private static readonly Brush StarWhiteBrush = MakeBrush(248, 250, 252, 255);
+    private static readonly Brush StarYellowBrush = MakeBrush(254, 240, 138, 255);
+    private static readonly Brush StarOrangeBrush = MakeBrush(253, 186, 116, 255);
+    private static readonly Brush StarRedBrush = MakeBrush(248, 113, 113, 255);
+
+    private static readonly Brush StarBlueHaloBrush = MakeBrush(147, 197, 253, 55);
+    private static readonly Brush StarWhiteHaloBrush = MakeBrush(248, 250, 252, 55);
+    private static readonly Brush StarYellowHaloBrush = MakeBrush(254, 240, 138, 55);
+    private static readonly Brush StarOrangeHaloBrush = MakeBrush(253, 186, 116, 55);
+    private static readonly Brush StarRedHaloBrush = MakeBrush(248, 113, 113, 55);
+
+    private static readonly Brush MosaicBorderBrush = MakeBrush(168, 85, 247, 210);
+    private static readonly Brush MosaicFillBrush = MakeBrush(168, 85, 247, 28);
+    private static readonly Brush MosaicTextBrush = MakeBrush(216, 180, 254, 250);
+
     private double _zoom = 1.0;
     private Rect _viewport = Rect.Empty;
+
+    private SpatialQuadTree? _spatialQuadTree;
+    private readonly List<AstrophotographyObject> _visibleQueryBuffer = new(4096);
+    private readonly List<Rect> _allVisibleRects = new(4096);
+    private readonly List<Rect>[] _tierRects = new List<Rect>[4]
+    {
+        new(2048),
+        new(2048),
+        new(2048),
+        new(2048)
+    };
+    private readonly List<Point>[] _tierDots = new List<Point>[4]
+    {
+        new(2048),
+        new(2048),
+        new(2048),
+        new(2048)
+    };
+    private WcsMatrix? _lastHipparcosWcs;
+    private List<HipparcosStar>? _cachedHipparcosStars;
+    private readonly Dictionary<(int Pct, int Tier, int SizeKey), FormattedText> _labelTextCache = new(512);
+    private static readonly Typeface LabelTypeface = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+
+    private void RebuildSpatialIndex(IReadOnlyList<AstrophotographyObject>? objects)
+    {
+        if (objects != null && objects.Count > 0)
+        {
+            _spatialQuadTree = new SpatialQuadTree(objects);
+        }
+        else
+        {
+            _spatialQuadTree = null;
+        }
+        _labelTextCache.Clear();
+    }
 
     private IReadOnlyList<Vector2>? _previewPoints;
     private Vector2? _previewCursor;
@@ -105,6 +208,36 @@ public sealed class DetectionOverlay : FrameworkElement
     {
         get => (bool)GetValue(ShowSphericalGridProperty);
         set => SetValue(ShowSphericalGridProperty, value);
+    }
+
+    public bool ShowHipparcosStars
+    {
+        get => (bool)GetValue(ShowHipparcosStarsProperty);
+        set => SetValue(ShowHipparcosStarsProperty, value);
+    }
+
+    public bool ShowConstellations
+    {
+        get => (bool)GetValue(ShowConstellationsProperty);
+        set => SetValue(ShowConstellationsProperty, value);
+    }
+
+    public bool ShowDsoMarkers
+    {
+        get => (bool)GetValue(ShowDsoMarkersProperty);
+        set => SetValue(ShowDsoMarkersProperty, value);
+    }
+
+    public string? ActiveFilePath
+    {
+        get => (string?)GetValue(ActiveFilePathProperty);
+        set => SetValue(ActiveFilePathProperty, value);
+    }
+
+    public IReadOnlyList<MosaicPanel>? MosaicPanels
+    {
+        get => (IReadOnlyList<MosaicPanel>?)GetValue(MosaicPanelsProperty);
+        set => SetValue(MosaicPanelsProperty, value);
     }
 
     public WcsMatrix? Wcs
@@ -168,22 +301,52 @@ public sealed class DetectionOverlay : FrameworkElement
         // Transparent fill makes the whole overlay hit-testable (needed for drawing tools).
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, width, height));
 
-        double inv = 1.0 / Math.Max(_zoom, 0.005);
+        double inv = 1.0 / Math.Max(_zoom, 0.20);
 
-        if (ShowSphericalGrid && Wcs != null)
+        // Layer 0: Background Photo Mosaic Panels (Base Raster)
+        if (MosaicPanels != null && MosaicPanels.Count > 1)
         {
-            DrawSphericalGrid(dc, inv, width, height);
+            DrawMosaicPanels(dc, inv, width, height);
         }
 
+        // Layer 1-4: Astrometric Grid, Constellations, Stars, DSO Markers
+        if (Wcs != null)
+        {
+            if (ShowSphericalGrid)
+            {
+                DrawSphericalGrid(dc, inv, width, height);
+            }
+
+            if (ShowConstellations)
+            {
+                DrawConstellationLines(dc, inv, width, height);
+            }
+
+            if (ShowHipparcosStars)
+            {
+                DrawHipparcosStars(dc, inv, width, height);
+            }
+
+            if (ShowDsoMarkers)
+            {
+                DrawDsoMarkers(dc, inv, width, height);
+            }
+        }
+
+        // Layer 5: Regions (Scan Polygons)
         DrawRegions(dc, inv);
 
+        // Layer 6: Object Detection Boxes & Labels & Anomalies
         if (ShowBoxes)
         {
             DrawObjects(dc, inv, width, height);
+            DrawAnomalies(dc, inv, width, height);
         }
 
+        // Layer 7: Target Marker
         DrawTargetMarker(dc, inv);
 
+        // Layer 8: Drawing Tool Preview
         DrawPreview(dc, inv);
     }
 
@@ -210,8 +373,33 @@ public sealed class DetectionOverlay : FrameworkElement
         Rect view = _viewport.IsEmpty ? new Rect(0, 0, width, height) : _viewport;
         view.Inflate(30 * inv, 30 * inv);
 
-        double minSize = MinMarkerScreenPx * inv;
-        double stroke = StrokeScreenPx * inv;
+        _visibleQueryBuffer.Clear();
+        if (_spatialQuadTree != null)
+        {
+            _spatialQuadTree.Query((float)view.Left, (float)view.Top, (float)view.Right, (float)view.Bottom, _visibleQueryBuffer);
+        }
+        else
+        {
+            for (int i = 0; i < objects.Count; i++)
+            {
+                var o = objects[i];
+                if (view.Contains(o.CenterX, o.CenterY))
+                {
+                    _visibleQueryBuffer.Add(o);
+                }
+            }
+        }
+
+        int visibleCount = _visibleQueryBuffer.Count;
+        if (visibleCount == 0) return;
+
+        bool isZoomedOut = _zoom < 0.40;
+        bool isFarZoomedOut = _zoom < 0.20;
+
+        // Bounded marker sizing: when zoomed out, min screen size is 5px; when zoomed in, 8px
+        double screenMinPx = isZoomedOut ? 5.0 : 8.0;
+        double minSize = screenMinPx * inv;
+        double stroke = Math.Max(StrokeScreenPx * inv, 1.0);
 
         var pens = new Pen[TierBrushes.Length];
         for (int i = 0; i < pens.Length; i++)
@@ -220,28 +408,154 @@ public sealed class DetectionOverlay : FrameworkElement
             pens[i].Freeze();
         }
 
-        var haloPen = new Pen(HaloBrush, stroke * 2.6);
-        haloPen.Freeze();
-        bool drawHalo = objects.Count <= HaloLimit;
-
-        var labelObjects = ShowLabels ? new List<(AstrophotographyObject Obj, double Size)>() : null;
-
-        foreach (var obj in objects)
+        // LOD: Only draw halos if zoom is not far out and visible count is reasonable
+        bool drawHalo = _zoom >= 0.22 && visibleCount <= HaloLimit;
+        Pen? haloPen = null;
+        if (drawHalo)
         {
+            haloPen = new Pen(HaloBrush, stroke * 2.2);
+            haloPen.Freeze();
+            _allVisibleRects.Clear();
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            _tierRects[i].Clear();
+            _tierDots[i].Clear();
+        }
+
+        var labelObjects = ShowLabels ? new List<(AstrophotographyObject Obj, double Size, double Cx, double Cy)>(Math.Min(visibleCount, MaxLabels + 50)) : null;
+
+        // Subpixel LOD and Density budgeting for guaranteed 60 FPS hardware accelerated rendering
+        bool isDense = visibleCount > 10000 || _zoom < 0.35;
+        double subpixelCell = isDense ? Math.Max(2.0 * inv, 2.5) : 0;
+        HashSet<long>? visitedScreenPixels = isDense ? new HashSet<long>(Math.Min(visibleCount, 50000)) : null;
+        const int MaxMarkerBudget = 50000;
+        int drawnMarkerCount = 0;
+
+        for (int i = 0; i < visibleCount; i++)
+        {
+            var obj = _visibleQueryBuffer[i];
+            int tierIdx = Math.Clamp((int)obj.Tier, 0, 3);
+
             double cx = obj.CenterX;
             double cy = obj.CenterY;
-            if (!view.Contains(cx, cy)) continue;
 
-            double size = Math.Max(Math.Max(obj.Box.Width, obj.Box.Height), minSize);
-            var rect = new Rect(cx - (size / 2), cy - (size / 2), size, size);
-
-            if (drawHalo)
+            // In single image or mosaic mode, obj.CenterX and obj.CenterY are already the exact canvas pixel coordinates.
+            // Only fall back to equatorial reprojection if pixel coordinates are uninitialized (0, 0).
+            if (cx == 0 && cy == 0 && obj.HasCelestialCoordinates && Wcs != null)
             {
-                dc.DrawRectangle(null, haloPen, rect);
+                if (Wcs.EquatorialToPixel(obj.RaDegrees!.Value, obj.DecDegrees!.Value, out double px, out double py))
+                {
+                    cx = px;
+                    cy = py;
+                }
             }
 
-            dc.DrawRectangle(null, pens[Math.Min((int)obj.Tier, pens.Length - 1)], rect);
-            labelObjects?.Add((obj, size));
+            if (isDense && visitedScreenPixels != null && tierIdx >= 2)
+            {
+                long sx = (long)Math.Floor((cx - view.Left) / subpixelCell);
+                long sy = (long)Math.Floor((cy - view.Top) / subpixelCell);
+                long cellKey = (sx << 32) ^ (sy & 0xFFFFFFFFL);
+                if (!visitedScreenPixels.Add(cellKey))
+                {
+                    continue; // Skip redundant subpixel duplicate marker
+                }
+            }
+
+            if (drawnMarkerCount >= MaxMarkerBudget && tierIdx >= 2)
+            {
+                continue; // Budget reached for faint tiers
+            }
+
+            // Adaptive LOD: decide whether to draw bounding box or subtle micro-diamond dot
+            bool drawBox = tierIdx switch
+            {
+                0 => true, // Tier 1 (High) always gets bounding box
+                1 => !isFarZoomedOut && (visibleCount <= 12000 || _zoom >= 0.30),
+                2 => !isZoomedOut && (visibleCount <= 6000 || _zoom >= 0.45),
+                _ => _zoom >= 0.60
+            };
+
+            if (drawBox)
+            {
+                double rawW = Math.Max(obj.Box.Width, 3.0);
+                double rawH = Math.Max(obj.Box.Height, 3.0);
+                double size = Math.Max(Math.Max(rawW, rawH), minSize);
+                if (isZoomedOut)
+                {
+                    size = Math.Min(size, 16.0 * inv);
+                }
+
+                var rect = new Rect(cx - (size / 2.0), cy - (size / 2.0), size, size);
+
+                if (drawHalo && tierIdx <= 1)
+                {
+                    _allVisibleRects.Add(rect);
+                }
+
+                _tierRects[tierIdx].Add(rect);
+                drawnMarkerCount++;
+
+                if (ShowLabels && tierIdx == 0 && (labelObjects?.Count ?? 0) < MaxLabels)
+                {
+                    labelObjects?.Add((obj, size, cx, cy));
+                }
+            }
+            else
+            {
+                // When far zoomed out with massive star count, sub-sample lowest tier noise
+                if (isFarZoomedOut && tierIdx >= 2 && (i % 2 != 0))
+                {
+                    continue;
+                }
+
+                _tierDots[tierIdx].Add(new Point(cx, cy));
+                drawnMarkerCount++;
+            }
+        }
+
+        // Batched geometry draw call for halos (1 draw call instead of thousands)
+        if (drawHalo && haloPen != null && _allVisibleRects.Count > 0)
+        {
+            var haloGeom = new StreamGeometry();
+            using (var sgc = haloGeom.Open())
+            {
+                AppendRectangles(sgc, _allVisibleRects);
+            }
+            haloGeom.Freeze();
+            dc.DrawGeometry(null, haloPen, haloGeom);
+        }
+
+        // Batched geometry draw call for boxes per tier (4 draw calls instead of thousands)
+        for (int i = 0; i < 4; i++)
+        {
+            var list = _tierRects[i];
+            if (list.Count == 0) continue;
+
+            var tierGeom = new StreamGeometry();
+            using (var sgc = tierGeom.Open())
+            {
+                AppendRectangles(sgc, list);
+            }
+            tierGeom.Freeze();
+            dc.DrawGeometry(null, pens[i], tierGeom);
+        }
+
+        // Batched geometry draw call for subtle micro-diamond dots per tier (4 draw calls instead of thousands)
+        double dotRadius = Math.Max(1.0 * inv, 1.0);
+        for (int i = 0; i < 4; i++)
+        {
+            var dots = _tierDots[i];
+            if (dots.Count == 0) continue;
+
+            var dotGeom = new StreamGeometry();
+            using (var sgc = dotGeom.Open())
+            {
+                AppendDiamondDots(sgc, dots, dotRadius);
+            }
+            dotGeom.Freeze();
+            dc.DrawGeometry(TierBrushes[i], null, dotGeom);
         }
 
         if (labelObjects == null) return;
@@ -258,26 +572,95 @@ public sealed class DetectionOverlay : FrameworkElement
         DrawLabels(dc, inv, labelObjects);
     }
 
-    private void DrawLabels(DrawingContext dc, double inv, List<(AstrophotographyObject Obj, double Size)> labelObjects)
+    private static void AppendDiamondDots(StreamGeometryContext ctx, List<Point> dots, double radius)
     {
-        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
-        double fontSize = LabelFontScreenPx * inv;
-
-        foreach (var (obj, size) in labelObjects)
+        for (int i = 0; i < dots.Count; i++)
         {
-            var brush = TierBrushes[Math.Min((int)obj.Tier, TierBrushes.Length - 1)];
-            string text = $"{(int)Math.Round(obj.Confidence * 100)}%";
-            var formatted = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                typeface, fontSize, brush, dpi);
+            var p = dots[i];
+            ctx.BeginFigure(new Point(p.X, p.Y - radius), isFilled: true, isClosed: true);
+            ctx.LineTo(new Point(p.X + radius, p.Y), isStroked: false, isSmoothJoin: false);
+            ctx.LineTo(new Point(p.X, p.Y + radius), isStroked: false, isSmoothJoin: false);
+            ctx.LineTo(new Point(p.X - radius, p.Y), isStroked: false, isSmoothJoin: false);
+        }
+    }
 
-            double x = obj.CenterX + (size / 2) + (3 * inv);
-            double y = obj.CenterY - (formatted.Height / 2);
+    private static void AppendRectangles(StreamGeometryContext ctx, List<Rect> rects)
+    {
+        for (int i = 0; i < rects.Count; i++)
+        {
+            var r = rects[i];
+            ctx.BeginFigure(new Point(r.X, r.Y), isFilled: false, isClosed: true);
+            ctx.LineTo(new Point(r.Right, r.Y), isStroked: true, isSmoothJoin: false);
+            ctx.LineTo(new Point(r.Right, r.Bottom), isStroked: true, isSmoothJoin: false);
+            ctx.LineTo(new Point(r.X, r.Bottom), isStroked: true, isSmoothJoin: false);
+        }
+    }
 
-            dc.DrawRectangle(LabelBackground, null,
-                new Rect(x - (2 * inv), y - inv, formatted.Width + (4 * inv), formatted.Height + (2 * inv)));
+    private void DrawLabels(DrawingContext dc, double inv, List<(AstrophotographyObject Obj, double Size, double Cx, double Cy)> labelObjects)
+    {
+        if (labelObjects.Count == 0 || _zoom < 0.25) return;
+
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        double fontSize = Math.Clamp(LabelFontScreenPx * inv, 9.0, 24.0);
+
+        // Pass 1: Draw all label background rounded boxes in a single batched geometry
+        var bgGeom = new StreamGeometry();
+        using (var bgCtx = bgGeom.Open())
+        {
+            for (int i = 0; i < labelObjects.Count; i++)
+            {
+                var (obj, size, cx, cy) = labelObjects[i];
+                int tierIdx = Math.Clamp((int)obj.Tier, 0, TierBrushes.Length - 1);
+                int pct = (int)Math.Round(obj.Confidence * 100);
+                var formatted = GetCachedLabelText(pct, tierIdx, fontSize, TierBrushes[tierIdx], dpi);
+
+                double x = cx + (size / 2) + (3 * inv);
+                double y = cy - (formatted.Height / 2);
+                var r = new Rect(x - (2 * inv), y - inv, formatted.Width + (4 * inv), formatted.Height + (2 * inv));
+
+                bgCtx.BeginFigure(new Point(r.X, r.Y), isFilled: true, isClosed: true);
+                bgCtx.LineTo(new Point(r.Right, r.Y), isStroked: false, isSmoothJoin: false);
+                bgCtx.LineTo(new Point(r.Right, r.Bottom), isStroked: false, isSmoothJoin: false);
+                bgCtx.LineTo(new Point(r.X, r.Bottom), isStroked: false, isSmoothJoin: false);
+            }
+        }
+        bgGeom.Freeze();
+        dc.DrawGeometry(LabelBackground, null, bgGeom);
+
+        // Pass 2: Draw the cached text glyphs without reallocating FormattedText
+        for (int i = 0; i < labelObjects.Count; i++)
+        {
+            var (obj, size, cx, cy) = labelObjects[i];
+            int tierIdx = Math.Clamp((int)obj.Tier, 0, TierBrushes.Length - 1);
+            int pct = (int)Math.Round(obj.Confidence * 100);
+            var formatted = GetCachedLabelText(pct, tierIdx, fontSize, TierBrushes[tierIdx], dpi);
+
+            double x = cx + (size / 2) + (3 * inv);
+            double y = cy - (formatted.Height / 2);
             dc.DrawText(formatted, new Point(x, y));
         }
+    }
+
+    private FormattedText GetCachedLabelText(int confidencePct, int tier, double fontSize, Brush brush, double dpi)
+    {
+        confidencePct = Math.Clamp(confidencePct, 0, 100);
+        tier = Math.Clamp(tier, 0, 3);
+        int sizeKey = (int)Math.Round(fontSize * 4.0);
+
+        var key = (confidencePct, tier, sizeKey);
+        if (_labelTextCache.TryGetValue(key, out var ft))
+            return ft;
+
+        if (_labelTextCache.Count > 1500)
+        {
+            _labelTextCache.Clear();
+        }
+
+        string text = $"{confidencePct}%";
+        ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+            LabelTypeface, fontSize, brush, dpi);
+        _labelTextCache[key] = ft;
+        return ft;
     }
 
     private void DrawHint(DrawingContext dc, double inv, string text)
@@ -293,6 +676,74 @@ public sealed class DetectionOverlay : FrameworkElement
         dc.DrawRectangle(LabelBackground, null,
             new Rect(x - (6 * inv), y - (4 * inv), formatted.Width + (12 * inv), formatted.Height + (8 * inv)));
         dc.DrawText(formatted, new Point(x, y));
+    }
+
+    private void DrawAnomalies(DrawingContext dc, double inv, double width, double height)
+    {
+        var objects = Objects;
+        if (objects == null || objects.Count == 0) return;
+
+        Pen anomalyPen = new Pen(new SolidColorBrush(Color.FromRgb(244, 63, 94)), 1.8 * inv);
+        anomalyPen.Freeze();
+        Pen bracketPen = new Pen(new SolidColorBrush(Color.FromRgb(251, 113, 133)), 1.4 * inv);
+        bracketPen.Freeze();
+        Brush fillBrush = new SolidColorBrush(Color.FromArgb(45, 244, 63, 94));
+        fillBrush.Freeze();
+        Brush textBg = new SolidColorBrush(Color.FromArgb(230, 15, 23, 42));
+        textBg.Freeze();
+
+        Rect view = _viewport.IsEmpty ? new Rect(0, 0, width, height) : _viewport;
+        view.Inflate(50 * inv, 50 * inv);
+
+        foreach (var obj in objects)
+        {
+            if (!obj.IsAnomaly) continue;
+
+            double cx = obj.CenterX;
+            double cy = obj.CenterY;
+
+            // In single image or mosaic mode, obj.CenterX and obj.CenterY are already the exact canvas pixel coordinates.
+            // Only fall back to equatorial reprojection if pixel coordinates are uninitialized (0, 0).
+            if (cx == 0 && cy == 0 && obj.HasCelestialCoordinates && Wcs != null)
+            {
+                if (Wcs.EquatorialToPixel(obj.RaDegrees!.Value, obj.DecDegrees!.Value, out double px, out double py))
+                {
+                    cx = px;
+                    cy = py;
+                }
+            }
+
+            if (!view.Contains(cx, cy)) continue;
+
+            double r = Math.Max(obj.Box.Width / 2.0, 14.0 * inv);
+
+            // 1. Central targeting reticle circle
+            dc.DrawEllipse(fillBrush, anomalyPen, new Point(cx, cy), r, r);
+
+            // 2. Crosshair reticle ticks
+            double tickOffset = r + (3.0 * inv);
+            double tickLen = 6.0 * inv;
+            dc.DrawLine(bracketPen, new Point(cx - tickOffset - tickLen, cy), new Point(cx - tickOffset, cy));
+            dc.DrawLine(bracketPen, new Point(cx + tickOffset, cy), new Point(cx + tickOffset + tickLen, cy));
+            dc.DrawLine(bracketPen, new Point(cx, cy - tickOffset - tickLen), new Point(cx, cy - tickOffset));
+            dc.DrawLine(bracketPen, new Point(cx, cy + tickOffset), new Point(cx, cy + tickOffset + tickLen));
+
+            // 3. Anomaly Target Label
+            string labelText = "🎯 " + (obj.AnomalyType ?? "ANOMALİ") + $" (SNR: {obj.Snr:F1}σ)";
+            var ft = new FormattedText(
+                labelText,
+                System.Globalization.CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
+                11.0 * inv,
+                new SolidColorBrush(Color.FromRgb(251, 113, 133)),
+                VisualTreeHelper.GetDpi(this).PixelsPerDip);
+
+            double bgPad = 4.0 * inv;
+            var textRect = new Rect(cx - (ft.Width / 2.0) - bgPad, cy + r + (4.0 * inv), ft.Width + (bgPad * 2), ft.Height + bgPad);
+            dc.DrawRoundedRectangle(textBg, bracketPen, textRect, 4.0 * inv, 4.0 * inv);
+            dc.DrawText(ft, new Point(cx - (ft.Width / 2.0), cy + r + (4.0 * inv) + (bgPad * 0.5)));
+        }
     }
 
     private void DrawPreview(DrawingContext dc, double inv)
@@ -357,7 +808,7 @@ public sealed class DetectionOverlay : FrameworkElement
         var labelBrush = MakeBrush(56, 189, 248, 220);
         double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
-        double fontSize = Math.Max(9.0, 11.0 * inv);
+        double fontSize = Math.Clamp(11.0 * inv, 9.0, 22.0);
 
         foreach (var line in gridLines)
         {
@@ -437,7 +888,7 @@ public sealed class DetectionOverlay : FrameworkElement
                 CultureInfo.InvariantCulture,
                 FlowDirection.LeftToRight,
                 typeface,
-                13.0 * inv,
+                Math.Clamp(13.0 * inv, 11.0, 26.0),
                 MakeBrush(250, 204, 21, 255),
                 dpi);
 
@@ -449,10 +900,549 @@ public sealed class DetectionOverlay : FrameworkElement
         }
     }
 
+    private void DrawHipparcosStars(DrawingContext dc, double inv, double width, double height)
+    {
+        var wcs = Wcs;
+        if (wcs == null || width <= 0 || height <= 0) return;
+
+        double fovDeg = Math.Max(wcs.FovWidthDegrees, wcs.FovHeightDegrees);
+        double searchRadius = (fovDeg * 0.75) + 0.5;
+
+        double maxMag = fovDeg switch
+        {
+            > 35.0 => 5.2,
+            > 20.0 => 6.2,
+            > 10.0 => 7.2,
+            > 4.0 => 8.2,
+            _ => 9.2
+        };
+
+        if (_cachedHipparcosStars == null || _lastHipparcosWcs != wcs)
+        {
+            _cachedHipparcosStars = HipparcosCatalog.QueryRegion(
+                wcs.CenterCoordinates.RaDegrees,
+                wcs.CenterCoordinates.DecDegrees,
+                searchRadius,
+                maxMag,
+                maxResults: 350);
+            _lastHipparcosWcs = wcs;
+        }
+
+        var stars = _cachedHipparcosStars;
+        if (stars == null || stars.Count == 0) return;
+
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+        double labelFontSize = Math.Clamp(10.0 * inv, 9.0, 22.0);
+
+        foreach (var star in stars)
+        {
+            if (!TryProjectCelestialTo2DCanvas(star.RaDeg, star.DecDeg, out double px, out double py)) continue;
+            if (px < -20 || px > width + 20 || py < -20 || py > height + 20) continue;
+
+            double radius = Math.Max(1.0, (8.5 - star.Mag) * 0.9) * inv;
+            var starBrush = GetStarBrush(star.Bv);
+
+            if (star.Mag <= 3.5)
+            {
+                double haloRadius = radius * 2.8;
+                var haloBrush = GetStarHaloBrush(star.Bv);
+                dc.DrawEllipse(haloBrush, null, new Point(px, py), haloRadius, haloRadius);
+            }
+
+            dc.DrawEllipse(starBrush, null, new Point(px, py), radius, radius);
+
+            if (star.Mag <= 2.8 || (_zoom > 2.0 && star.Mag <= 4.2))
+            {
+                string text = $"HIP {star.HipId} ({star.Mag:F1})";
+                var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                    typeface, labelFontSize, StarLabelBrush, dpi);
+
+                double lx = px + radius + (3.0 * inv);
+                double ly = py - (ft.Height / 2.0);
+                dc.DrawRectangle(StarLabelBackground, null,
+                    new Rect(lx - inv, ly - inv, ft.Width + (2.0 * inv), ft.Height + (2.0 * inv)));
+                dc.DrawText(ft, new Point(lx, ly));
+            }
+        }
+    }
+
+    private void DrawConstellationLines(DrawingContext dc, double inv, double width, double height)
+    {
+        var wcs = Wcs;
+        if (wcs == null || width <= 0 || height <= 0) return;
+
+        var pen = new Pen(ConstellationLineBrush, 1.4 * inv)
+        {
+            DashStyle = new DashStyle(new double[] { 4, 3 }, 0)
+        };
+        pen.Freeze();
+
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+        double labelFontSize = Math.Clamp(11.5 * inv, 10.0, 26.0);
+
+        var labeledConstellations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var line in ConstellationCatalog.Lines)
+        {
+            if (!TryProjectCelestialTo2DCanvas(line.Start.RaDegrees, line.Start.DecDegrees, out double x1, out double y1)) continue;
+            if (!TryProjectCelestialTo2DCanvas(line.End.RaDegrees, line.End.DecDegrees, out double x2, out double y2)) continue;
+
+            bool anyNear = (x1 >= -width && x1 <= 2 * width && y1 >= -height && y1 <= 2 * height) ||
+                           (x2 >= -width && x2 <= 2 * width && y2 >= -height && y2 <= 2 * height);
+            if (!anyNear) continue;
+
+            dc.DrawLine(pen, new Point(x1, y1), new Point(x2, y2));
+
+            if (!labeledConstellations.Contains(line.ConstellationName))
+            {
+                double mx = (x1 + x2) * 0.5;
+                double my = (y1 + y2) * 0.5;
+
+                if (mx >= 25 && mx <= width - 25 && my >= 25 && my <= height - 25)
+                {
+                    labeledConstellations.Add(line.ConstellationName);
+                    string text = line.DisplayName.ToUpperInvariant();
+                    var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                        typeface, labelFontSize, ConstellationTextBrush, dpi);
+
+                    var rect = new Rect(mx - (ft.Width * 0.5) - (4.0 * inv),
+                                        my - (ft.Height * 0.5) - (2.0 * inv),
+                                        ft.Width + (8.0 * inv),
+                                        ft.Height + (4.0 * inv));
+                    dc.DrawRoundedRectangle(ConstellationBackground, null, rect, 3.0 * inv, 3.0 * inv);
+                    dc.DrawText(ft, new Point(mx - (ft.Width * 0.5), my - (ft.Height * 0.5)));
+                }
+            }
+        }
+    }
+
+    private void DrawDsoMarkers(DrawingContext dc, double inv, double width, double height)
+    {
+        var wcs = Wcs;
+        if (wcs == null || width <= 0 || height <= 0) return;
+
+        var dsoPen = new Pen(DsoCircleBrush, 1.4 * inv)
+        {
+            DashStyle = new DashStyle(new double[] { 3, 2 }, 0)
+        };
+        dsoPen.Freeze();
+
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+        double labelFontSize = Math.Clamp(11.0 * inv, 10.0, 24.0);
+        double degPerPx = wcs.PixelScaleArcsec / 3600.0;
+
+        foreach (var target in CataloguePlateSolver.KnownCatalogues)
+        {
+            if (!TryProjectCelestialTo2DCanvas(target.Coordinates.RaDegrees, target.Coordinates.DecDegrees, out double px, out double py)) continue;
+            if (px < -60 || px > width + 60 || py < -60 || py > height + 60) continue;
+
+            double angularRadiusDeg = target.TypicalFovDegrees * 0.5;
+            double pixelRadius = degPerPx > 1e-8 ? (angularRadiusDeg / degPerPx) : (20.0 * inv);
+            pixelRadius = Math.Clamp(pixelRadius, 14.0 * inv, 80.0 * inv);
+
+            dc.DrawEllipse(DsoFillBrush, dsoPen, new Point(px, py), pixelRadius, pixelRadius);
+
+            string label = target.CommonName;
+            var ft = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                typeface, labelFontSize, DsoTextBrush, dpi);
+
+            double lx = px - (ft.Width * 0.5);
+            double ly = py + pixelRadius + (4.0 * inv);
+
+            var bgRect = new Rect(lx - (4.0 * inv), ly - (2.0 * inv), ft.Width + (8.0 * inv), ft.Height + (4.0 * inv));
+            dc.DrawRoundedRectangle(DsoLabelBackground, null, bgRect, 3.0 * inv, 3.0 * inv);
+            dc.DrawText(ft, new Point(lx, ly));
+        }
+    }
+
+    /// <summary>
+    /// Projects a celestial coordinate (RA, Dec) to 2D canvas coordinates.
+    /// In multi-panel mosaic mode, if the coordinate falls inside a visible solved panel, projects it
+    /// through that panel's local WCS and 2D affine canvas transform so catalog stars, constellations,
+    /// and DSO markers align 1:1 with the rendered photo bitmap.
+    /// </summary>
+    private bool TryProjectCelestialTo2DCanvas(double raDeg, double decDeg, out double px, out double py)
+    {
+        px = 0;
+        py = 0;
+        var wcs = Wcs;
+        if (wcs == null) return false;
+
+        var panels = MosaicPanels;
+        if (panels != null && panels.Count > 1)
+        {
+            var coord = new CelestialCoordinates(raDeg, decDeg);
+            // Check from top-most rendered panel to bottom-most panel
+            for (int pIdx = panels.Count - 1; pIdx >= 0; pIdx--)
+            {
+                var p = panels[pIdx];
+                if (!p.IsVisible || p.Wcs == null || !p.IsSolved) continue;
+                if (p.Wcs.EquatorialToPixel(coord, out double lx, out double ly) &&
+                    lx >= 0 && lx <= p.Width && ly >= 0 && ly <= p.Height)
+                {
+                    var tr = MosaicProject.GetPanelCanvasTransform(p, wcs, pIdx);
+                    px = (lx * tr.M11) + (ly * tr.M21) + tr.OffsetX;
+                    py = (lx * tr.M12) + (ly * tr.M22) + tr.OffsetY;
+                    return true;
+                }
+            }
+        }
+
+        return wcs.EquatorialToPixel(raDeg, decDeg, out px, out py);
+    }
+
+    private static readonly Dictionary<string, System.Windows.Media.Imaging.BitmapSource> _panelBitmapCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, System.Windows.Media.Imaging.BitmapSource> _featheredBitmapCache = new(StringComparer.OrdinalIgnoreCase);
+
+    public static void CachePanelBitmap(string? path, System.Windows.Media.Imaging.BitmapSource? bmp)
+    {
+        if (!string.IsNullOrEmpty(path) && bmp != null)
+        {
+            _panelBitmapCache[path] = bmp;
+            _featheredBitmapCache.Remove(path);
+        }
+    }
+
+    public static void InvalidatePanelCache(string? path)
+    {
+        if (!string.IsNullOrEmpty(path))
+        {
+            _panelBitmapCache.Remove(path);
+            _featheredBitmapCache.Remove(path);
+        }
+    }
+
+    /// <summary>
+    /// Hit-tests which mosaic panel (from top-most to bottom-most layer) contains the given 2D canvas coordinate.
+    /// </summary>
+    public MosaicPanel? HitTestPanelAtCanvasPoint(Point canvasPt)
+    {
+        var panels = MosaicPanels;
+        var wcs = Wcs;
+        if (panels == null || panels.Count == 0) return null;
+        if (panels.Count == 1) return panels[0];
+
+        for (int pIndex = panels.Count - 1; pIndex >= 0; pIndex--)
+        {
+            var p = panels[pIndex];
+            if (!p.IsVisible || p.Width <= 0 || p.Height <= 0) continue;
+
+            var tr = MosaicProject.GetPanelCanvasTransform(p, wcs, pIndex);
+            var matrix = new Matrix(tr.M11, tr.M12, tr.M21, tr.M22, tr.OffsetX, tr.OffsetY);
+            if (!matrix.HasInverse) continue;
+            matrix.Invert();
+
+            Point localPt = matrix.Transform(canvasPt);
+            if (localPt.X >= 0 && localPt.X <= p.Width && localPt.Y >= 0 && localPt.Y <= p.Height)
+            {
+                return p;
+            }
+        }
+
+        return null;
+    }
+
+    public static System.Windows.Media.Imaging.BitmapSource? GetPanelBitmap(MosaicPanel? panel)
+    {
+        if (panel == null) return null;
+        if (panel.CachedBitmap is System.Windows.Media.Imaging.BitmapSource bs) return bs;
+        if (!string.IsNullOrEmpty(panel.FilePath))
+        {
+            var loaded = GetOrLoadPanelBitmap(panel.FilePath);
+            if (loaded != null)
+            {
+                if (panel.CachedBitmap is SkiaSharp.SKBitmap sk)
+                {
+                    panel.CachedSkiaBitmap ??= sk;
+                }
+                panel.CachedBitmap = loaded;
+                return loaded;
+            }
+        }
+        return null;
+    }
+
+    public static System.Windows.Media.Imaging.BitmapSource? GetOrLoadPanelBitmap(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !System.IO.File.Exists(path))
+            return null;
+
+        if (_panelBitmapCache.TryGetValue(path, out var cached))
+            return cached;
+
+        try
+        {
+            string fullPath = System.IO.Path.GetFullPath(path);
+            var uri = new Uri(fullPath, UriKind.Absolute);
+            var bmp = new System.Windows.Media.Imaging.BitmapImage();
+            bmp.BeginInit();
+            bmp.UriSource = uri;
+            bmp.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+            bmp.DecodePixelWidth = 2048;
+            bmp.EndInit();
+            bmp.Freeze();
+            _panelBitmapCache[path] = bmp;
+            return bmp;
+        }
+        catch
+        {
+            try
+            {
+                using var skBitmap = AstroCounter.Core.Processing.ImagePreprocessor.LoadImage(path);
+                using var converted = skBitmap.ColorType == SkiaSharp.SKColorType.Bgra8888
+                    ? skBitmap.Copy()
+                    : skBitmap.Copy(SkiaSharp.SKColorType.Bgra8888);
+
+                var wb = new System.Windows.Media.Imaging.WriteableBitmap(
+                    converted.Width,
+                    converted.Height,
+                    96, 96,
+                    System.Windows.Media.PixelFormats.Bgra32,
+                    null);
+
+                wb.WritePixels(
+                    new Int32Rect(0, 0, converted.Width, converted.Height),
+                    converted.GetPixels(),
+                    converted.ByteCount,
+                    converted.RowBytes);
+
+                wb.Freeze();
+                _panelBitmapCache[path] = wb;
+                return wb;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns a panel bitmap with soft feathered alpha borders to eliminate hard seams and Z-buffer artifacts
+    /// when blending multiple mosaic panels together on the celestial sphere or 2D mosaic preview.
+    /// </summary>
+    public static System.Windows.Media.Imaging.BitmapSource? GetOrLoadFeatheredPanelBitmap(string? path, System.Windows.Media.Imaging.BitmapSource? fallback = null)
+    {
+        string key = !string.IsNullOrEmpty(path) ? path : (fallback != null ? fallback.GetHashCode().ToString() : string.Empty);
+        if (string.IsNullOrEmpty(key)) return fallback;
+
+        if (_featheredBitmapCache.TryGetValue(key, out var cached))
+            return cached;
+
+        var baseBmp = GetOrLoadPanelBitmap(path) ?? fallback;
+        if (baseBmp == null) return null;
+
+        var feathered = CreateFeatheredBitmap(baseBmp, featherFraction: 0.05);
+        _featheredBitmapCache[key] = feathered;
+        return feathered;
+    }
+
+    public static System.Windows.Media.Imaging.BitmapSource CreateFeatheredBitmap(System.Windows.Media.Imaging.BitmapSource src, double featherFraction = 0.05)
+    {
+        if (src == null) return null!;
+
+        int width = src.PixelWidth;
+        int height = src.PixelHeight;
+        if (width <= 0 || height <= 0) return src;
+
+        var bgraBmp = new System.Windows.Media.Imaging.FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
+
+        int stride = width * 4;
+        byte[] pixels = new byte[stride * height];
+        bgraBmp.CopyPixels(pixels, stride, 0);
+
+        int marginX = Math.Max(8, (int)(width * featherFraction));
+        int marginY = Math.Max(8, (int)(height * featherFraction));
+
+        float[] fadeX = new float[marginX];
+        for (int i = 0; i < marginX; i++)
+        {
+            // Smooth cosine S-curve: 0.0 at outer edge to 1.0 at inner margin
+            fadeX[i] = (float)(0.5 - 0.5 * Math.Cos(Math.PI * i / marginX));
+        }
+
+        float[] fadeY = new float[marginY];
+        for (int j = 0; j < marginY; j++)
+        {
+            fadeY[j] = (float)(0.5 - 0.5 * Math.Cos(Math.PI * j / marginY));
+        }
+
+        for (int y = 0; y < height; y++)
+        {
+            float alphaY = 1.0f;
+            if (y < marginY)
+                alphaY = fadeY[y];
+            else if (y >= height - marginY)
+                alphaY = fadeY[height - 1 - y];
+
+            int rowOffset = y * stride;
+
+            if (alphaY < 0.999f)
+            {
+                // Top or bottom margin rows: scale across columns
+                for (int x = 0; x < width; x++)
+                {
+                    float alphaX = 1.0f;
+                    if (x < marginX)
+                        alphaX = fadeX[x];
+                    else if (x >= width - marginX)
+                        alphaX = fadeX[width - 1 - x];
+
+                    float factor = Math.Min(alphaX, alphaY);
+                    int idx = rowOffset + (x * 4);
+                    pixels[idx + 3] = (byte)Math.Clamp((int)(pixels[idx + 3] * factor), 0, 255);
+                }
+            }
+            else
+            {
+                // Middle rows: only feather left and right margin columns
+                for (int x = 0; x < marginX; x++)
+                {
+                    float factor = fadeX[x];
+                    int idx = rowOffset + (x * 4);
+                    pixels[idx + 3] = (byte)Math.Clamp((int)(pixels[idx + 3] * factor), 0, 255);
+                }
+                for (int x = width - marginX; x < width; x++)
+                {
+                    float factor = fadeX[width - 1 - x];
+                    int idx = rowOffset + (x * 4);
+                    pixels[idx + 3] = (byte)Math.Clamp((int)(pixels[idx + 3] * factor), 0, 255);
+                }
+            }
+        }
+
+        var writeable = new System.Windows.Media.Imaging.WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
+        writeable.WritePixels(new Int32Rect(0, 0, width, height), pixels, stride, 0);
+        writeable.Freeze();
+        return writeable;
+    }
+
+    private void DrawMosaicPanels(DrawingContext dc, double inv, double width, double height)
+    {
+        var panels = MosaicPanels;
+        var wcs = Wcs;
+        if (panels == null || panels.Count <= 1) return;
+
+        var pen = new Pen(MosaicBorderBrush, 1.8 * inv)
+        {
+            DashStyle = new DashStyle(new double[] { 5, 3 }, 0)
+        };
+        pen.Freeze();
+
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+        double labelFontSize = Math.Clamp(11.0 * inv, 10.0, 24.0);
+        string? activePath = ActiveFilePath;
+
+        for (int pIndex = 0; pIndex < panels.Count; pIndex++)
+        {
+            var p = panels[pIndex];
+            if (!p.IsVisible || p.Width <= 0 || p.Height <= 0) continue;
+
+            // Check if this panel represents the active image already rendered on the canvas
+            bool isCurrentActive = false;
+            if (panels.Count <= 1)
+            {
+                if (!string.IsNullOrEmpty(activePath) && !string.IsNullOrEmpty(p.FilePath))
+                {
+                    isCurrentActive = string.Equals(System.IO.Path.GetFullPath(p.FilePath), System.IO.Path.GetFullPath(activePath), StringComparison.OrdinalIgnoreCase);
+                }
+                if (!isCurrentActive && wcs != null && p.Wcs != null)
+                {
+                    isCurrentActive = Math.Abs(p.Wcs.CenterCoordinates.RaDegrees - wcs.CenterCoordinates.RaDegrees) < 0.005 &&
+                                      Math.Abs(p.Wcs.CenterCoordinates.DecDegrees - wcs.CenterCoordinates.DecDegrees) < 0.005;
+                }
+            }
+
+            var tr = MosaicProject.GetPanelCanvasTransform(p, wcs, pIndex);
+            Matrix matrix = new Matrix(tr.M11, tr.M12, tr.M21, tr.M22, tr.OffsetX, tr.OffsetY);
+
+            // Compute exact 4 corners from affine mapping so outline and image align 1:1
+            var pt1 = matrix.Transform(new Point(0, 0));
+            var pt2 = matrix.Transform(new Point(p.Width, 0));
+            var pt3 = matrix.Transform(new Point(p.Width, p.Height));
+            var pt4 = matrix.Transform(new Point(0, p.Height));
+
+            // Render photo image if not the active base canvas image
+            if (!isCurrentActive)
+            {
+                var bmp = UseFeatheredBlending
+                    ? (GetOrLoadFeatheredPanelBitmap(p.FilePath, GetPanelBitmap(p)) ?? GetPanelBitmap(p))
+                    : GetPanelBitmap(p);
+                if (bmp != null)
+                {
+                    dc.PushTransform(new MatrixTransform(matrix));
+                    dc.PushOpacity(Math.Clamp(p.Opacity, 0.05, 1.0));
+                    dc.DrawImage(bmp, new Rect(0, 0, p.Width, p.Height));
+                    dc.Pop(); // opacity
+                    dc.Pop(); // transform
+                }
+            }
+
+            // Draw seamless dashed boundary matching image geometry (highlighted in bright cyan if selected)
+            bool isSelectedPanel = p.IsSelected || (!string.IsNullOrEmpty(activePath) && !string.IsNullOrEmpty(p.FilePath) &&
+                string.Equals(p.FilePath, activePath, StringComparison.OrdinalIgnoreCase));
+            Pen panelPen = pen;
+            if (isSelectedPanel)
+            {
+                panelPen = new Pen(MakeBrush(56, 189, 248, 250), 2.8 * inv);
+                panelPen.Freeze();
+            }
+
+            var streamGeom = new StreamGeometry();
+            using (var ctx = streamGeom.Open())
+            {
+                ctx.BeginFigure(pt1, isFilled: false, isClosed: true);
+                ctx.LineTo(pt2, isStroked: true, isSmoothJoin: false);
+                ctx.LineTo(pt3, isStroked: true, isSmoothJoin: false);
+                ctx.LineTo(pt4, isStroked: true, isSmoothJoin: false);
+            }
+            streamGeom.Freeze();
+            dc.DrawGeometry(null, panelPen, streamGeom);
+
+            bool trLang = CataloguePlateSolver.UseTurkishLanguage;
+            string badge = p.IsSolved
+                ? $"[{p.Name}] ({p.Width}x{p.Height})"
+                : (trLang
+                    ? $"⚠️ [{p.Name}] Hizalanamadı — Katalog/Yıldız Eşleşmesi Yok"
+                    : $"⚠️ [{p.Name}] Unsolved — No Catalog/Star Match");
+            var badgeBrush = p.IsSolved ? (isSelectedPanel ? MakeBrush(56, 189, 248, 255) : MosaicTextBrush) : MakeBrush(251, 191, 36, 255);
+            var ft = new FormattedText(badge, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                typeface, labelFontSize, badgeBrush, dpi);
+
+            var bgRect = new Rect(pt1.X + (4.0 * inv), pt1.Y + (4.0 * inv), ft.Width + (8.0 * inv), ft.Height + (4.0 * inv));
+            dc.DrawRoundedRectangle(LabelBackground, null, bgRect, 3.0 * inv, 3.0 * inv);
+            dc.DrawText(ft, new Point(pt1.X + (8.0 * inv), pt1.Y + (6.0 * inv)));
+        }
+    }
+
+    private static Brush GetStarBrush(float bv) => bv switch
+    {
+        < 0.0f => StarBlueBrush,
+        < 0.35f => StarWhiteBrush,
+        < 0.80f => StarYellowBrush,
+        < 1.30f => StarOrangeBrush,
+        _ => StarRedBrush
+    };
+
+    private static Brush GetStarHaloBrush(float bv) => bv switch
+    {
+        < 0.0f => StarBlueHaloBrush,
+        < 0.35f => StarWhiteHaloBrush,
+        < 0.80f => StarYellowHaloBrush,
+        < 1.30f => StarOrangeHaloBrush,
+        _ => StarRedHaloBrush
+    };
+
     private static SolidColorBrush MakeBrush(byte r, byte g, byte b, byte a = 255)
     {
         var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
         brush.Freeze();
         return brush;
     }
+
 }
+
