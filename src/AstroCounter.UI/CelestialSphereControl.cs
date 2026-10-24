@@ -242,9 +242,9 @@ public class CelestialSphereControl : Grid
     public event Action<double, double, double>? CameraMoved;
 
     /// <summary>
-    /// Raised when the user double-clicks a photo projected onto the 3D celestial sphere.
+    /// Raised when the user double-clicks a photo projected onto the 3D celestial sphere (or null when double-clicking empty space).
     /// </summary>
-    public event Action<MosaicPanel>? PanelDoubleClicked;
+    public event Action<MosaicPanel?>? PanelDoubleClicked;
 
     // Viewport hardware 3D-to-2D projection transform cache
     private GeneralTransform3DTo2D? _cachedTransform3D;
@@ -1198,13 +1198,10 @@ public class CelestialSphereControl : Grid
             if (e.ClickCount == 2)
             {
                 var hitPanel = HitTestPanelAtScreenPoint(e.GetPosition(this));
-                if (hitPanel != null)
-                {
-                    PanelDoubleClicked?.Invoke(hitPanel);
-                    _overlayCanvas.InvalidateVisual();
-                    e.Handled = true;
-                    return;
-                }
+                PanelDoubleClicked?.Invoke(hitPanel);
+                _overlayCanvas.InvalidateVisual();
+                e.Handled = true;
+                return;
             }
 
             _isDragging = true;
@@ -1674,32 +1671,28 @@ public class CelestialSphereControl : Grid
 
             foreach (var p in panels)
             {
-                if (!p.IsVisible || p.Wcs == null) continue;
+                if (!p.IsVisible || p.Wcs == null || !p.IsSelected) continue;
                 var (tl, tr, br, bl) = p.GetFootprintCorners();
 
-                if (p.IsSelected)
-                {
-                    bool c0 = _owner.CelestialToScreen(tl.RaDegrees, tl.DecDegrees, w, h, out double x0, out double y0);
-                    bool c1 = _owner.CelestialToScreen(tr.RaDegrees, tr.DecDegrees, w, h, out double x1, out double y1);
-                    bool c2 = _owner.CelestialToScreen(br.RaDegrees, br.DecDegrees, w, h, out double x2, out double y2);
-                    bool c3 = _owner.CelestialToScreen(bl.RaDegrees, bl.DecDegrees, w, h, out double x3, out double y3);
-                    if (c0 && c1) dc.DrawLine(selectedBorderPen, new Point(x0, y0), new Point(x1, y1));
-                    if (c1 && c2) dc.DrawLine(selectedBorderPen, new Point(x1, y1), new Point(x2, y2));
-                    if (c2 && c3) dc.DrawLine(selectedBorderPen, new Point(x2, y2), new Point(x3, y3));
-                    if (c3 && c0) dc.DrawLine(selectedBorderPen, new Point(x3, y3), new Point(x0, y0));
-                }
+                bool c0 = _owner.CelestialToScreen(tl.RaDegrees, tl.DecDegrees, w, h, out double x0, out double y0);
+                bool c1 = _owner.CelestialToScreen(tr.RaDegrees, tr.DecDegrees, w, h, out double x1, out double y1);
+                bool c2 = _owner.CelestialToScreen(br.RaDegrees, br.DecDegrees, w, h, out double x2, out double y2);
+                bool c3 = _owner.CelestialToScreen(bl.RaDegrees, bl.DecDegrees, w, h, out double x3, out double y3);
+                if (c0 && c1) dc.DrawLine(selectedBorderPen, new Point(x0, y0), new Point(x1, y1));
+                if (c1 && c2) dc.DrawLine(selectedBorderPen, new Point(x1, y1), new Point(x2, y2));
+                if (c2 && c3) dc.DrawLine(selectedBorderPen, new Point(x2, y2), new Point(x3, y3));
+                if (c3 && c0) dc.DrawLine(selectedBorderPen, new Point(x3, y3), new Point(x0, y0));
 
-                if (panels.Count <= 1 && !p.IsSelected) continue;
-                if (!_owner.CelestialToScreen(tl.RaDegrees, tl.DecDegrees, w, h, out double sx, out double sy)) continue;
-                if (sx < -40 || sx > w + 40 || sy < -40 || sy > h + 40) continue;
+                if (!c0) continue;
+                if (x0 < -40 || x0 > w + 40 || y0 < -40 || y0 > h + 40) continue;
 
-                string badge = p.IsSelected ? $"🎯 {p.Name}" : $"📷 {p.Name}";
+                string badge = $"🎯 {p.Name}";
                 var ft = new FormattedText(badge, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                    typeface, 11.0, p.IsSelected ? selectedBrush : purpleBrush, dpi);
+                    typeface, 11.0, selectedBrush, dpi);
 
-                var rect = new Rect(sx + 6, sy + 6, ft.Width + 8, ft.Height + 4);
-                dc.DrawRoundedRectangle(BadgeBackground, p.IsSelected ? selectedBorderPen : new Pen(purpleBorder, 1.0), rect, 3, 3);
-                dc.DrawText(ft, new Point(sx + 10, sy + 8));
+                var rect = new Rect(x0 + 6, y0 + 6, ft.Width + 8, ft.Height + 4);
+                dc.DrawRoundedRectangle(BadgeBackground, selectedBorderPen, rect, 3, 3);
+                dc.DrawText(ft, new Point(x0 + 10, y0 + 8));
             }
         }
 
