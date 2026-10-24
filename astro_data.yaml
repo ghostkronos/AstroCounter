@@ -1,4 +1,4 @@
-# AstroCounter - YOLO11 Dataset Configuration
+# AstroCounter - Multi-Class YOLO11 Celestial Dataset
 path: ./dataset
 train: images/train
 val: images/val
