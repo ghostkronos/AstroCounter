@@ -4,6 +4,7 @@ using AstroCounter.Core.Models;
 
 public enum DetectionEngineMode
 {
+    HybridFusion,     // Hibrit Füzyon (Fotometri + Yapay Zekâ) - Varsayılan / Önerilen
     Photometric,      // Astronomical Photometry & DAOStarFinder (Eğitimsiz gerçek yıldız tespiti)
     DeepLearningYolo  // YOLOv8/11 ONNX (DirectML / CPU)
 }

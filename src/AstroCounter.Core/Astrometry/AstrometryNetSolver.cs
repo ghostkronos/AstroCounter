@@ -51,7 +51,8 @@ public sealed class AstrometryNetSolver : IPlateSolver, IDisposable
         int imageWidth,
         int imageHeight,
         IReadOnlyList<AstrophotographyObject>? detectedStars = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CelestialCoordinates? hintCoordinates = null)
     {
         var sw = Stopwatch.StartNew();
 

@@ -20,10 +20,17 @@ public class OnnxInferenceEngine : IInferenceEngine
     private readonly List<string> _classNames = new() { "star", "galaxy", "nebula", "satellite_trail" };
     private bool _disposed;
 
-    public DetectionEngineMode Mode { get; set; } = DetectionEngineMode.Photometric;
+    public DetectionEngineMode Mode { get; set; } = DetectionEngineMode.HybridFusion;
 
     public string ExecutionProviderName => Mode switch
     {
+        DetectionEngineMode.HybridFusion => _session != null
+            ? (AstroCounter.Core.Astrometry.CataloguePlateSolver.UseTurkishLanguage
+                ? $"Hibrit Füzyon (Fotometri + {_onnxProviderName})"
+                : $"Hybrid Fusion (Photometry + {_onnxProviderName})")
+            : (AstroCounter.Core.Astrometry.CataloguePlateSolver.UseTurkishLanguage
+                ? "Hibrit Füzyon (Fotometri + Morfolojik AI)"
+                : "Hybrid Fusion (Photometry + Morphological AI)"),
         DetectionEngineMode.Photometric => AstroCounter.Core.Astrometry.CataloguePlateSolver.UseTurkishLanguage
             ? "Astronomik Fotometri (DAOStarFinder / SNR)"
             : "Astronomical Photometry (DAOStarFinder / SNR)",
@@ -33,12 +40,12 @@ public class OnnxInferenceEngine : IInferenceEngine
         _ => AstroCounter.Core.Astrometry.CataloguePlateSolver.UseTurkishLanguage ? "Bilinmeyen" : "Unknown"
     };
 
-    public bool IsGpuAccelerated => Mode == DetectionEngineMode.DeepLearningYolo && _isGpuActive;
+    public bool IsGpuAccelerated => (Mode == DetectionEngineMode.DeepLearningYolo || Mode == DetectionEngineMode.HybridFusion) && _isGpuActive;
     private readonly bool _isGpuActive;
 
     public IReadOnlyList<string> ClassNames => _classNames;
 
-    public OnnxInferenceEngine(string? modelPath = null, int gpuDeviceId = 0, DetectionEngineMode initialMode = DetectionEngineMode.Photometric)
+    public OnnxInferenceEngine(string? modelPath = null, int gpuDeviceId = 0, DetectionEngineMode initialMode = DetectionEngineMode.HybridFusion)
     {
         Mode = initialMode;
         _onnxProviderName = "CPU Fallback";
@@ -105,16 +112,44 @@ public class OnnxInferenceEngine : IInferenceEngine
         return await Task.Run(() =>
         {
             using var rawBitmap = ImagePreprocessor.LoadImage(imagePath);
-            using var bitmap = ImagePreprocessor.AutoBalanceBrightness(rawBitmap, out _);
-            int imgW = bitmap.Width;
-            int imgH = bitmap.Height;
+            int imgW = rawBitmap.Width;
+            int imgH = rawBitmap.Height;
 
             var candidates = new List<AstrophotographyObject>();
             int tileCount = 1;
 
-            if (Mode == DetectionEngineMode.DeepLearningYolo && _session != null)
+            if (Mode == DetectionEngineMode.HybridFusion)
             {
-                // Run YOLO deep learning inference across SAHI tiles
+                // Unified Fusion: DAOStarFinder Photometry + Deep Learning / Morphology AI
+                var photoStars = PhotometricStarFinder.DetectStars(rawBitmap, config, progress, cancellationToken);
+                List<AstrophotographyObject>? yoloCandidates = null;
+
+                if (_session != null)
+                {
+                    using var yoloBitmap = ImagePreprocessor.AutoBalanceBrightness(rawBitmap, out _);
+                    var slices = ImageTiler.ComputeSlices(imgW, imgH, config);
+                    tileCount = slices.Count;
+                    var tileList = new List<AstrophotographyObject>();
+
+                    for (int i = 0; i < slices.Count; i++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var slice = slices[i];
+                        var tileTensor = ImagePreprocessor.ExtractTileTensor(yoloBitmap, slice, config.TileWidth, config.TileHeight);
+                        var detectedOnTile = RunTileInference(tileTensor, slice, config.MinConfidence);
+                        tileList.AddRange(detectedOnTile);
+                    }
+
+                    tileList = NmsFilter.ApplyNms(tileList, config.NmsIouThreshold);
+                    yoloCandidates = CalibrateYoloConfidenceForBrightStars(yoloBitmap, tileList);
+                }
+
+                candidates = FusionDetectionEngine.FuseDetections(photoStars, yoloCandidates);
+            }
+            else if (Mode == DetectionEngineMode.DeepLearningYolo && _session != null)
+            {
+                // Run YOLO deep learning inference across SAHI tiles with normalized contrast
+                using var yoloBitmap = ImagePreprocessor.AutoBalanceBrightness(rawBitmap, out _);
                 var slices = ImageTiler.ComputeSlices(imgW, imgH, config);
                 tileCount = slices.Count;
 
@@ -123,7 +158,7 @@ public class OnnxInferenceEngine : IInferenceEngine
                     cancellationToken.ThrowIfCancellationRequested();
                     var slice = slices[i];
 
-                    var tileTensor = ImagePreprocessor.ExtractTileTensor(bitmap, slice, config.TileWidth, config.TileHeight);
+                    var tileTensor = ImagePreprocessor.ExtractTileTensor(yoloBitmap, slice, config.TileWidth, config.TileHeight);
                     var detectedOnTile = RunTileInference(tileTensor, slice, config.MinConfidence);
                     candidates.AddRange(detectedOnTile);
 
@@ -131,16 +166,23 @@ public class OnnxInferenceEngine : IInferenceEngine
                 }
 
                 candidates = NmsFilter.ApplyNms(candidates, config.NmsIouThreshold);
-                candidates = CalibrateYoloConfidenceForBrightStars(bitmap, candidates);
+                candidates = CalibrateYoloConfidenceForBrightStars(yoloBitmap, candidates);
             }
             else
             {
                 // Built-in high-precision astronomical photometric detection (DAOStarFinder / SNR standard)
-                candidates = PhotometricStarFinder.DetectStars(bitmap, config, progress, cancellationToken);
+                // Operates directly on raw linear astronomical data with internal background estimation
+                candidates = PhotometricStarFinder.DetectStars(rawBitmap, config, progress, cancellationToken);
                 tileCount = 1;
             }
 
             stopwatch.Stop();
+
+            bool isCompressed = Path.GetExtension(imagePath).Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                Path.GetExtension(imagePath).Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                                Path.GetExtension(imagePath).Equals(".webp", StringComparison.OrdinalIgnoreCase);
+
+            float recommendedConfidence = AutoConfidenceCalculator.ComputeOptimalThreshold(candidates, isCompressed);
 
             return new DetectionResult(
                 allObjects: candidates,
@@ -148,7 +190,8 @@ public class OnnxInferenceEngine : IInferenceEngine
                 imageHeight: imgH,
                 tileCount: tileCount,
                 elapsedTime: stopwatch.Elapsed,
-                executionProvider: ExecutionProviderName
+                executionProvider: ExecutionProviderName,
+                recommendedConfidence: recommendedConfidence
             );
         }, cancellationToken);
     }

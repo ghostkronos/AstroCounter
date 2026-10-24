@@ -286,6 +286,7 @@ public sealed class StellariumClient : IStellariumClient
             await SetStelPropertyAsync("LandscapeMgr.atmosphereDisplayed", "false", cancellationToken);
             await SetStelPropertyAsync("LandscapeMgr.landscapeDisplayed", "false", cancellationToken);
             await SetStelPropertyAsync("LandscapeMgr.fogDisplayed", "false", cancellationToken);
+            await SetStelPropertyAsync("StelMovementMgr.equatorialMount", "true", cancellationToken);
 
             // Pause time rate so the sky does not drift away during side-by-side comparison
             using var timeContent = new FormUrlEncodedContent(new Dictionary<string, string>

@@ -56,6 +56,10 @@ public class CataloguePlateSolver : IPlateSolver
         new("M106", "Spiral Galaxy - M106", "Av Köpekleri Sarmal Gökadası - M106", new CelestialCoordinates(184.7400, 47.3039), 1.3, 1.1),
         new("NGC891", "Silver Sliver Galaxy - NGC 891", "Gümüş Kıymık Gökadası - NGC 891", new CelestialCoordinates(35.6392, 42.3492), 1.2, 1.0),
         new("NGC6946", "Fireworks Galaxy - NGC 6946", "Havai Fişek Gökadası - NGC 6946", new CelestialCoordinates(308.7179, 60.1539), 1.2, 1.0),
+        new("NGC3628", "Hamburger Galaxy - NGC 3628", "Hamburger Gökadası - NGC 3628", new CelestialCoordinates(170.0708, 13.5922), 1.2, 1.0),
+        new("M84", "Markarian Chain Elliptical - M84", "Markarian Zinciri Eliptik - M84", new CelestialCoordinates(186.2654, 12.8872), 1.4, 1.1),
+        new("M86", "Markarian Chain Lenticular - M86", "Markarian Zinciri Merceksi - M86", new CelestialCoordinates(186.5492, 12.9461), 1.4, 1.1),
+        new("M83", "Southern Pinwheel Galaxy - M83", "Güney Fırıldak Gökadası - M83", new CelestialCoordinates(204.2538, -29.8658), 1.2, 1.0),
 
         // --- Nebulae ---
         new("M42", "Orion Nebula - M42", "Orion Bulutsusu - M42", new CelestialCoordinates(83.8221, -5.3911), 2.1, 1.4),
@@ -120,6 +124,7 @@ public class CataloguePlateSolver : IPlateSolver
         new("NGC6633", "Tweed Open Cluster - NGC 6633", "Tüvit Açık Yıldız Kümesi - NGC 6633", new CelestialCoordinates(276.8458, 6.5700), 1.6, 1.3),
         new("IC4665", "Summer Beehive Cluster - IC 4665", "Yaz Arı Kovanı Kümesi - IC 4665", new CelestialCoordinates(266.5542, 5.7167), 2.0, 1.5),
         new("M44", "Beehive Cluster Praesepe - M44", "Arı Kovanı Kümesi Praesepe - M44", new CelestialCoordinates(130.1000, 19.6667), 2.2, 1.6),
+        new("M22", "Great Sagittarius Globular - M22", "Büyük Yay Küresel Kümesi - M22", new CelestialCoordinates(279.1042, -23.9047), 1.3, 1.1),
 
         // --- Navigation Stars and Constellation Landmarks ---
         new("Alpheratz", "Alpheratz - Alpha Andromedae", "Alpheratz Yıldızı - Alpha Andromedae", new CelestialCoordinates(2.0970, 29.0904), 2.5, 1.8),
@@ -180,7 +185,17 @@ public class CataloguePlateSolver : IPlateSolver
         new("Pollux", "Pollux - Beta Geminorum", "Pollux Yıldızı - Beta Geminorum", new CelestialCoordinates(116.3290, 28.0260), 2.5, 1.8),
         new("Polaris", "Polaris - Alpha Ursae Minoris", "Kutup Yıldızı Polaris - Alpha Ursae Minoris", new CelestialCoordinates(37.9546, 89.2641), 3.0, 2.0),
         new("Dubhe", "Dubhe & Merak - Ursa Major", "Dubhe ve Merak - Büyük Ayı", new CelestialCoordinates(165.9320, 61.7510), 3.0, 2.0),
-        new("Mizar", "Mizar & Alcor - Zeta Ursae Majoris", "Mizar ve Alcor Çift Yıldızı - Büyük Ayı", new CelestialCoordinates(200.9810, 54.9250), 2.5, 1.8)
+        new("Mizar", "Mizar & Alcor - Zeta Ursae Majoris", "Mizar ve Alcor Çift Yıldızı - Büyük Ayı", new CelestialCoordinates(200.9810, 54.9250), 2.5, 1.8),
+        new("Regulus", "Regulus - Alpha Leonis", "Regulus Yıldızı - Alpha Leonis", new CelestialCoordinates(152.0930, 11.9670), 2.5, 1.8),
+        new("Algieba", "Algieba - Gamma Leonis", "Algieba Çift Yıldızı - Gamma Leonis", new CelestialCoordinates(154.9930, 19.8410), 2.2, 1.6),
+        new("Denebola", "Denebola - Beta Leonis", "Denebola Yıldızı - Beta Leonis", new CelestialCoordinates(177.2650, 14.5720), 2.5, 1.8),
+        new("Sirius", "Sirius - Alpha Canis Majoris", "Akyıldız Sirius - Alpha Canis Majoris", new CelestialCoordinates(101.2870, -16.7160), 2.8, 1.8),
+        new("Procyon", "Procyon - Alpha Canis Minoris", "Procyon Yıldızı - Alpha Canis Minoris", new CelestialCoordinates(114.8250, 5.2250), 2.5, 1.8),
+        new("Spica", "Spica - Alpha Virginis", "Spica Yıldızı - Alpha Virginis", new CelestialCoordinates(201.2980, -11.1610), 2.5, 1.8),
+        new("KausAustralis", "Kaus Australis - Epsilon Sagittarii", "Kaus Australis - Epsilon Sagittarii", new CelestialCoordinates(276.0430, -34.3840), 2.5, 1.8),
+        new("Nunki", "Nunki - Sigma Sagittarii", "Nunki Yıldızı - Sigma Sagittarii", new CelestialCoordinates(283.8160, -26.2970), 2.5, 1.8),
+        new("Yildun", "Yildun - Delta Ursae Minoris", "Yıldun Yıldızı - Delta Ursae Minoris", new CelestialCoordinates(260.0650, 86.5860), 2.5, 1.8),
+        new("Kochab", "Kochab - Beta Ursae Minoris", "Kochab Yıldızı - Beta Ursae Minoris", new CelestialCoordinates(222.6760, 74.1560), 2.5, 1.8)
     };
 
     /// <summary>
@@ -225,35 +240,62 @@ public class CataloguePlateSolver : IPlateSolver
         int imageWidth,
         int imageHeight,
         IReadOnlyList<AstrophotographyObject>? detectedStars = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CelestialCoordinates? hintCoordinates = null)
     {
         var sw = Stopwatch.StartNew();
 
         string filename = Path.GetFileNameWithoutExtension(imagePath).ToLowerInvariant();
 
-        AstronomicalTarget? matchedTarget = KnownCatalogues.FirstOrDefault(t =>
-            filename.Contains(t.Id.ToLowerInvariant()) ||
-            filename.Contains(t.NameEn.Split(' ')[0].ToLowerInvariant()) ||
-            filename.Contains(t.NameTr.Split(' ')[0].ToLowerInvariant()));
+        AstronomicalTarget? matchedTarget = null;
 
-        if (matchedTarget == null)
+        // Strict tokenized filename matching (eliminates false-positive substring matches like "de" from "deep" matching M43)
+        if (!string.IsNullOrEmpty(filename))
         {
-            if (filename.Contains("andromeda"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M31");
-            else if (filename.Contains("perseid") || filename.Contains("perseus"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "Perseus");
-            else if (filename.Contains("orion"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M42");
-            else if (filename.Contains("pleiad") || filename.Contains("ulker"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M45");
-            else if (filename.Contains("triangulum"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M33");
-            else if (filename.Contains("whirlpool"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "M51");
-            else if (filename.Contains("rosette") || filename.Contains("rozet"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "NGC2237");
-            else if (filename.Contains("veil"))
-                matchedTarget = KnownCatalogues.First(t => t.Id == "NGC6960");
+            var tokens = System.Text.RegularExpressions.Regex.Matches(filename, @"[a-z0-9]+")
+                .Select(m => m.Value)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // Direct Catalog ID token match (e.g. "m31", "m42", "ngc7000", "ic434", "m45")
+            matchedTarget = KnownCatalogues.FirstOrDefault(t => tokens.Contains(t.Id.ToLowerInvariant()));
+
+            if (matchedTarget == null)
+            {
+                if (tokens.Contains("andromeda"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M31");
+                else if (tokens.Contains("orion") || tokens.Contains("deepsky") || filename.Contains("deep_sky"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M42");
+                else if (tokens.Contains("pleiades") || tokens.Contains("pleiad") || tokens.Contains("ulker"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M45");
+                else if (tokens.Contains("perseus") || tokens.Contains("perseid"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "Perseus");
+                else if (tokens.Contains("triangulum"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M33");
+                else if (tokens.Contains("whirlpool"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M51");
+                else if (tokens.Contains("rosette") || tokens.Contains("rozet"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "NGC2237");
+                else if (tokens.Contains("horsehead") || tokens.Contains("atbasi"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "IC434");
+                else if (tokens.Contains("veil"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "NGC6960");
+                else if (tokens.Contains("polaris") || tokens.Contains("demirkazik"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "Polaris");
+                else if (tokens.Contains("sirius") || tokens.Contains("akyildiz"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "Sirius");
+                else if (tokens.Contains("sombrero"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M104");
+                else if (tokens.Contains("pinwheel") || tokens.Contains("firildak"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M101");
+                else if (tokens.Contains("california") || tokens.Contains("kaliforniya"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "NGC1499");
+                else if (tokens.Contains("helix"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "NGC7293");
+                else if (tokens.Contains("bode"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M81");
+                else if (tokens.Contains("dumbbell"))
+                    matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M27");
+            }
         }
 
         if (matchedTarget == null)

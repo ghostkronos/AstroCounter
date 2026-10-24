@@ -49,7 +49,8 @@ public class AstapPlateSolver : IPlateSolver
         int imageWidth,
         int imageHeight,
         IReadOnlyList<AstrophotographyObject>? detectedStars = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CelestialCoordinates? hintCoordinates = null)
     {
         var sw = Stopwatch.StartNew();
         string? exe = FindAstapExecutable(_customAstapExecutable);
@@ -69,11 +70,15 @@ public class AstapPlateSolver : IPlateSolver
             File.Copy(imagePath, tempImage, true);
 
             // ASTAP CLI arguments:
-            // -f input_file -z 0 (full blind solve)
+            // If hintCoordinates is provided, search within 15 deg radius of hint, otherwise -z 0 (blind solve)
+            string hintArgs = hintCoordinates.HasValue
+                ? $"-ra {hintCoordinates.Value.RaDegrees / 15.0:F4} -spd {hintCoordinates.Value.DecDegrees + 90.0:F4} -r 15"
+                : "-z 0";
+
             var psi = new ProcessStartInfo
             {
                 FileName = exe,
-                Arguments = $"-f \"{tempImage}\" -z 0",
+                Arguments = $"-f \"{tempImage}\" {hintArgs}",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,

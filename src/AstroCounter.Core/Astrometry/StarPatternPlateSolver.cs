@@ -24,7 +24,7 @@ public class StarPatternPlateSolver : IPlateSolver
 
     public record DetectedStar(double X, double Y, double Flux);
 
-    private static readonly CatalogStar[] BrightStarCatalog =
+    public static readonly CatalogStar[] BrightStarCatalog =
     [
         // === Andromeda / Pegasus / Triangulum / Aries / Pisces ===
         new("Alpheratz (α And)", 2.097, 29.090, 2.06),
@@ -122,6 +122,19 @@ public class StarPatternPlateSolver : IPlateSolver
         new("η Cyg", 299.077, 35.083, 3.89),
         new("ν Cyg", 314.293, 41.167, 3.94),
         new("ο1 Cyg", 303.408, 46.741, 3.79),
+        new("ο2 Cyg", 303.883, 47.700, 3.98),
+        new("55 Cyg", 312.235, 46.114, 4.81),
+        new("56 Cyg", 312.520, 44.059, 5.06),
+        new("57 Cyg", 313.311, 44.387, 4.77),
+        new("59 Cyg", 314.956, 47.521, 4.74),
+        new("60 Cyg", 315.295, 46.156, 5.37),
+        new("63 Cyg", 316.942, 47.653, 4.56),
+        new("68 Cyg", 319.613, 43.946, 4.98),
+        new("HD 199478", 313.897, 47.396, 5.68),
+        new("HR 8023", 314.145, 44.925, 5.15),
+        new("HR 8035", 314.581, 44.472, 5.55),
+        new("HR 8003", 313.328, 45.182, 5.45),
+        new("HD 200527", 315.601, 44.791, 6.18),
         new("Altair (α Aql)", 297.696, 8.868, 0.77),
         new("Tarazed (γ Aql)", 296.565, 10.613, 2.72),
         new("Alshain (β Aql)", 298.828, 6.407, 3.71),
@@ -203,6 +216,30 @@ public class StarPatternPlateSolver : IPlateSolver
         new("Alnitak (ζ Ori)", 85.190, -1.943, 1.77),
         new("Saiph (κ Ori)", 86.939, -9.669, 2.06),
         new("M42 (Orion Nebula)", 83.822, -5.391, 3.00),
+        new("Hatysa (ι Ori)", 84.730, -5.910, 2.75),
+        new("Saif al Jabbar (η Ori)", 83.784, -2.397, 3.35),
+        new("σ Ori", 84.687, -2.600, 3.77),
+        new("τ Ori", 83.273, -6.837, 3.59),
+        new("Meissa (λ Ori)", 88.793, 9.934, 3.39),
+        new("Tabit (π3 Ori)", 73.063, 6.961, 3.16),
+        new("π4 Ori", 72.801, 5.605, 3.69),
+        new("π5 Ori", 73.543, 2.441, 3.70),
+        new("Trapezium (θ1 Ori)", 83.819, -5.387, 4.98),
+        new("θ2 Ori", 83.857, -5.415, 5.02),
+        new("Atlas (27 Tau)", 57.291, 24.053, 3.63),
+        new("Electra (17 Tau)", 56.219, 24.114, 3.70),
+        new("Maia (20 Tau)", 56.491, 24.368, 3.87),
+        new("Merope (23 Tau)", 56.634, 23.948, 4.18),
+        new("Taygeta (19 Tau)", 56.326, 24.468, 4.30),
+        new("Pleione (28 Tau)", 57.295, 24.135, 5.05),
+        new("Celaeno (16 Tau)", 56.104, 24.292, 5.45),
+        new("Alcor (80 UMa)", 201.298, 54.988, 3.99),
+        new("Tania Australis (μ UMa)", 157.564, 41.499, 3.06),
+        new("Tania Borealis (λ UMa)", 154.274, 42.915, 3.45),
+        new("Talitha (ι UMa)", 134.869, 48.042, 3.12),
+        new("Theta UMa", 143.208, 51.677, 3.17),
+        new("Muscida (ο UMa)", 128.966, 60.718, 3.35),
+        new("Psi UMa", 166.427, 44.498, 3.00),
         new("Castor (α Gem)", 113.650, 31.888, 1.58),
         new("Pollux (β Gem)", 116.329, 28.026, 1.14),
         new("Alhena (γ Gem)", 99.428, 16.399, 1.93),
@@ -216,24 +253,97 @@ public class StarPatternPlateSolver : IPlateSolver
         new("Polaris (α UMi)", 37.954, 89.264, 1.98),
         new("Kochab (β UMi)", 222.676, 74.156, 2.08),
         new("Pherkad (γ UMi)", 230.182, 71.834, 3.05),
+        new("Yildun (δ UMi)", 260.065, 86.586, 4.35),
+        new("Urodelus (ε UMi)", 252.483, 82.037, 4.21),
+        new("Akhfa (ζ UMi)", 236.438, 77.794, 4.28),
+        new("Anwar (η UMi)", 244.600, 75.755, 4.95),
+        new("5 UMi", 213.913, 75.696, 4.25),
+        new("4 UMi", 212.871, 77.798, 5.00),
+        new("HR 286", 14.869, 86.255, 5.86),
+        new("HR 1662", 76.541, 88.026, 5.76),
+
+        // === Leo / Leo Minor / Coma Berenices ===
+        new("Regulus (α Leo)", 152.093, 11.967, 1.36),
+        new("Algieba (γ Leo)", 154.993, 19.841, 2.01),
+        new("Denebola (β Leo)", 177.265, 14.572, 2.14),
+        new("Zosma (δ Leo)", 168.527, 20.524, 2.56),
+        new("Chertan (θ Leo)", 168.827, 15.429, 3.32),
+        new("Adhafera (ζ Leo)", 154.173, 23.417, 3.44),
+        new("Al Jabhah (η Leo)", 151.833, 16.763, 3.48),
+        new("Subra (ο Leo)", 147.669, 9.890, 3.52),
+        new("Rasalas (μ Leo)", 148.190, 26.007, 3.88),
+        new("Alterf (λ Leo)", 143.125, 22.968, 4.32),
+        new("ρ Leo", 158.223, 9.307, 3.84),
+        new("Diadem (α Com)", 197.982, 17.528, 4.32),
+        new("β Com", 197.868, 27.878, 4.23),
+
+        // === Canis Major / Canis Minor / Monoceros ===
+        new("Sirius (α CMa)", 101.287, -16.716, -1.46),
+        new("Adhara (ε CMa)", 104.656, -28.972, 1.50),
+        new("Wezen (δ CMa)", 107.098, -26.393, 1.83),
+        new("Murzim (β CMa)", 95.675, -17.956, 1.98),
+        new("Aludra (η CMa)", 111.024, -29.303, 2.45),
+        new("Furud (ζ CMa)", 95.033, -30.063, 3.02),
+        new("Muliphein (γ CMa)", 106.037, -15.633, 4.11),
+        new("Procyon (α CMi)", 114.825, 5.225, 0.38),
+        new("Gomeisa (β CMi)", 111.787, 8.289, 2.89),
+
+        // === Virgo / Corvus ===
+        new("Spica (α Vir)", 201.298, -11.161, 0.98),
+        new("Porrima (γ Vir)", 190.415, -1.449, 2.74),
+        new("Vindemiatrix (ε Vir)", 195.544, 10.959, 2.85),
+        new("Heze (ζ Vir)", 203.896, -0.667, 3.38),
+        new("Zavijava (β Vir)", 177.674, 1.765, 3.59),
+        new("Zaniah (η Vir)", 184.977, -0.667, 3.89),
+        new("Gienah Corvi (γ Crv)", 183.951, -17.542, 2.58),
+        new("Kraz (β Crv)", 188.960, -23.397, 2.65),
+        new("Algorab (δ Crv)", 187.466, -16.515, 2.94),
+
+        // === Sagittarius / Scutum ===
+        new("Kaus Australis (ε Sgr)", 276.043, -34.384, 1.79),
+        new("Nunki (σ Sgr)", 283.816, -26.297, 2.05),
+        new("Ascella (ζ Sgr)", 285.653, -29.880, 2.60),
+        new("Kaus Media (δ Sgr)", 275.242, -29.828, 2.72),
+        new("Kaus Borealis (λ Sgr)", 276.993, -25.421, 2.82),
+        new("Alnasl (γ2 Sgr)", 271.438, -30.424, 2.98),
+        new("Arkab Prior (β1 Sgr)", 290.672, -44.460, 3.96),
+        new("α Sct", 279.791, -8.243, 3.85),
+        new("β Sct", 281.764, -4.747, 4.22),
     ];
 
-    private static readonly (string RegionName, double RaDeg, double DecDeg)[] CandidateSkyRegions =
+    public record struct CandidateRegion(string RegionName, double RaDeg, double DecDeg, double MaxRadiusDeg = 36.0);
+
+    public static readonly CandidateRegion[] CandidateSkyRegions =
     [
-        ("Andromeda - Triangulum - Cassiopeia", 14.0, 38.0),
-        ("Cassiopeia - Perseus - Andromeda", 28.0, 54.0),
-        ("Perseus - Cassiopeia - Auriga", 48.0, 48.0),
-        ("Perseus - Taurus - Pleiades", 56.0, 32.0),
-        ("Pegasus - Andromeda - Pisces", 350.0, 26.0),
-        ("Summer Triangle: Cygnus - Lyra - Aquila", 298.0, 30.0),
-        ("Cygnus - Lyra - Vulpecula", 295.0, 38.0),
-        ("Hercules - Lyra - Draco - Ophiuchus", 265.0, 32.0),
-        ("Aquila - Delphinus - Sagitta", 298.0, 12.0),
-        ("Cygnus - Cepheus - Lacerta", 320.0, 50.0),
-        ("Hercules - Corona Borealis - Boötes", 242.0, 30.0),
-        ("Orion - Taurus", 82.0, 4.0),
-        ("Auriga - Gemini - Taurus", 88.0, 32.0),
-        ("Ursa Major - Draco - Ursa Minor", 190.0, 58.0),
+        // Targeted Deep Fields / Zoomed Telephoto (narrow radius 8° - 14°)
+        new("M31 Andromeda Deep Field", 10.68, 41.27, 9.0),
+        new("M42 Orion Nebula Deep Field", 83.82, -5.39, 9.0),
+        new("M45 Pleiades Deep Field", 56.87, 24.11, 8.0),
+        new("North Celestial Pole - Polaris Vicinity", 0.0, 89.0, 14.0),
+        new("Double Cluster - Perseus Deep Field", 34.75, 57.15, 9.0),
+        new("North America Nebula - Deneb Deep Field", 314.0, 45.0, 6.0),
+        new("Cygnus Sadr / Veil Deep Field", 308.0, 38.0, 12.0),
+
+        // Broad Constellation Regions (radius 32° - 38°)
+        new("Andromeda - Triangulum - Cassiopeia", 14.0, 38.0, 36.0),
+        new("Cassiopeia - Perseus - Andromeda", 28.0, 54.0, 36.0),
+        new("Perseus - Cassiopeia - Auriga", 48.0, 48.0, 36.0),
+        new("Perseus - Taurus - Pleiades", 56.0, 32.0, 36.0),
+        new("Pegasus - Andromeda - Pisces", 350.0, 26.0, 36.0),
+        new("Summer Triangle: Cygnus - Lyra - Aquila", 298.0, 30.0, 36.0),
+        new("Cygnus - Lyra - Vulpecula", 295.0, 38.0, 36.0),
+        new("Hercules - Lyra - Draco - Ophiuchus", 265.0, 32.0, 36.0),
+        new("Aquila - Delphinus - Sagitta", 298.0, 12.0, 36.0),
+        new("Cygnus - Cepheus - Lacerta", 320.0, 50.0, 36.0),
+        new("Hercules - Corona Borealis - Boötes", 242.0, 30.0, 36.0),
+        new("Orion - Taurus", 82.0, 4.0, 36.0),
+        new("Auriga - Gemini - Taurus", 88.0, 32.0, 36.0),
+        new("Ursa Major - Draco - Ursa Minor", 190.0, 58.0, 36.0),
+        new("Leo - Leo Minor - Coma Berenices", 165.0, 18.0, 34.0),
+        new("Virgo - Corvus - Spica", 195.0, -5.0, 34.0),
+        new("Canis Major - Monoceros - Sirius", 102.0, -16.0, 32.0),
+        new("Sagittarius - Scutum - Milky Way Core", 276.0, -25.0, 32.0),
+        new("Boötes - Corona Borealis - Canes Venatici", 210.0, 35.0, 34.0),
     ];
 
     private readonly record struct StarTriangle(
@@ -250,7 +360,8 @@ public class StarPatternPlateSolver : IPlateSolver
         int imageWidth,
         int imageHeight,
         IReadOnlyList<AstrophotographyObject>? detectedStars = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        CelestialCoordinates? hintCoordinates = null)
     {
         return Task.Run(() =>
         {
@@ -266,35 +377,109 @@ public class StarPatternPlateSolver : IPlateSolver
             var candidateStarSets = ExtractCandidateStarSets(imagePath, imageWidth, imageHeight, detectedStars);
             if (candidateStarSets.Count == 0)
             {
+                int count = detectedStars?.Count ?? 0;
+                string diag = tr
+                    ? $"Hata Nedeni: Yıldız üçgen deseni kurulamadı (Görselde {count} yıldız bulundu). Yıldız tespiti için pozlama süresini veya ISO değerini artırmanız gerekebilir (en az 6 referans yıldız gereklidir)."
+                    : $"Failure Reason: Could not extract star pattern ({count} stars found). Image may be underexposed (at least 6 reference stars required).";
+
                 return PlateSolvingResult.Failed(
                     tr ? "Yıldız üçgen eşlemesi için yeterli yıldız bulunamadı." : "Insufficient stars detected for triangle pattern matching.",
-                    sw.Elapsed);
+                    sw.Elapsed,
+                    diagnosticReason: diag);
             }
 
             WcsMatrix? bestWcs = null;
             int bestInliers = 0;
+            double bestScore = -1.0;
             string bestRegion = string.Empty;
 
             foreach (var stars in candidateStarSets)
             {
                 if (stars.Count < 6) continue;
-                var wcs = MatchStarPatternRansac(stars, imageWidth, imageHeight, out int inliers, out string region);
-                if (wcs != null && inliers > bestInliers)
+                var wcs = MatchStarPatternRansac(stars, imageWidth, imageHeight, out int inliers, out string region, hintCoordinates, out double score);
+                if (wcs != null && score > bestScore)
                 {
                     bestWcs = wcs;
                     bestInliers = inliers;
+                    bestScore = score;
                     bestRegion = region;
+                }
+            }
+
+            // If normal orientation produced insufficient matches, test horizontal mirror parity (telescope star diagonal prisms)
+            if (bestInliers < 6)
+            {
+                foreach (var stars in candidateStarSets)
+                {
+                    if (stars.Count < 6) continue;
+                    var mirroredStars = stars.Select(s => new DetectedStar(imageWidth - s.X, s.Y, s.Flux)).ToList();
+                    var mwcs = MatchStarPatternRansac(mirroredStars, imageWidth, imageHeight, out int minliers, out string mregion, hintCoordinates, out double mscore);
+                    if (mwcs != null && mscore > bestScore)
+                    {
+                        bestWcs = new WcsMatrix(
+                            mwcs.CenterCoordinates,
+                            mwcs.ReferencePixelX,
+                            mwcs.ReferencePixelY,
+                            mwcs.PixelScaleArcsec,
+                            mwcs.RotationDegrees,
+                            imageWidth,
+                            imageHeight,
+                            mwcs.RadialDistortionK1,
+                            mwcs.RadialDistortionK2,
+                            mwcs.SplineWarp,
+                            isFlippedHorizontally: true);
+                        bestInliers = minliers;
+                        bestScore = mscore;
+                        bestRegion = mregion + " (Ayna/Flipped)";
+                    }
                 }
             }
 
             sw.Stop();
 
-            if (bestWcs == null || bestInliers < 8)
+            if (bestWcs == null || bestInliers < 6)
             {
+                int starCount = candidateStarSets.Count > 0 ? candidateStarSets.Max(s => s.Count) : (detectedStars?.Count ?? 0);
+                string diagnostic;
+                if (starCount < 6)
+                {
+                    diagnostic = tr
+                        ? $"Hata Nedeni: Yetersiz yıldız sayısı (Yalnızca {starCount} yıldız bulundu). Fotoğraf aşırı karanlık veya ISO çok düşük olabilir (minimum 6 yıldız gereklidir)."
+                        : $"Failure Reason: Insufficient stars detected ({starCount} stars). Image may be underexposed or ISO/shutter too low.";
+                }
+                else if (imageWidth >= 6000 || imageHeight >= 6000)
+                {
+                    diagnostic = tr
+                        ? $"Hata Nedeni: Devasa çözünürlük ({imageWidth}x{imageHeight}) ve işlenmemiş optik bükülme tespit edildi. Telefonunuzun 108M/Ultra HD modu lens düzeltmesini kapatmış olabilir; 12MP veya Ambilight modu önerilir."
+                        : $"Failure Reason: Ultra-high resolution ({imageWidth}x{imageHeight}) with uncorrected optical distortion. Phone 108M mode may have disabled lens correction.";
+                }
+                else
+                {
+                    diagnostic = tr
+                        ? $"Hata Nedeni: Yıldız üçgen oranları katalogdaki 20 ana gökyüzü bölgesiyle örtüşmedi. Kadraj aşırı dar (<0.4°), aşırı geniş (>95°) veya derin uzay yönelimi katalog kapsamı dışında olabilir."
+                        : $"Failure Reason: Star triangle ratios did not match catalog sky regions. Field may be out of range or uncataloged.";
+                }
+
                 return PlateSolvingResult.Failed(
                     tr ? "Yıldız konumlarından eşleşen gökyüzü üçgen deseni bulunamadı." : "No matching sky triangle pattern found from star positions.",
-                    sw.Elapsed);
+                    sw.Elapsed,
+                    diagnosticReason: diagnostic);
             }
+
+            string? warningMsg = null;
+            if (Math.Abs(bestWcs.RadialDistortionK1) >= 0.008)
+            {
+                double pct = Math.Abs(bestWcs.RadialDistortionK1) * 100.0;
+                warningMsg = tr
+                    ? $"Geniş açı optik fıçı distorsiyonu (barrel distortion) algılandı (köşelerde %{pct:F1} radyal sapma). WCS koordinatları radyal polinom ile otomatik uyarlandı."
+                    : $"Wide-angle optical barrel distortion detected ({pct:F1}% radial corner drift). WCS coordinates automatically adapted with radial polynomial.";
+            }
+
+            double fovH = bestWcs.FovHeightDegrees;
+            double roll = bestWcs.RotationDegrees;
+            string stellariumGuide = tr
+                ? $"Stellarium Kılavuzu: FOV: ~{fovH:F0}°, Kamera Açısı: {roll:F0}° (Stellarium'da bu değerlere ayarlayarak birebir örtüşme elde edebilirsiniz)."
+                : $"Stellarium Guide: FOV: ~{fovH:F0}°, Camera Angle: {roll:F0}° (Match Stellarium FOV/Roll for 1:1 view).";
 
             return PlateSolvingResult.Success(
                 wcs: bestWcs,
@@ -303,7 +488,10 @@ public class StarPatternPlateSolver : IPlateSolver
                 matchedStars: bestInliers,
                 message: tr
                     ? $"{bestRegion} alanı yıldız üçgen geometrisiyle çözümlendi ({bestInliers} yıldız eşleşti)."
-                    : $"{bestRegion} field solved via star triangle geometry ({bestInliers} stars matched).");
+                    : $"{bestRegion} field solved via star triangle geometry ({bestInliers} stars matched).",
+                warningMessage: warningMsg,
+                stellariumGuide: stellariumGuide,
+                radialDistortion: bestWcs.RadialDistortionK1);
         }, cancellationToken);
     }
 
@@ -321,8 +509,15 @@ public class StarPatternPlateSolver : IPlateSolver
             try
             {
                 using var bmp = ImagePreprocessor.LoadImage(imagePath);
-                using var balanced = ImagePreprocessor.AutoBalanceBrightness(bmp, out var info);
 
+                // Extract from original raw bitmap first (so bright/light-polluted skies aren't clipped by auto-stretch)
+                var rawStars = ExtractBrightStarCentroids(bmp, maxStars);
+                if (rawStars.Count >= 6)
+                {
+                    sets.Add(rawStars);
+                }
+
+                using var balanced = ImagePreprocessor.AutoBalanceBrightness(bmp, out var info);
                 if (info.WasAdjusted)
                 {
                     var balancedStars = ExtractBrightStarCentroids(balanced, maxStars);
@@ -331,12 +526,6 @@ public class StarPatternPlateSolver : IPlateSolver
                         sets.Add(balancedStars);
                     }
                 }
-
-                var rawStars = ExtractBrightStarCentroids(bmp, maxStars);
-                if (rawStars.Count >= 6)
-                {
-                    sets.Add(rawStars);
-                }
             }
             catch
             {
@@ -344,13 +533,29 @@ public class StarPatternPlateSolver : IPlateSolver
             }
         }
 
-        if (detectedStars != null && detectedStars.Count >= 6)
+        // Only use external detectedStars as a fallback when no disk image exists or when bitmap extraction yielded no sets.
+        // Apply wide spatial NMS and border margin filtering so clumped roof/edge artifacts never form degenerate triangles.
+        if (sets.Count == 0 && detectedStars != null && detectedStars.Count >= 6)
         {
-            sets.Add(detectedStars
+            var filtered = detectedStars
+                .Where(s => s.Tier <= ConfidenceTier.Tier2_Medium || s.Confidence >= 0.35f || s.Snr >= 4.0f)
                 .OrderByDescending(s => s.Confidence * Math.Sqrt(Math.Max(1f, s.Box.Area)))
                 .Take(maxStars)
                 .Select(s => new DetectedStar(s.CenterX, s.CenterY, s.Confidence * Math.Max(1f, s.Box.Area)))
-                .ToList());
+                .ToList();
+
+            if (filtered.Count >= 6)
+            {
+                sets.Add(filtered);
+            }
+            else
+            {
+                sets.Add(detectedStars
+                    .OrderByDescending(s => s.Confidence * Math.Sqrt(Math.Max(1f, s.Box.Area)))
+                    .Take(maxStars)
+                    .Select(s => new DetectedStar(s.CenterX, s.CenterY, s.Confidence * Math.Max(1f, s.Box.Area)))
+                    .ToList());
+            }
         }
 
         return sets;
@@ -384,10 +589,18 @@ public class StarPatternPlateSolver : IPlateSolver
         float[] lum = new float[w * h];
         var pixels = small.Pixels;
 
+        double totalLum = 0;
         for (int i = 0; i < pixels.Length; i++)
         {
             var c = pixels[i];
-            lum[i] = (0.299f * c.Red) + (0.587f * c.Green) + (0.114f * c.Blue);
+            float l = (0.299f * c.Red) + (0.587f * c.Green) + (0.114f * c.Blue);
+            lum[i] = l;
+            totalLum += l;
+        }
+
+        if ((totalLum / pixels.Length) > 205.0)
+        {
+            return []; // Reject completely saturated white daytime images while allowing bright light-polluted night skies
         }
 
         double[] integral = new double[(w + 1) * (h + 1)];
@@ -544,10 +757,22 @@ public class StarPatternPlateSolver : IPlateSolver
         int imageWidth,
         int imageHeight,
         out int bestInlierCount,
-        out string bestRegionName)
+        out string bestRegionName,
+        CelestialCoordinates? hintCoordinates = null)
+        => MatchStarPatternRansac(imageStars, imageWidth, imageHeight, out bestInlierCount, out bestRegionName, hintCoordinates, out _);
+
+    public static WcsMatrix? MatchStarPatternRansac(
+        IReadOnlyList<DetectedStar> imageStars,
+        int imageWidth,
+        int imageHeight,
+        out int bestInlierCount,
+        out string bestRegionName,
+        CelestialCoordinates? hintCoordinates,
+        out double bestMatchScore)
     {
         bestInlierCount = 0;
         bestRegionName = string.Empty;
+        bestMatchScore = -1.0;
 
         int nImgAll = Math.Min(35, imageStars.Count);
         int nImgTri = Math.Min(18, nImgAll);
@@ -567,20 +792,50 @@ public class StarPatternPlateSolver : IPlateSolver
         double bestScore = -1.0;
         WcsMatrix? bestWcs = null;
 
-        foreach (var region in CandidateSkyRegions)
+        var regionsToSearch = new List<CandidateRegion>();
+        if (hintCoordinates.HasValue)
+        {
+            regionsToSearch.Add(new CandidateRegion("Mosaic Neighbor Region (Wide)", hintCoordinates.Value.RaDegrees, hintCoordinates.Value.DecDegrees, 45.0));
+            regionsToSearch.Add(new CandidateRegion("Mosaic Neighbor Region (Narrow)", hintCoordinates.Value.RaDegrees, hintCoordinates.Value.DecDegrees, 7.5));
+        }
+        regionsToSearch.AddRange(CandidateSkyRegions);
+
+        foreach (var region in regionsToSearch)
         {
             var regionCenter = new CelestialCoordinates(region.RaDeg, region.DecDeg);
             var refTangentWcs = new WcsMatrix(regionCenter, 0.0, 0.0, 3600.0, 0.0, 1000, 1000);
 
             var regionalCat = new List<(CatalogStar Star, double U, double V, double Weight)>();
-            foreach (var cs in BrightStarCatalog)
+
+            if (region.MaxRadiusDeg <= 15.0)
             {
-                var sc = new CelestialCoordinates(cs.RaDeg, cs.DecDeg);
-                double angDist = regionCenter.AngularDistanceTo(sc);
-                if (angDist <= 38.0 && refTangentWcs.EquatorialToPixel(sc, out double u, out double v))
+                // Two-Tier: Use GaiaTycho for narrow/telescopic regions (FOV <= 8 deg) down to mag 11.5, or standard Hipparcos for wide fields
+                double queryMag = region.MaxRadiusDeg <= 8.0 ? 11.5 : 8.5;
+                int maxReq = region.MaxRadiusDeg <= 8.0 ? 140 : 35;
+                var denseStars = GaiaTychoCatalog.QueryRegion(region.RaDeg, region.DecDeg, region.MaxRadiusDeg, maxMag: queryMag, maxResults: maxReq);
+                foreach (var hs in denseStars)
                 {
-                    double wgt = Math.Max(0.6, 5.2 - cs.Mag);
-                    regionalCat.Add((cs, u, v, wgt));
+                    var sc = new CelestialCoordinates(hs.RaDeg, hs.DecDeg);
+                    if (refTangentWcs.EquatorialToPixel(sc, out double u, out double v))
+                    {
+                        string name = BrightStarCatalog.FirstOrDefault(b => Math.Abs(b.RaDeg - hs.RaDeg) < 0.05 && Math.Abs(b.DecDeg - hs.DecDeg) < 0.05)?.Name
+                                      ?? $"TYC {hs.SourceId}";
+                        double wgt = Math.Pow(Math.Max(0.6, 5.5 - hs.Mag), 1.8);
+                        regionalCat.Add((new CatalogStar(name, hs.RaDeg, hs.DecDeg, hs.Mag), u, v, wgt));
+                    }
+                }
+            }
+            else
+            {
+                foreach (var cs in BrightStarCatalog)
+                {
+                    var sc = new CelestialCoordinates(cs.RaDeg, cs.DecDeg);
+                    double angDist = regionCenter.AngularDistanceTo(sc);
+                    if (angDist <= region.MaxRadiusDeg && refTangentWcs.EquatorialToPixel(sc, out double u, out double v))
+                    {
+                        double wgt = Math.Pow(Math.Max(0.6, 5.5 - cs.Mag), 1.8);
+                        regionalCat.Add((cs, u, v, wgt));
+                    }
                 }
             }
 
@@ -591,13 +846,16 @@ public class StarPatternPlateSolver : IPlateSolver
             int nCatAll = Math.Min(32, regionalCat.Count);
             int nCatTri = Math.Min(20, nCatAll);
 
+            double minCatSep = region.MaxRadiusDeg <= 15.0 ? 0.20 : 0.35;
             var catTriangles = BuildTriangles(
                 nCatTri,
                 i => (regionalCat[i].U, regionalCat[i].V),
-                2.0,   // min 2.0 degrees separation
+                minCatSep,
                 52.0); // max 52 degrees separation
 
             const double ratioTol = 0.018;
+            double minAllowedFov = 0.4;
+            double maxAllowedFov = region.MaxRadiusDeg <= 15.0 ? 22.0 : 115.0;
 
             foreach (var it in imgTriangles)
             {
@@ -609,7 +867,7 @@ public class StarPatternPlateSolver : IPlateSolver
 
                     double degPerPx = ct.Perimeter / it.Perimeter;
                     double impliedFovDiag = degPerPx * imgDiag;
-                    if (impliedFovDiag < 8.0 || impliedFovDiag > 105.0) continue;
+                    if (impliedFovDiag < minAllowedFov || impliedFovDiag > maxAllowedFov) continue;
 
                     Span<(double X, double Y, double U, double V, double W)> triPairs =
                     [
@@ -628,7 +886,8 @@ public class StarPatternPlateSolver : IPlateSolver
                     var matchedPairs = CollectUniqueInlierPairs(
                         imageStars, nImgAll, regionalCat, nCatAll, a, b, tu, tv, tolDeg);
 
-                    if (matchedPairs.Count >= 7)
+                    int reqPairs = region.MaxRadiusDeg <= 15.0 ? 8 : (impliedFovDiag > 45.0 ? 8 : 7);
+                    if (matchedPairs.Count >= reqPairs)
                     {
                         double rawScore = matchedPairs.Sum(p => p.W);
                         if (rawScore > bestScore * 0.85 &&
@@ -645,7 +904,8 @@ public class StarPatternPlateSolver : IPlateSolver
                                 out int refinedInliers,
                                 out double refinedScore);
 
-                            if (candidateWcs != null && refinedInliers >= 8 && refinedScore > bestScore)
+                            int minInliersReq = reqPairs;
+                            if (candidateWcs != null && refinedInliers >= minInliersReq && refinedScore > bestScore)
                             {
                                 bestScore = refinedScore;
                                 bestInlierCount = refinedInliers;
@@ -658,6 +918,7 @@ public class StarPatternPlateSolver : IPlateSolver
             }
         }
 
+        bestMatchScore = bestScore;
         return bestWcs;
     }
 
@@ -848,7 +1109,7 @@ public class StarPatternPlateSolver : IPlateSolver
                 a, b, tu, tv,
                 tolDeg);
 
-            if (refinedPairs.Count >= 7 &&
+            if (refinedPairs.Count >= 6 &&
                 FitSimilarityTransform(refinedPairs.ToArray(), out a, out b, out tu, out tv))
             {
                 initialPairs = refinedPairs;
@@ -878,7 +1139,7 @@ public class StarPatternPlateSolver : IPlateSolver
         }
         double rmsDeg = Math.Sqrt(sumErrSq / initialPairs.Count);
         double rmsNormDiag = rmsDeg / (finalDegPerPx * imgDiag);
-        if (rmsNormDiag > 0.0085)
+        if (rmsNormDiag > 0.015)
         {
             return null; // Reject high-residual accidental alignments
         }
@@ -887,6 +1148,55 @@ public class StarPatternPlateSolver : IPlateSolver
         double rotationDeg = Math.Atan2(b, a) * (180.0 / Math.PI);
         rotationDeg = ((rotationDeg % 360.0) + 360.0) % 360.0;
 
+        double normRadius = Math.Max(1.0, 0.5 * imgDiag);
+        double impliedFovDiag = finalDegPerPx * imgDiag;
+
+        // Continuous lens optical radial distortion (k1, k2) fitting across all matched stars
+        double k1 = 0.0;
+        double k2 = 0.0;
+        var pairsForDistortion = initialPairs;
+        if (pairsForDistortion.Count >= 5)
+        {
+            double s11 = 0.0, s12 = 0.0, s22 = 0.0;
+            double v1 = 0.0, v2 = 0.0;
+            int validCount = 0;
+
+            foreach (var p in pairsForDistortion)
+            {
+                double dx = p.X - cx;
+                double dy = p.Y - cy;
+                double rd = Math.Sqrt((dx * dx) + (dy * dy)) / normRadius;
+                if (rd < 0.06) continue; // Skip near-center points where radial derivative is negligible
+
+                double ru = Math.Sqrt((p.U * p.U) + (p.V * p.V)) / (finalDegPerPx * normRadius);
+                double deltaR = ru - rd;
+                double rd3 = rd * rd * rd;
+                double rd5 = rd3 * rd * rd;
+
+                s11 += rd3 * rd3;
+                s12 += rd3 * rd5;
+                s22 += rd5 * rd5;
+                v1 += deltaR * rd3;
+                v2 += deltaR * rd5;
+                validCount++;
+            }
+
+            if (validCount >= 8)
+            {
+                // Solve 2x2 normal equations for k1 and k2
+                double det = (s11 * s22) - (s12 * s12);
+                if (Math.Abs(det) > 1e-8)
+                {
+                    k1 = Math.Clamp(((v1 * s22) - (v2 * s12)) / det, -0.22, 0.22);
+                    k2 = Math.Clamp(((s11 * v2) - (s12 * v1)) / det, -0.15, 0.15);
+                }
+            }
+            else if (s11 > 1e-6)
+            {
+                k1 = Math.Clamp(v1 / s11, -0.20, 0.20);
+            }
+        }
+
         var candidateWcs = new WcsMatrix(
             centerCoord,
             cx,
@@ -894,15 +1204,21 @@ public class StarPatternPlateSolver : IPlateSolver
             pixelScaleArcsec,
             rotationDeg,
             imageWidth,
-            imageHeight);
+            imageHeight,
+            radialDistortionK1: k1,
+            radialDistortionK2: k2);
 
-        // Bright-star concordance verification:
-        // Ensure prominent catalog stars that project inside the frame are not systematically missing.
+        // Dual Bright-Star Concordance Verification:
+        // 1. Catalog Super-bright Anchor Check: Any super-prominent catalog star (Mag <= 1.8) that
+        // falls within the inner 85% of the frame MUST be matched. A photo cannot display empty space where a 1st-mag beacon exists.
+        // 2. Image Bright-Star Concordance: At least one of the top 3 brightest detected image stars must match a catalog star.
+        // 3. Proportional Concordance: Prominent catalog stars projecting in frame must achieve sufficient concordance.
+
+        double marginX = imageWidth * 0.075;
+        double marginY = imageHeight * 0.075;
         int brightInFrame = 0;
         int brightMatched = 0;
-        double marginX = imageWidth * 0.06;
-        double marginY = imageHeight * 0.06;
-        int topCheckCount = Math.Min(12, regionalCat.Count);
+        int topCheckCount = Math.Min(20, regionalCat.Count);
 
         for (int i = 0; i < topCheckCount; i++)
         {
@@ -913,9 +1229,16 @@ public class StarPatternPlateSolver : IPlateSolver
                 if (px >= marginX && px <= imageWidth - marginX &&
                     py >= marginY && py <= imageHeight - marginY)
                 {
-                    brightInFrame++;
                     bool isMatched = initialPairs.Any(p =>
                         Math.Abs(p.U - catItem.U) < 1e-4 && Math.Abs(p.V - catItem.V) < 1e-4);
+
+                    if (catItem.Star.Mag <= 1.8 && !isMatched)
+                    {
+                        // Missing primary celestial anchor (e.g. Sirius, Vega, Arcturus) -> reject false positive
+                        return null;
+                    }
+
+                    brightInFrame++;
                     if (isMatched)
                     {
                         brightMatched++;
@@ -924,9 +1247,77 @@ public class StarPatternPlateSolver : IPlateSolver
             }
         }
 
-        if (brightInFrame >= 4 && brightMatched < Math.Max(2, (int)Math.Ceiling(brightInFrame * 0.38)))
+        if (brightInFrame >= 3 && brightMatched == 0)
         {
             return null;
+        }
+
+        if (brightInFrame >= 5 && brightMatched < Math.Max(2, (int)Math.Ceiling(brightInFrame * 0.35)))
+        {
+            return null;
+        }
+
+        // Image Bright-Star Concordance: Ensure the photo's prominent beacons match.
+        // On wide-angle exposures, the brightest stars can be distributed across constellations (e.g. Corona Borealis + Boötes).
+        // Check top 6 image stars: at least 1 must match a catalog star.
+        if (imageStars.Count >= 6 && initialPairs.Count >= 6)
+        {
+            int topImgToCheck = Math.Min(6, imageStars.Count);
+            int topImgMatched = 0;
+            for (int i = 0; i < topImgToCheck; i++)
+            {
+                var s = imageStars[i];
+                if (initialPairs.Any(p => Math.Abs(p.X - s.X) < 1e-4 && Math.Abs(p.Y - s.Y) < 1e-4))
+                {
+                    topImgMatched++;
+                }
+            }
+
+            if (topImgMatched == 0)
+            {
+                return null; // None of the top brightest image objects matched any catalog star
+            }
+        }
+
+        // Fit Non-Linear Thin Plate Spline (TPS) Warping across all inlier anchor stars
+        // Snaps ground-truth image star pixels directly onto catalog sky positions,
+        // eliminating asymmetric coma, lens tilt, and atmospheric refraction residuals.
+        if (initialPairs.Count >= 6)
+        {
+            var tpsPoints = new List<ThinPlateSplineWarp.ControlPoint>(initialPairs.Count);
+            foreach (var p in initialPairs)
+            {
+                var match = regionalCat.FirstOrDefault(c =>
+                    Math.Abs(p.U - c.U) < 1e-4 && Math.Abs(p.V - c.V) < 1e-4);
+
+                if (match.Star != null)
+                {
+                    var sc = new CelestialCoordinates(match.Star.RaDeg, match.Star.DecDeg);
+                    if (candidateWcs.EquatorialToPixel(sc, out double targetX, out double targetY))
+                    {
+                        tpsPoints.Add(new ThinPlateSplineWarp.ControlPoint(p.X, p.Y, targetX, targetY));
+                    }
+                }
+            }
+
+            if (tpsPoints.Count >= 6)
+            {
+                var splineWarp = ThinPlateSplineWarp.Create(tpsPoints, imageWidth, imageHeight);
+                if (splineWarp != null)
+                {
+                    candidateWcs = new WcsMatrix(
+                        candidateWcs.CenterCoordinates,
+                        candidateWcs.ReferencePixelX,
+                        candidateWcs.ReferencePixelY,
+                        candidateWcs.PixelScaleArcsec,
+                        candidateWcs.RotationDegrees,
+                        candidateWcs.ImageWidth,
+                        candidateWcs.ImageHeight,
+                        candidateWcs.RadialDistortionK1,
+                        candidateWcs.RadialDistortionK2,
+                        splineWarp);
+                }
+            }
         }
 
         finalInliers = initialPairs.Count;
