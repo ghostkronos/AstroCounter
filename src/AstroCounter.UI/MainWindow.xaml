@@ -8,11 +8,11 @@
         mc:Ignorable="d"
         Title="{Binding L_WindowTitle}"
         Icon="pack://application:,,,/Assets/app_icon.ico"
-        Height="880" Width="1400"
-        MinHeight="680" MinWidth="1100"
+        Height="900" Width="1440"
+        MinHeight="680" MinWidth="1080"
         WindowStartupLocation="CenterScreen"
-        Background="#0A0D14"
-        Foreground="#ECEFF4"
+        Background="#060911"
+        Foreground="#F1F5F9"
         AllowDrop="True"
         Drop="Window_Drop"
         DragOver="Window_DragOver">
@@ -26,25 +26,27 @@
 
         <SolidColorBrush x:Key="AccentBrush" Color="#0284C7"/>
         <SolidColorBrush x:Key="GreenBrush" Color="#059669"/>
-        <SolidColorBrush x:Key="RedBrush" Color="#DC2626"/>
+        <SolidColorBrush x:Key="RedBrush" Color="#E11D48"/>
 
-        <!-- Modern Glow & Rounded Card Styles -->
+        <!-- Compact Telemetry Pill Style -->
         <Style x:Key="MetricCardStyle" TargetType="Border">
-            <Setter Property="Background" Value="#121824"/>
-            <Setter Property="BorderBrush" Value="#222C3D"/>
+            <Setter Property="Background" Value="#0E1525"/>
+            <Setter Property="BorderBrush" Value="#1E2B42"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="12,8"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
         </Style>
 
+        <!-- Modern Minimalist Button -->
         <Style x:Key="ModernButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#1E293B"/>
-            <Setter Property="Foreground" Value="#F8FAFC"/>
+            <Setter Property="Background" Value="#131C2E"/>
+            <Setter Property="Foreground" Value="#E2E8F0"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Padding" Value="11,6"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#334155"/>
+            <Setter Property="BorderBrush" Value="#25344E"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
@@ -53,16 +55,20 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6">
+                                CornerRadius="7">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#334155"/>
-                                <Setter TargetName="border" Property="BorderBrush" Value="#00E5FF"/>
+                                <Setter TargetName="border" Property="Background" Value="#1E2C46"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#38BDF8"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#0F172A"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="border" Property="Opacity" Value="0.4"/>
+                                <Setter TargetName="border" Property="Opacity" Value="0.38"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -76,32 +82,65 @@
             <Setter Property="Foreground" Value="#FFFFFF"/>
         </Style>
 
-        <!-- Toolbar chip-style radio buttons (checked colour comes from the Tag brush) -->
+        <Style x:Key="ModernToggleButtonStyle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="#131C2E"/>
+            <Setter Property="Foreground" Value="#E2E8F0"/>
+            <Setter Property="BorderBrush" Value="#25344E"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="border" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="7"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1E2C46"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#475569"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#163056"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#38BDF8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Segmented Chip RadioButton Style -->
         <Style x:Key="ChipRadioStyle" TargetType="RadioButton">
             <Setter Property="Foreground" Value="#94A3B8"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontSize" Value="11.5"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="Margin" Value="0,0,2,0"/>
             <Setter Property="Tag" Value="{StaticResource AccentBrush}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
                         <Border x:Name="chip"
-                                Background="#1A2233"
-                                BorderBrush="#2A364D"
+                                Background="Transparent"
+                                BorderBrush="Transparent"
                                 BorderThickness="1"
                                 CornerRadius="6"
-                                Padding="10,5">
+                                Padding="10,4">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="chip" Property="BorderBrush" Value="#00E5FF"/>
+                                <Setter TargetName="chip" Property="Background" Value="#162136"/>
+                                <Setter Property="Foreground" Value="#E2E8F0"/>
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="chip" Property="Background" Value="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}"/>
-                                <Setter TargetName="chip" Property="BorderBrush" Value="#E2E8F0"/>
+                                <Setter TargetName="chip" Property="BorderBrush" Value="#38BDF8"/>
                                 <Setter Property="Foreground" Value="#FFFFFF"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
@@ -118,7 +157,21 @@
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+
+        <!-- Floating Panel Glass Border Style -->
+        <Style x:Key="FloatingPanelStyle" TargetType="Border">
+            <Setter Property="Background" Value="#F20B111E"/>
+            <Setter Property="BorderBrush" Value="#2A3C5A"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="14,12"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#000000" BlurRadius="26" ShadowDepth="6" Opacity="0.72"/>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- Custom Confidence Slider with Dynamic Color Binding -->
@@ -129,9 +182,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Thumb">
                         <Grid Width="22" Height="22">
-                            <!-- Outer glow halo using ConfidenceBrush -->
                             <Ellipse Width="22" Height="22" Fill="{Binding ConfidenceBrush}" Opacity="0.35"/>
-                            <!-- Inner indicator circle -->
                             <Ellipse Width="14" Height="14" Fill="{Binding ConfidenceBrush}" Stroke="#FFFFFF" StrokeThickness="2"/>
                         </Grid>
                     </ControlTemplate>
@@ -147,10 +198,7 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">
                         <Grid VerticalAlignment="Center">
-                            <!-- Groove / Background track -->
                             <Border Height="6" CornerRadius="3" Background="#1E293B" Margin="7,0"/>
-
-                            <!-- Active track and draggable thumb -->
                             <Track x:Name="PART_Track">
                                 <Track.DecreaseRepeatButton>
                                     <RepeatButton Command="{x:Static Slider.DecreaseLarge}">
@@ -192,7 +240,7 @@
                         <Border x:Name="Bd"
                                 Background="{TemplateBinding Background}"
                                 Padding="{TemplateBinding Padding}"
-                                CornerRadius="4"
+                                CornerRadius="5"
                                 Margin="2,1">
                             <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
                         </Border>
@@ -214,9 +262,9 @@
 
         <!-- Dark ComboBox Style -->
         <Style x:Key="DarkComboBoxStyle" TargetType="ComboBox">
-            <Setter Property="Background" Value="#1E293B"/>
+            <Setter Property="Background" Value="#131C2E"/>
             <Setter Property="Foreground" Value="#ECEFF4"/>
-            <Setter Property="BorderBrush" Value="#334155"/>
+            <Setter Property="BorderBrush" Value="#25344E"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,4"/>
             <Setter Property="FontSize" Value="11"/>
@@ -233,10 +281,10 @@
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="ToggleButton">
                                         <Border x:Name="Border"
-                                                Background="#1E293B"
-                                                BorderBrush="#334155"
+                                                Background="#131C2E"
+                                                BorderBrush="#25344E"
                                                 BorderThickness="1"
-                                                CornerRadius="6">
+                                                CornerRadius="7">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
@@ -251,7 +299,7 @@
                                         </Border>
                                         <ControlTemplate.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="Border" Property="Background" Value="#283548"/>
+                                                <Setter TargetName="Border" Property="Background" Value="#1E2C46"/>
                                                 <Setter TargetName="Border" Property="BorderBrush" Value="#475569"/>
                                             </Trigger>
                                             <Trigger Property="IsChecked" Value="True">
@@ -297,7 +345,7 @@
                                             Background="#0F172A"
                                             BorderBrush="#334155"
                                             BorderThickness="1"
-                                            CornerRadius="6"
+                                            CornerRadius="7"
                                             Margin="0,2,0,0"
                                             Padding="2">
                                         <ScrollViewer Margin="2" SnapsToDevicePixels="True">
@@ -314,7 +362,7 @@
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="PlaceholderText" Property="Foreground" Value="#64748B"/>
-                                <Setter Property="Opacity" Value="0.75"/>
+                                <Setter Property="Opacity" Value="0.65"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -325,15 +373,15 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- Header / Top Controls -->
-            <RowDefinition Height="Auto"/> <!-- Engine and scan-area toolbar -->
-            <RowDefinition Height="Auto"/> <!-- Metrics & Filter Bar -->
-            <RowDefinition Height="*"/>    <!-- Canvas / Interactive Image Viewer -->
-            <RowDefinition Height="Auto"/> <!-- Status Bar -->
+            <RowDefinition Height="Auto"/> <!-- Row 0: Sleek Brand & View Switcher Header -->
+            <RowDefinition Height="Auto"/> <!-- Row 1: Unified Minimalist Control Bar -->
+            <RowDefinition Height="Auto"/> <!-- Row 2: Compact Telemetry & Status Strip -->
+            <RowDefinition Height="*"/>    <!-- Row 3: 2D / 3D Sky Viewport + Draggable Floating Windows -->
+            <RowDefinition Height="Auto"/> <!-- Row 4: Footer Status Bar -->
         </Grid.RowDefinitions>
 
-        <!-- TOP BAR: Title & Actions -->
-        <Border Grid.Row="0" Background="#0F141F" BorderBrush="#1E2638" BorderThickness="0,0,0,1" Padding="20,12">
+        <!-- ==================== ROW 0: MINIMALIST HEADER BAR ==================== -->
+        <Border Grid.Row="0" Background="#0A0F1C" BorderBrush="#182235" BorderThickness="0,0,0,1" Padding="18,9">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -341,107 +389,204 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- App Title -->
+                <!-- Left: Logo, Brand & Version -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Image Source="pack://application:,,,/Assets/logo.png" Width="26" Height="26" Margin="0,0,10,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
-                    <TextBlock Text="AstroCounter" FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
-                    <Border Background="#162E4A" CornerRadius="4" Padding="6,2" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding L_HeaderSubtitle}" FontSize="11" FontWeight="SemiBold" Foreground="#38BDF8"/>
+                    <Image Source="pack://application:,,,/Assets/logo.png" Width="24" Height="24" Margin="0,0,9,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="AstroCounter" FontSize="16.5" FontWeight="Bold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
+                    <Border Background="#112640" BorderBrush="#1E3F66" BorderThickness="1" CornerRadius="5" Padding="6,1.5" Margin="9,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding L_VersionBadge}" FontSize="10" FontWeight="Bold" Foreground="#38BDF8"/>
                     </Border>
                 </StackPanel>
 
-                <!-- Right Action Buttons + Language Toggle -->
+                <!-- Center: Segmented 2D Görünüm | 3D Gök Kubbe Switcher -->
+                <Border Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="#060911" BorderBrush="#1E2B42" BorderThickness="1" CornerRadius="8" Padding="2">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton Content="{Binding L_Mode2D}"
+                                     GroupName="ViewModeSegmentGroup"
+                                     IsChecked="{Binding Is2DViewActive, Mode=TwoWay}"
+                                     Command="{Binding Select2DViewCommand}"
+                                     Style="{StaticResource ChipRadioStyle}" Margin="1,0"/>
+                        <RadioButton Content="{Binding L_Mode3D}"
+                                     GroupName="ViewModeSegmentGroup"
+                                     IsChecked="{Binding IsSphereModeActive, Mode=TwoWay}"
+                                     Command="{Binding Select3DViewCommand}"
+                                     Style="{StaticResource ChipRadioStyle}" Margin="1,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Right: Primary Workspace Actions -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Photos & Mosaic Manager Toggle -->
+                    <ToggleButton IsChecked="{Binding IsMosaicDrawerOpen, Mode=TwoWay}"
+                                  Style="{StaticResource ModernToggleButtonStyle}"
+                                  Margin="0,0,8,0"
+                                  Padding="10,5"
+                                  ToolTip="Yüklü fotoğrafları görüntüleyin, yenilerini ekleyin veya mozaik katmanlarını yönetin">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🧩" FontSize="11.5" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding L_PhotosButtonText}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ToggleButton>
+
+                    <Button Content="{Binding L_SelectImage}" Command="{Binding SelectImageCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="12,5.5" Margin="0,0,8,0"/>
+                    <Button Content="{Binding L_ExportButton}" Command="{Binding ToggleExportPanelCommand}" Style="{StaticResource ModernButtonStyle}" Padding="11,5.5" Margin="0,0,8,0"/>
                     <Button Content="{Binding LanguageButtonText}"
                             Command="{Binding ToggleLanguageCommand}"
                             ToolTip="{Binding L_LanguageToolTip}"
                             Style="{StaticResource ModernButtonStyle}"
-                            FontSize="11"
-                            Padding="10,6"
-                            Margin="0,0,12,0"/>
-                    <Button Content="{Binding L_SelectImage}" Command="{Binding SelectImageCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0"/>
-                    <Button Content="{Binding L_Reanalyze}" Command="{Binding AnalyzeCommand}" Style="{StaticResource ModernButtonStyle}" Margin="0,0,8,0"/>
-                    <Button Content="{Binding L_ExportCsv}" Command="{Binding ExportCsvCommand}" Style="{StaticResource ModernButtonStyle}" Margin="0,0,8,0"/>
-                    <Button Content="{Binding L_ExportImage}" Command="{Binding ExportImageCommand}" Style="{StaticResource ModernButtonStyle}"/>
+                            FontSize="10.5"
+                            Padding="8,5.5"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- TOOLBAR: Engine mode and scan-area tools (wraps instead of overlapping on narrow windows) -->
-        <Border Grid.Row="1" Background="#0D1220" BorderBrush="#1A2233" BorderThickness="0,0,0,1" Padding="20,8">
-            <WrapPanel Orientation="Horizontal">
+        <!-- ==================== ROW 1: UNIFIED MINIMALIST TOOLBAR ==================== -->
+        <Border Grid.Row="1" Background="#080D18" BorderBrush="#151F30" BorderThickness="0,0,0,1" Padding="18,6">
+            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
 
-                <!-- Engine Mode Switcher and Hardware Status -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,3,28,3">
+                <!-- 1. Detection Engine Segment -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
                     <TextBlock Text="{Binding L_EngineGroup}" Style="{StaticResource GroupLabelStyle}"/>
-                    <RadioButton GroupName="EngineMode" Content="{Binding L_Photometry}"
-                                 IsChecked="{Binding IsPhotometricMode}"
-                                 Style="{StaticResource ChipRadioStyle}"/>
-                    <RadioButton GroupName="EngineMode" Content="{Binding L_Yolo}"
-                                 IsChecked="{Binding IsYoloMode}"
-                                 Style="{StaticResource ChipRadioStyle}"/>
+                    <Border Background="#0C1322" BorderBrush="#1C2940" BorderThickness="1" CornerRadius="7" Padding="2">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton GroupName="EngineMode" Content="{Binding L_HybridFusion}"
+                                         IsChecked="{Binding IsHybridFusionMode}"
+                                         Style="{StaticResource ChipRadioStyle}"/>
+                            <RadioButton GroupName="EngineMode" Content="{Binding L_Photometry}"
+                                         IsChecked="{Binding IsPhotometricMode}"
+                                         Style="{StaticResource ChipRadioStyle}"/>
+                            <RadioButton GroupName="EngineMode" Content="{Binding L_Yolo}"
+                                         IsChecked="{Binding IsYoloMode}"
+                                         Style="{StaticResource ChipRadioStyle}" Margin="0"/>
+                        </StackPanel>
+                    </Border>
                     <Button Content="{Binding L_SelectModel}"
                             Command="{Binding SelectCustomModelCommand}"
                             Style="{StaticResource ModernButtonStyle}"
-                            FontSize="11" Padding="8,4" Margin="2,0,8,0"
+                            FontSize="10.5" Padding="8,4" Margin="6,0,0,0"
                             Visibility="{Binding IsYoloMode, Converter={StaticResource BoolToVis}}"/>
-                    <Border Background="#1E293B" CornerRadius="12" Padding="8,3" Margin="6,0,10,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding HardwareInfo}" Foreground="#10B981" FontWeight="SemiBold" FontSize="11"/>
-                    </Border>
-                    <CheckBox IsChecked="{Binding IsAutoBrightnessEnabled, Mode=TwoWay}"
-                              Content="{Binding BrightnessStatusText}"
-                              Foreground="#FBBF24"
-                              FontWeight="SemiBold"
-                              VerticalAlignment="Center"
-                              Margin="4,0,0,0"
-                              ToolTip="{Binding L_AutoBrightnessToolTip}"/>
                 </StackPanel>
 
-                <!-- Scan area (region of interest) tools -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,3,0,3">
+                <Border Width="1" Height="20" Background="#1C2940" Margin="0,0,14,0" VerticalAlignment="Center"/>
+
+                <!-- 2. Floating Inspector Popups (Light, Confidence, Layers) -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2">
+                    <ToggleButton x:Name="LightPanelToggle"
+                                  IsChecked="{Binding IsLightPanelOpen, Mode=TwoWay}"
+                                  Style="{StaticResource ModernToggleButtonStyle}"
+                                  ToolTip="{Binding L_LightPanelToolTip}"
+                                  Margin="0,0,6,0"
+                                  Padding="9,4">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="☀️" FontSize="11" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding L_LightPanelButton}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </ToggleButton>
+
+                    <ToggleButton x:Name="ConfidencePanelToggle"
+                                  IsChecked="{Binding IsConfidencePanelOpen, Mode=TwoWay}"
+                                  Style="{StaticResource ModernToggleButtonStyle}"
+                                  ToolTip="{Binding L_ConfidencePanelToolTip}"
+                                  Margin="0,0,6,0"
+                                  Padding="9,4">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ConfidenceButtonText}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{Binding ConfidenceBrush}"/>
+                        </StackPanel>
+                    </ToggleButton>
+
+                    <ToggleButton x:Name="LabelsPanelToggle"
+                                  IsChecked="{Binding IsLabelsPanelOpen, Mode=TwoWay}"
+                                  Style="{StaticResource ModernToggleButtonStyle}"
+                                  ToolTip="{Binding L_LabelsPanelToolTip}"
+                                  Padding="9,4">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🏷️" FontSize="11" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding L_LabelsPanelButton}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="#38BDF8"/>
+                        </StackPanel>
+                    </ToggleButton>
+                </StackPanel>
+
+                <!-- 3. 2D ROI Scan Tools (Only shown in 2D view to keep 3D view extra clean) -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,14,2"
+                            Visibility="{Binding Is2DViewActive, Converter={StaticResource BoolToVis}}">
+                    <Border Width="1" Height="20" Background="#1C2940" Margin="0,0,14,0" VerticalAlignment="Center"/>
                     <TextBlock Text="{Binding L_ScanAreaGroup}" Style="{StaticResource GroupLabelStyle}"/>
-                    <RadioButton GroupName="ScanTool" Content="{Binding L_Pan}"
-                                 IsChecked="{Binding IsToolPan}"
-                                 Style="{StaticResource ChipRadioStyle}"/>
-                    <RadioButton GroupName="ScanTool" Content="{Binding L_Rectangle}"
-                                 IsChecked="{Binding IsToolRectangle}"
-                                 Style="{StaticResource ChipRadioStyle}"/>
-                    <RadioButton GroupName="ScanTool" Content="{Binding L_Polygon}"
-                                 IsChecked="{Binding IsToolPolygon}"
-                                 Style="{StaticResource ChipRadioStyle}"/>
+                    <Border Background="#0C1322" BorderBrush="#1C2940" BorderThickness="1" CornerRadius="7" Padding="2" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton GroupName="ScanTool" Content="{Binding L_Pan}"
+                                         IsChecked="{Binding IsToolPan}"
+                                         ToolTip="{Binding ToolHint}"
+                                         Style="{StaticResource ChipRadioStyle}"/>
+                            <RadioButton GroupName="ScanTool" Content="{Binding L_Rectangle}"
+                                         IsChecked="{Binding IsToolRectangle}"
+                                         ToolTip="{Binding ToolHint}"
+                                         Style="{StaticResource ChipRadioStyle}"/>
+                            <RadioButton GroupName="ScanTool" Content="{Binding L_Polygon}"
+                                         IsChecked="{Binding IsToolPolygon}"
+                                         ToolTip="{Binding ToolHint}"
+                                         Style="{StaticResource ChipRadioStyle}" Margin="0"/>
+                        </StackPanel>
+                    </Border>
 
-                    <Border Width="1" Height="22" Background="#2A364D" Margin="8,0,12,0"/>
+                    <Border Background="#0C1322" BorderBrush="#1C2940" BorderThickness="1" CornerRadius="7" Padding="2" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton GroupName="RegionMode" Content="{Binding L_Exclude}"
+                                         IsChecked="{Binding IsExcludeMode}"
+                                         Tag="{StaticResource RedBrush}"
+                                         Style="{StaticResource ChipRadioStyle}"/>
+                            <RadioButton GroupName="RegionMode" Content="{Binding L_Include}"
+                                         IsChecked="{Binding IsIncludeMode}"
+                                         Tag="{StaticResource GreenBrush}"
+                                         Style="{StaticResource ChipRadioStyle}" Margin="0"/>
+                        </StackPanel>
+                    </Border>
 
-                    <RadioButton GroupName="RegionMode" Content="{Binding L_Exclude}"
-                                 IsChecked="{Binding IsExcludeMode}"
-                                 Tag="{StaticResource RedBrush}"
-                                 Style="{StaticResource ChipRadioStyle}"/>
-                    <RadioButton GroupName="RegionMode" Content="{Binding L_Include}"
-                                 IsChecked="{Binding IsIncludeMode}"
-                                 Tag="{StaticResource GreenBrush}"
-                                 Style="{StaticResource ChipRadioStyle}"/>
-
-                    <Button Content="{Binding L_Undo}" Command="{Binding UndoRegionCommand}"
+                    <Button Content="↩" Command="{Binding UndoRegionCommand}"
+                            ToolTip="{Binding L_Undo}"
                             Style="{StaticResource ModernButtonStyle}"
-                            FontSize="11" Padding="8,4" Margin="8,0,4,0"/>
-                    <Button Content="{Binding L_Clear}" Command="{Binding ClearRegionsCommand}"
+                            FontSize="11" Padding="7,4" Margin="0,0,4,0"/>
+                    <Button Content="✕" Command="{Binding ClearRegionsCommand}"
+                            ToolTip="{Binding L_Clear}"
                             Style="{StaticResource ModernButtonStyle}"
-                            FontSize="11" Padding="8,4" Margin="0,0,12,0"/>
-                    <TextBlock Text="{Binding ToolHint}" Foreground="#64748B" FontSize="11" VerticalAlignment="Center"/>
+                            FontSize="11" Padding="7,4"/>
                 </StackPanel>
 
-                <Border Width="1" Height="22" Background="#2A364D" Margin="14,0,14,0" VerticalAlignment="Center"/>
+                <Border Width="1" Height="20" Background="#1C2940" Margin="0,0,14,0" VerticalAlignment="Center"/>
 
-                <!-- Stellarium & Astrometry Synchronization (WrapPanel so it always fits on screen) -->
-                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,3,0,3">
-                    <TextBlock Text="{Binding L_StellariumGroup}" Style="{StaticResource GroupLabelStyle}"/>
+                <!-- 4. Astrometry & Planetarium Controls -->
+                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
+                    <!-- Smart Astrometry Plate Solve Button -->
+                    <Button Command="{Binding PlateSolveCommand}"
+                            Style="{StaticResource ModernButtonStyle}"
+                            ToolTip="{Binding L_PlateSolveToolTip}"
+                            Padding="10,4" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🔭 " FontSize="11" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding L_PlateSolveButton}" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Target Selection ComboBox -->
+                    <ComboBox ItemsSource="{Binding AvailableTargetsInPhoto}"
+                              SelectedItem="{Binding SelectedCatalogueTarget, Mode=TwoWay}"
+                              IsEnabled="{Binding HasTargetsInPhoto}"
+                              Tag="{Binding TargetComboPlaceholderText}"
+                              DisplayMemberPath="CommonName"
+                              Style="{StaticResource DarkComboBoxStyle}"
+                              Width="205"
+                              Height="26"
+                              MaxDropDownHeight="320"
+                              VerticalAlignment="Center"
+                              Margin="0,0,6,0"
+                              ToolTip="{Binding L_TargetComboToolTip}"/>
 
                     <!-- Stellarium Connection Toggle Button -->
                     <Button Command="{Binding ToggleStellariumCommand}"
                             Style="{StaticResource ModernButtonStyle}"
-                            FontSize="11" Padding="10,4" Margin="0,2,6,2">
-                        <StackPanel Orientation="Horizontal">
-                            <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center">
+                            Padding="10,4" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse Width="7" Height="7" Margin="0,0,6,0" VerticalAlignment="Center">
                                 <Ellipse.Style>
                                     <Style TargetType="Ellipse">
                                         <Setter Property="Fill" Value="#EF4444"/>
@@ -453,223 +598,133 @@
                                     </Style>
                                 </Ellipse.Style>
                             </Ellipse>
-                            <TextBlock Text="{Binding StellariumStatusText}"/>
+                            <TextBlock Text="{Binding StellariumStatusText}" FontSize="11"/>
                         </StackPanel>
                     </Button>
 
-                    <!-- Star-Pattern Automatic Astrometry Solve Button -->
-                    <Button Command="{Binding PlateSolveCommand}"
-                            Style="{StaticResource ModernButtonStyle}"
-                            ToolTip="{Binding L_PlateSolveToolTip}"
-                            FontSize="11" Padding="10,4" Margin="0,2,6,2">
-                        <TextBlock Text="{Binding L_PlateSolveButton}"/>
-                    </Button>
-
-                    <!-- Target Selection ComboBox (Only lists celestial objects inside the current photo's field of view) -->
-                    <ComboBox ItemsSource="{Binding AvailableTargetsInPhoto}"
-                              SelectedItem="{Binding SelectedCatalogueTarget, Mode=TwoWay}"
-                              IsEnabled="{Binding HasTargetsInPhoto}"
-                              Tag="{Binding TargetComboPlaceholderText}"
-                              DisplayMemberPath="CommonName"
-                              Style="{StaticResource DarkComboBoxStyle}"
-                              Width="225"
-                              Height="26"
-                              MaxDropDownHeight="320"
-                              VerticalAlignment="Center"
-                              Margin="0,2,8,2"
-                              ToolTip="{Binding L_TargetComboToolTip}"/>
-
-                    <!-- Live Two-Way 1:1 Sync CheckBox (Pan + Zoom + Angle) -->
+                    <!-- Live Two-Way 1:1 Sync CheckBox (Only visible when Stellarium is connected) -->
                     <CheckBox IsChecked="{Binding IsStellariumSyncEnabled, Mode=TwoWay}"
-                              IsEnabled="{Binding IsStellariumConnected}"
+                              Visibility="{Binding IsStellariumConnected, Converter={StaticResource BoolToVis}}"
                               Content="{Binding L_TwoWaySync}"
                               Foreground="#94A3B8"
+                              FontSize="11"
                               VerticalAlignment="Center"
-                              Margin="2,2,10,2"
+                              Margin="2,0,8,0"
                               ToolTip="{Binding L_TwoWaySyncToolTip}"/>
-
-                    <!-- Spherical Grid Overlay Toggle -->
-                    <CheckBox IsChecked="{Binding ShowSphericalGrid, Mode=TwoWay}"
-                              Content="{Binding L_SphericalGrid}"
-                              Foreground="#94A3B8"
-                              VerticalAlignment="Center"
-                              Margin="0,2,10,2"
-                              ToolTip="{Binding L_SphericalGridToolTip}"/>
-
-                    <!-- Single Manual 0°-360° Angle Slider -->
-                    <Border Background="#162032" BorderBrush="#2A364D" BorderThickness="1" CornerRadius="6" Padding="8,3" VerticalAlignment="Center" Margin="0,2,8,2"
-                            ToolTip="{Binding L_AngleToolTip}">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding L_AngleLabel}" Foreground="#94A3B8" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <Slider Minimum="0" Maximum="360"
-                                    Value="{Binding ImageRotationAngle, Mode=TwoWay}"
-                                    Width="110"
-                                    SmallChange="1" LargeChange="15"
-                                    TickFrequency="1" IsSnapToTickEnabled="False"
-                                    VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding ImageRotationAngle, StringFormat='{}{0:F0}°'}"
-                                       Width="34" TextAlignment="Right"
-                                       Foreground="#38BDF8" FontWeight="Bold" FontSize="11"
-                                       VerticalAlignment="Center" Margin="4,0,6,0"/>
-                            <Button Content="↺" Command="{Binding ResetRotationCommand}"
-                                    Style="{StaticResource ModernButtonStyle}"
-                                    Padding="5,1" FontSize="11"
-                                    ToolTip="{Binding L_ResetAngleToolTip}"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Solved Target Coordinates Pill -->
-                    <Border Background="#162E4A" CornerRadius="6" Padding="8,4" VerticalAlignment="Center" Margin="0,2,0,2"
-                            Visibility="{Binding IsWcsAvailable, Converter={StaticResource BoolToVis}}"
-                            ToolTip="{Binding TargetDetailsText}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{Binding SolvedCoordinatesText}" Foreground="#38BDF8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Distortion / Diagnostic Warning Badge -->
-                    <Border Background="#2D1B04" BorderBrush="#D97706" BorderThickness="1" CornerRadius="6" Padding="8,3" VerticalAlignment="Center" Margin="6,2,0,2"
-                            Visibility="{Binding HasDiagnosticWarning, Converter={StaticResource BoolToVis}}"
-                            ToolTip="{Binding DiagnosticWarningText}">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="⚠️" FontSize="11" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="{Binding DiagnosticWarningText}" Foreground="#FBBF24" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="320" TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                    </Border>
                 </WrapPanel>
             </WrapPanel>
         </Border>
 
-        <!-- METRICS & SLIDER BAR -->
-        <Border Grid.Row="2" Background="#0C101A" BorderBrush="#1A2233" BorderThickness="0,0,0,1" Padding="20,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- Stat Cards with horizontal scrolling fallback if screen is narrow -->
-                <ScrollViewer Grid.Column="0"
-                              HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Disabled"
-                              Focusable="False">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <!-- Total Count -->
-                        <Border Style="{StaticResource MetricCardStyle}">
-                            <StackPanel>
-                                <TextBlock Text="{Binding L_TotalObjects}" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                                <TextBlock Text="{Binding TotalCount}" FontSize="20" FontWeight="Bold" Foreground="#38BDF8" Margin="0,2,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Tier 1 High -->
-                        <Border Style="{StaticResource MetricCardStyle}">
-                            <StackPanel>
-                                <TextBlock Text="TIER 1 (&gt;10σ)" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                                <TextBlock Text="{Binding Tier1Count}" FontSize="20" FontWeight="Bold" Foreground="#00E676" Margin="0,2,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Tier 2 Medium -->
-                        <Border Style="{StaticResource MetricCardStyle}">
-                            <StackPanel>
-                                <TextBlock Text="TIER 2 (5-10σ)" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                                <TextBlock Text="{Binding Tier2Count}" FontSize="20" FontWeight="Bold" Foreground="#FFD600" Margin="0,2,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Tier 3 Low -->
-                        <Border Style="{StaticResource MetricCardStyle}">
-                            <StackPanel>
-                                <TextBlock Text="TIER 3 (3-5σ)" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                                <TextBlock Text="{Binding Tier3Count}" FontSize="20" FontWeight="Bold" Foreground="#FF9100" Margin="0,2,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Speculative / Noise Risk (<3σ) -->
-                        <Border Style="{StaticResource MetricCardStyle}"
-                                Visibility="{Binding HasSpeculativeObjects, Converter={StaticResource BoolToVis}}"
-                                BorderBrush="#EF4444">
-                            <StackPanel>
-                                <TextBlock Text="{Binding L_Speculative}" FontSize="10" FontWeight="SemiBold" Foreground="#EF4444"/>
-                                <TextBlock Text="{Binding SpeculativeCount}" FontSize="20" FontWeight="Bold" Foreground="#EF4444" Margin="0,2,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Scan area summary -->
-                        <Border Style="{StaticResource MetricCardStyle}">
-                            <StackPanel>
-                                <TextBlock Text="{Binding L_ScanAreaGroup}" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                                <TextBlock Text="{Binding RegionSummary}" FontSize="14" FontWeight="Bold" Foreground="#E2E8F0" Margin="0,4,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Time & Tiles -->
-                        <Border Style="{StaticResource MetricCardStyle}">
-                            <StackPanel>
-                                <TextBlock Text="{Binding L_ProcessingTime}" FontSize="10" FontWeight="SemiBold" Foreground="#64748B"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                                    <TextBlock Text="{Binding ProcessingTimeText}" FontSize="18" FontWeight="Bold" Foreground="#E2E8F0"/>
-                                    <TextBlock Text="{Binding TileCountText, StringFormat=' ({0})'}" FontSize="11" Foreground="#94A3B8" VerticalAlignment="Bottom" Margin="4,0,0,2"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-
-                <!-- Interactive Confidence Slider with Fixed Invariant Width (Never shrinks or resizes) -->
-                <Border Grid.Column="1" Width="390" Background="#121824" BorderBrush="{Binding ConfidenceBrush}" BorderThickness="1.2" CornerRadius="8" Padding="14,8" Margin="12,0,0,0" VerticalAlignment="Center">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Slider Header -->
-                        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding L_ConfidenceLabel}" FontSize="12" FontWeight="SemiBold" Foreground="#CBD5E1"/>
-                            <TextBlock Text="{Binding ConfidencePercentText}" FontSize="13" FontWeight="Bold" Foreground="{Binding ConfidenceBrush}"/>
-                            <Border Background="#1E293B" CornerRadius="10" Padding="6,2" Margin="6,0,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding ConfidenceStatusText}" Foreground="{Binding ConfidenceBrush}" FontSize="10.5" FontWeight="SemiBold"/>
-                            </Border>
+        <!-- ==================== ROW 2: COMPACT TELEMETRY & STATUS STRIP ==================== -->
+        <Border Grid.Row="2" Background="#060A12" BorderBrush="#131C2E" BorderThickness="0,0,0,1" Padding="18,5">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled"
+                          Focusable="False">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Total Objects Capsule -->
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding L_TotalObjects}" FontSize="9.5" FontWeight="Bold" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                            <TextBlock Text="{Binding TotalCount}" FontSize="14" FontWeight="Bold" Foreground="#38BDF8" VerticalAlignment="Center"/>
                         </StackPanel>
+                    </Border>
 
-                        <!-- Toggles -->
-                        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <CheckBox IsChecked="{Binding ShowBoundingBoxes}" Content="{Binding L_Boxes}" Foreground="#94A3B8" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                            <CheckBox IsChecked="{Binding ShowLabels}" Content="{Binding L_Labels}" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                    <!-- Tier 1 (>10σ) -->
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse Width="6" Height="6" Fill="#00E676" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock Text="T1 (&gt;10σ):" FontSize="9.5" FontWeight="SemiBold" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock Text="{Binding Tier1Count}" FontSize="13" FontWeight="Bold" Foreground="#00E676" VerticalAlignment="Center"/>
                         </StackPanel>
+                    </Border>
 
-                        <!-- Slider with Dynamic Color (Red <15%, Yellow 15-25%, Cyan >=25%) -->
-                        <Slider Grid.Row="1" Grid.ColumnSpan="2"
-                                Style="{StaticResource ConfidenceSliderStyle}"
-                                Minimum="0.01" Maximum="0.99"
-                                Value="{Binding ConfidenceThreshold, Mode=TwoWay}"
-                                SmallChange="0.01" LargeChange="0.05"
-                                TickFrequency="0.05" IsSnapToTickEnabled="False"
-                                Margin="0,10,0,2"/>
-                    </Grid>
-                </Border>
-            </Grid>
+                    <!-- Tier 2 (5-10σ) -->
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse Width="6" Height="6" Fill="#FFD600" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock Text="T2 (5-10σ):" FontSize="9.5" FontWeight="SemiBold" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock Text="{Binding Tier2Count}" FontSize="13" FontWeight="Bold" Foreground="#FFD600" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Tier 3 (3-5σ) -->
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse Width="6" Height="6" Fill="#FF9100" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock Text="T3 (3-5σ):" FontSize="9.5" FontWeight="SemiBold" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock Text="{Binding Tier3Count}" FontSize="13" FontWeight="Bold" Foreground="#FF9100" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Speculative (<3σ) -->
+                    <Border Style="{StaticResource MetricCardStyle}"
+                            Visibility="{Binding HasSpeculativeObjects, Converter={StaticResource BoolToVis}}"
+                            BorderBrush="#EF4444">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding L_Speculative}" FontSize="9.5" FontWeight="SemiBold" Foreground="#EF4444" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock Text="{Binding SpeculativeCount}" FontSize="13" FontWeight="Bold" Foreground="#EF4444" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Processing Time & Panels -->
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⏱" FontSize="10" Foreground="#64748B" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                            <TextBlock Text="{Binding ProcessingTimeText}" FontSize="12.5" FontWeight="Bold" Foreground="#E2E8F0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding TileCountText, StringFormat=' ({0})'}" FontSize="10.5" Foreground="#64748B" VerticalAlignment="Center" Margin="3,0,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Solved Target Coordinates Pill -->
+                    <Border Background="#0E2238" BorderBrush="#1E3F66" BorderThickness="1" CornerRadius="8" Padding="10,4" Margin="0,0,6,0" VerticalAlignment="Center"
+                            Visibility="{Binding IsWcsAvailable, Converter={StaticResource BoolToVis}}"
+                            ToolTip="{Binding TargetDetailsText}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🧭 " FontSize="10" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding SolvedCoordinatesText}" Foreground="#38BDF8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Transient / Anomaly Hunter Alert Badge -->
+                    <Border Background="#3B1219" BorderBrush="#F43F5E" BorderThickness="1" CornerRadius="8" Padding="9,4" Margin="0,0,6,0" VerticalAlignment="Center"
+                            Visibility="{Binding HasAnomalies, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="🎯 " FontSize="10.5" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding L_AnomaliesBadgeLabel}" Foreground="#FDA4AF" FontWeight="SemiBold" FontSize="10.5" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBlock Text="{Binding AnomalyCount}" Foreground="#FDA4AF" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Distortion / Diagnostic Warning Badge -->
+                    <Border Background="#2D1B04" BorderBrush="#D97706" BorderThickness="1" CornerRadius="8" Padding="9,4" VerticalAlignment="Center"
+                            Visibility="{Binding HasDiagnosticWarning, Converter={StaticResource BoolToVis}}"
+                            ToolTip="{Binding DiagnosticWarningText}">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⚠️ " FontSize="10.5" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding DiagnosticWarningText}" Foreground="#FBBF24" FontSize="10.5" FontWeight="SemiBold" VerticalAlignment="Center" MaxWidth="340" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
         </Border>
 
-        <!-- MAIN INTERACTIVE VIEWER (PAN & ZOOM) -->
+        <!-- ==================== ROW 3: MAIN INTERACTIVE VIEWPORT & DRAGGABLE PANELS ==================== -->
         <ScrollViewer Grid.Row="3"
                       x:Name="ViewerScrollViewer"
+                      Visibility="{Binding Is2DViewActive, Converter={StaticResource BoolToVis}}"
                       HorizontalScrollBarVisibility="Auto"
                       VerticalScrollBarVisibility="Auto"
-                      Background="#070A0F"
+                      Background="#05070D"
                       ScrollChanged="ViewerScrollViewer_ScrollChanged"
                       PreviewMouseWheel="ScrollViewer_PreviewMouseWheel"
                       PreviewMouseDown="ScrollViewer_PreviewMouseDown"
                       PreviewMouseMove="ScrollViewer_PreviewMouseMove"
                       PreviewMouseUp="ScrollViewer_PreviewMouseUp">
 
-            <Grid x:Name="CanvasContainer" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid x:Name="CanvasContainer"
+                  Width="{Binding CanvasWidth}"
+                  Height="{Binding CanvasHeight}"
+                  HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid.LayoutTransform>
                     <TransformGroup>
                         <ScaleTransform x:Name="CanvasScale" ScaleX="1.0" ScaleY="1.0"/>
@@ -679,37 +734,43 @@
 
                 <!-- Empty State Placeholder when no image loaded -->
                 <Border x:Name="PlaceholderBorder"
-                        Width="800" Height="500"
-                        BorderBrush="#1E293B" BorderThickness="2"
-                        CornerRadius="12"
-                        Background="#0D131F"
+                        Width="720" Height="440"
+                        BorderBrush="#1A263B" BorderThickness="1.5"
+                        CornerRadius="16"
+                        Background="#0A0F1D"
                         Visibility="{Binding IsPlaceholderVisible, Converter={StaticResource BoolToVis}}">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <Image Source="pack://application:,,,/Assets/logo.png" Width="80" Height="80" HorizontalAlignment="Center" Margin="0,0,0,16" RenderOptions.BitmapScalingMode="HighQuality"/>
-                        <TextBlock Text="{Binding L_PlaceholderTitle}" FontSize="18" FontWeight="Bold" Foreground="#94A3B8" HorizontalAlignment="Center"/>
-                        <TextBlock Text="{Binding L_PlaceholderFormats}" FontSize="13" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,6,0,20"/>
-                        <Button Content="{Binding L_PlaceholderBrowse}" Command="{Binding SelectImageCommand}" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Center"/>
+                        <Image Source="pack://application:,,,/Assets/logo.png" Width="72" Height="72" HorizontalAlignment="Center" Margin="0,0,0,16" RenderOptions.BitmapScalingMode="HighQuality"/>
+                        <TextBlock Text="{Binding L_PlaceholderTitle}" FontSize="17" FontWeight="Bold" Foreground="#CBD5E1" HorizontalAlignment="Center"/>
+                        <TextBlock Text="{Binding L_PlaceholderFormats}" FontSize="12.5" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,6,0,20"/>
+                        <Button Content="{Binding L_PlaceholderBrowse}" Command="{Binding SelectImageCommand}" Style="{StaticResource PrimaryButtonStyle}" HorizontalAlignment="Center" Padding="18,8"/>
                     </StackPanel>
                 </Border>
 
                 <Grid x:Name="ImageSurface">
-                    <!-- Astro Image: sized in image PIXELS (not DIPs) so it always lines up with the detections -->
                     <Image x:Name="AstroImage"
+                           Opacity="{Binding PhotoOpacity}"
                            Source="{Binding ImageBitmap}"
                            Width="{Binding ImageWidth}"
                            Height="{Binding ImageHeight}"
+                           Visibility="{Binding IsSingleImageActive, Converter={StaticResource BoolToVis}}"
                            Stretch="Fill"
                            RenderOptions.BitmapScalingMode="HighQuality"/>
 
-                    <!-- Overlaid detections and scan regions (drawn with a DrawingContext for speed) -->
                     <local:DetectionOverlay x:Name="Overlay"
-                                            Width="{Binding ImageWidth}"
-                                            Height="{Binding ImageHeight}"
+                                            Width="{Binding CanvasWidth}"
+                                            Height="{Binding CanvasHeight}"
                                             Objects="{Binding VisibleObjects}"
                                             Regions="{Binding RegionSnapshot}"
                                             ShowBoxes="{Binding ShowBoundingBoxes}"
                                             ShowLabels="{Binding ShowLabels}"
                                             ShowSphericalGrid="{Binding ShowSphericalGrid}"
+                                            ShowHipparcosStars="{Binding ShowHipparcosStars}"
+                                            ShowConstellations="{Binding ShowConstellations}"
+                                            ShowDsoMarkers="{Binding ShowDsoMarkers}"
+                                            MosaicPanels="{Binding MosaicPanels}"
+                                            ActiveFilePath="{Binding SelectedImagePath}"
+                                            UseFeatheredBlending="{Binding UseFeatheredBlending}"
                                             Wcs="{Binding CurrentWcs}"
                                             TargetMarkerPixel="{Binding TargetMarkerPixel}"
                                             TargetMarkerLabel="{Binding TargetMarkerLabel}"/>
@@ -717,40 +778,655 @@
             </Grid>
         </ScrollViewer>
 
-        <!-- STATUS BAR -->
-        <Border Grid.Row="4" Background="#0A0E17" BorderBrush="#1A2233" BorderThickness="0,1,0,0" Padding="16,8">
+        <!-- 3D NAVIGABLE CELESTIAL SPHERE PLANETARIUM -->
+        <local:CelestialSphereControl x:Name="SphereControl"
+                                      Grid.Row="3"
+                                      CurrentWcs="{Binding CurrentWcs}"
+                                      MosaicPanels="{Binding MosaicPanels}"
+                                      ActiveFilePath="{Binding SelectedImagePath}"
+                                      ActiveImageBitmap="{Binding ImageBitmap}"
+                                      VisibleObjects="{Binding VisibleObjects}"
+                                      ShowBoundingBoxes="{Binding ShowBoundingBoxes}"
+                                      ShowLabels="{Binding ShowLabels}"
+                                      ShowHipparcosStars="{Binding ShowHipparcosStars}"
+                                      ShowConstellations="{Binding ShowConstellations}"
+                                      ShowDsoMarkers="{Binding ShowDsoMarkers}"
+                                      ShowSphericalGrid="{Binding ShowSphericalGrid}"
+                                      PhotoOpacity="{Binding PhotoOpacity}"
+                                      Regions="{Binding RegionSnapshot}"
+                                      TotalCount="{Binding TotalCount}"
+                                      Tier1Count="{Binding Tier1Count}"
+                                      Tier2Count="{Binding Tier2Count}"
+                                      Tier3Count="{Binding Tier3Count}"
+                                      UseFeatheredBlending="{Binding UseFeatheredBlending}"
+                                      ExitCommand="{Binding ToggleSphereModeCommand}"
+                                      Visibility="{Binding IsSphereModeActive, Converter={StaticResource BoolToVis}}"/>
+
+        <!-- ==================== DRAGGABLE FLOATING WINDOW 1: LAYERS & LABELS ==================== -->
+        <Border x:Name="LabelsPanelBorder"
+                Grid.Row="3"
+                HorizontalAlignment="Left" VerticalAlignment="Top"
+                Margin="18,14,0,0"
+                Width="310"
+                Panel.ZIndex="106"
+                Style="{StaticResource FloatingPanelStyle}"
+                PreviewMouseDown="FloatingPanel_PreviewMouseDown"
+                Visibility="{Binding IsLabelsPanelOpen, Converter={StaticResource BoolToVis}}">
+            <Border.RenderTransform>
+                <TranslateTransform X="0" Y="0"/>
+            </Border.RenderTransform>
+            <StackPanel>
+                <!-- Draggable Header -->
+                <Border Background="Transparent"
+                        Cursor="SizeAll"
+                        Margin="0,0,0,10"
+                        ToolTip="Taşımak için sürükleyin / Drag to move"
+                        MouseLeftButtonDown="FloatingPanelHeader_MouseLeftButtonDown"
+                        MouseMove="FloatingPanelHeader_MouseMove"
+                        MouseLeftButtonUp="FloatingPanelHeader_MouseLeftButtonUp">
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="✕"
+                                Command="{Binding CloseLabelsPanelCommand}"
+                                Style="{StaticResource ModernButtonStyle}"
+                                Padding="4,0" FontSize="11" Width="22" Height="22"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⋮⋮" Foreground="#64748B" FontWeight="Bold" FontSize="12" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="🏷️" FontSize="12.5" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding L_LabelsPanelTitle}" Foreground="#F8FAFC" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- Quick Actions: Enable All / Disable All -->
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Grid.Column="0" Content="{Binding L_CheckAll}" Command="{Binding CheckAllOverlaysCommand}"
+                            Style="{StaticResource ModernButtonStyle}" FontSize="10.5" Padding="4,4" Margin="0,0,4,0"/>
+                    <Button Grid.Column="1" Content="{Binding L_UncheckAll}" Command="{Binding UncheckAllOverlaysCommand}"
+                            Style="{StaticResource ModernButtonStyle}" FontSize="10.5" Padding="4,4" Margin="4,0,0,0"/>
+                </Grid>
+
+                <!-- Group 1: Detections (Boxes & Labels) -->
+                <Border Background="#131C2E" BorderBrush="#1F2E47" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,8">
+                    <StackPanel>
+                        <TextBlock Text="{Binding L_DetectionsCategory}" Foreground="#38BDF8" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
+                        <CheckBox IsChecked="{Binding ShowBoundingBoxes, Mode=TwoWay}"
+                                  Content="{Binding L_Boxes}"
+                                  Foreground="#E2E8F0" FontSize="11" Margin="0,0,0,5"/>
+                        <CheckBox IsChecked="{Binding ShowLabels, Mode=TwoWay}"
+                                  Content="{Binding L_Labels}"
+                                  Foreground="#E2E8F0" FontSize="11"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Group 2: Sky Atlas & Planetarium Layers -->
+                <Border Background="#131C2E" BorderBrush="#1F2E47" BorderThickness="1" CornerRadius="8" Padding="10,8">
+                    <StackPanel>
+                        <TextBlock Text="{Binding L_AtlasCategory}" Foreground="#A855F7" FontWeight="Bold" FontSize="11" Margin="0,0,0,6"/>
+                        <CheckBox IsChecked="{Binding ShowHipparcosStars, Mode=TwoWay}"
+                                  Content="{Binding L_HipparcosStars}"
+                                  ToolTip="{Binding L_HipparcosStarsToolTip}"
+                                  Foreground="#E2E8F0" FontSize="11" Margin="0,0,0,5"/>
+                        <CheckBox IsChecked="{Binding ShowConstellations, Mode=TwoWay}"
+                                  Content="{Binding L_Constellations}"
+                                  ToolTip="{Binding L_ConstellationsToolTip}"
+                                  Foreground="#E2E8F0" FontSize="11" Margin="0,0,0,5"/>
+                        <CheckBox IsChecked="{Binding ShowDsoMarkers, Mode=TwoWay}"
+                                  Content="{Binding L_DsoMarkers}"
+                                  ToolTip="{Binding L_DsoMarkersToolTip}"
+                                  Foreground="#E2E8F0" FontSize="11" Margin="0,0,0,5"/>
+                        <CheckBox IsChecked="{Binding ShowSphericalGrid, Mode=TwoWay}"
+                                  Content="{Binding L_SphericalGrid}"
+                                  ToolTip="{Binding L_SphericalGridToolTip}"
+                                  Foreground="#E2E8F0" FontSize="11"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- ==================== DRAGGABLE FLOATING WINDOW 2: CONFIDENCE & SENSITIVITY ==================== -->
+        <Border x:Name="ConfidencePanelBorder"
+                Grid.Row="3"
+                HorizontalAlignment="Left" VerticalAlignment="Top"
+                Margin="48,34,0,0"
+                Width="350"
+                Panel.ZIndex="105"
+                Style="{StaticResource FloatingPanelStyle}"
+                PreviewMouseDown="FloatingPanel_PreviewMouseDown"
+                Visibility="{Binding IsConfidencePanelOpen, Converter={StaticResource BoolToVis}}">
+            <Border.RenderTransform>
+                <TranslateTransform X="0" Y="0"/>
+            </Border.RenderTransform>
+            <StackPanel>
+                <!-- Draggable Header -->
+                <Border Background="Transparent"
+                        Cursor="SizeAll"
+                        Margin="0,0,0,10"
+                        ToolTip="{Binding L_PanelDragHint}"
+                        MouseLeftButtonDown="FloatingPanelHeader_MouseLeftButtonDown"
+                        MouseMove="FloatingPanelHeader_MouseMove"
+                        MouseLeftButtonUp="FloatingPanelHeader_MouseLeftButtonUp">
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="✕"
+                                Command="{Binding CloseConfidencePanelCommand}"
+                                Style="{StaticResource ModernButtonStyle}"
+                                Padding="4,0" FontSize="11" Width="22" Height="22"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⋮⋮" Foreground="#64748B" FontWeight="Bold" FontSize="12" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="⚡" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center" Foreground="#F59E0B"/>
+                            <TextBlock Text="{Binding L_ConfidencePanelTitle}" Foreground="#F8FAFC" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- Active Photo Badge -->
+                <Border Background="#0E1729" BorderBrush="#1E3F66" BorderThickness="1" CornerRadius="7" Padding="8,5" Margin="0,0,0,8"
+                        Visibility="{Binding HasLoadedImage, Converter={StaticResource BoolToVis}}">
+                    <DockPanel LastChildFill="True">
+                        <TextBlock Text="{Binding L_ActivePhotoLabel}" Foreground="#64748B" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding ActivePanelDisplayName}" Foreground="#38BDF8" FontSize="10.5" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+                </Border>
+
+                <!-- Auto-Confidence Toggle Card -->
+                <Border Background="#131C2E" BorderBrush="#1F2E47" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,10">
+                    <StackPanel>
+                        <CheckBox IsChecked="{Binding IsAutoConfidenceEnabled, Mode=TwoWay}"
+                                  Content="{Binding L_AutoConfidenceToggle}"
+                                  Foreground="#38BDF8" FontWeight="SemiBold" FontSize="11"/>
+                        <TextBlock Text="{Binding L_AutoConfidenceDesc}" Foreground="#94A3B8" FontSize="10" Margin="20,4,0,6" TextWrapping="Wrap"/>
+                        <Button Content="{Binding L_RecalculateAuto}"
+                                Command="{Binding ApplyAutoConfidenceCommand}"
+                                ToolTip="{Binding L_AutoConfidenceToolTip}"
+                                Style="{StaticResource ModernButtonStyle}"
+                                HorizontalAlignment="Left" Margin="20,0,0,0"
+                                FontSize="10.5" Padding="8,3"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Manual Slider Section -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,4">
+                    <TextBlock Text="{Binding L_ConfidenceLabel}" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding ConfidencePercentText}" FontSize="12" FontWeight="Bold" Foreground="{Binding ConfidenceBrush}" Margin="4,0,0,0" VerticalAlignment="Center"/>
+                    <Border Background="#131C2E" CornerRadius="6" Padding="6,2" Margin="6,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ConfidenceStatusText}" Foreground="{Binding ConfidenceBrush}" FontSize="10" FontWeight="SemiBold"/>
+                    </Border>
+                </StackPanel>
+
+                <Slider Style="{StaticResource ConfidenceSliderStyle}"
+                        Minimum="0.02" Maximum="0.99"
+                        Value="{Binding ConfidenceThreshold, Mode=TwoWay}"
+                        SmallChange="0.01" LargeChange="0.05"
+                        TickFrequency="0.05" IsSnapToTickEnabled="False"
+                        Margin="0,4,0,10"/>
+
+                <!-- Quick Presets -->
+                <TextBlock Text="{Binding L_QuickPresets}" FontSize="10" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,4"/>
+                <UniformGrid Columns="4" Margin="0,0,0,8">
+                    <Button Content="18%" Command="{Binding PresetConfidenceCommand}" CommandParameter="0.18" Style="{StaticResource ModernButtonStyle}" FontSize="10.5" Padding="4,4" Margin="0,0,3,0"/>
+                    <Button Content="25%" Command="{Binding PresetConfidenceCommand}" CommandParameter="0.25" Style="{StaticResource ModernButtonStyle}" FontSize="10.5" Padding="4,4" Margin="2,0"/>
+                    <Button Content="50%" Command="{Binding PresetConfidenceCommand}" CommandParameter="0.50" Style="{StaticResource ModernButtonStyle}" FontSize="10.5" Padding="4,4" Margin="2,0"/>
+                    <Button Content="80%" Command="{Binding PresetConfidenceCommand}" CommandParameter="0.80" Style="{StaticResource ModernButtonStyle}" FontSize="10.5" Padding="4,4" Margin="3,0,0,0"/>
+                </UniformGrid>
+
+                <!-- Per-Photo Confidence Sliders List -->
+                <Border Background="#0E1525" BorderBrush="#1E2B42" BorderThickness="1" CornerRadius="8" Padding="8,6"
+                        Visibility="{Binding HasPanels, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="{Binding L_PerPhotoConfidenceHeader}" FontSize="9.5" FontWeight="Bold" Foreground="#64748B" Margin="0,0,0,5"/>
+                        <ScrollViewer MaxHeight="145" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding MosaicPanels}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding CardBackground}" BorderBrush="{Binding CardBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="7,4" Margin="0,0,0,4">
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <DockPanel Grid.Row="0" LastChildFill="True" Margin="0,0,0,2">
+                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding ConfidencePercentText}" Foreground="#38BDF8" FontWeight="Bold" FontSize="10" VerticalAlignment="Center"/>
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Name}" Foreground="#E2E8F0" FontWeight="SemiBold" FontSize="10" MaxWidth="150" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                        <Border Background="{Binding FormatBadgeBackground}" BorderBrush="{Binding FormatBadgeBorder}" BorderThickness="1" CornerRadius="3" Padding="3,0.5" Margin="5,0,0,0" VerticalAlignment="Center" ToolTip="{Binding FormatBadgeTooltip}">
+                                                            <TextBlock Text="{Binding FormatBadgeText}" Foreground="{Binding FormatBadgeForeground}" FontSize="8" FontWeight="SemiBold"/>
+                                                        </Border>
+                                                    </StackPanel>
+                                                </DockPanel>
+                                                <Slider Grid.Row="1" Minimum="0.02" Maximum="0.99" Value="{Binding ConfidenceThreshold, Mode=TwoWay}" SmallChange="0.01" LargeChange="0.05"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- ==================== DRAGGABLE FLOATING WINDOW 3: DISPLAY, LIGHT & OPACITY ==================== -->
+        <Border x:Name="LightPanelBorder"
+                Grid.Row="3"
+                HorizontalAlignment="Left" VerticalAlignment="Top"
+                Margin="18,14,0,0"
+                Width="325"
+                Panel.ZIndex="104"
+                Style="{StaticResource FloatingPanelStyle}"
+                PreviewMouseDown="FloatingPanel_PreviewMouseDown"
+                Visibility="{Binding IsLightPanelOpen, Converter={StaticResource BoolToVis}}">
+            <Border.RenderTransform>
+                <TranslateTransform X="0" Y="0"/>
+            </Border.RenderTransform>
+            <StackPanel>
+                <!-- Draggable Header -->
+                <Border Background="Transparent"
+                        Cursor="SizeAll"
+                        Margin="0,0,0,10"
+                        ToolTip="Taşımak için sürükleyin / Drag to move"
+                        MouseLeftButtonDown="FloatingPanelHeader_MouseLeftButtonDown"
+                        MouseMove="FloatingPanelHeader_MouseMove"
+                        MouseLeftButtonUp="FloatingPanelHeader_MouseLeftButtonUp">
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="✕"
+                                Command="{Binding CloseLightPanelCommand}"
+                                Style="{StaticResource ModernButtonStyle}"
+                                Padding="4,0" FontSize="11" Width="22" Height="22"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⋮⋮" Foreground="#64748B" FontWeight="Bold" FontSize="12" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="☀️" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding L_LightPanelTitle}" Foreground="#F8FAFC" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- Auto Balance Section -->
+                <Border Background="#131C2E" BorderBrush="#1F2E47" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,10">
+                    <StackPanel>
+                        <CheckBox IsChecked="{Binding IsAutoBrightnessEnabled, Mode=TwoWay}"
+                                  Content="{Binding L_AutoBalanceLabel}"
+                                  Foreground="#FBBF24" FontWeight="SemiBold" FontSize="11"/>
+                        <TextBlock Text="{Binding BrightnessStatusText}" Foreground="#94A3B8" FontSize="10" Margin="20,4,0,6" TextTrimming="CharacterEllipsis"/>
+                        <Button Content="{Binding L_AutoBalanceNow}"
+                                Command="{Binding AutoBalanceNowCommand}"
+                                Style="{StaticResource ModernButtonStyle}"
+                                HorizontalAlignment="Left" Margin="20,0,0,0"
+                                FontSize="10.5" Padding="8,3"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Global Photo Opacity Slider (Consolidated from Toolbar) -->
+                <Grid Margin="0,2,0,4" ToolTip="{Binding L_PhotoOpacityToolTip}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="98"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="45"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding L_PhotoOpacityLabel}" Foreground="#94A3B8" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <Slider Grid.Column="1" Minimum="0.05" Maximum="1.0" Value="{Binding PhotoOpacity, Mode=TwoWay}" VerticalAlignment="Center" SmallChange="0.05" LargeChange="0.2"/>
+                    <TextBlock Grid.Column="2" Text="{Binding PhotoOpacityPercentText}" Foreground="#38BDF8" FontWeight="Bold" FontSize="11" TextAlignment="Right" VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- Brightness -->
+                <Grid Margin="0,4,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="98"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="45"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding L_BrightnessLabel}" Foreground="#94A3B8" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <Slider Grid.Column="1" Minimum="-100" Maximum="100" Value="{Binding DisplayBrightness, Mode=TwoWay}" VerticalAlignment="Center" SmallChange="1" LargeChange="10"/>
+                    <TextBlock Grid.Column="2" Text="{Binding DisplayBrightnessText}" Foreground="#38BDF8" FontWeight="Bold" FontSize="11" TextAlignment="Right" VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- Exposure (Gamma) -->
+                <Grid Margin="0,4,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="98"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="45"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding L_ExposureLabel}" Foreground="#94A3B8" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <Slider Grid.Column="1" Minimum="0.2" Maximum="3.0" Value="{Binding DisplayExposure, Mode=TwoWay}" VerticalAlignment="Center" SmallChange="0.05" LargeChange="0.2"/>
+                    <TextBlock Grid.Column="2" Text="{Binding DisplayExposureText}" Foreground="#38BDF8" FontWeight="Bold" FontSize="11" TextAlignment="Right" VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- Contrast -->
+                <Grid Margin="0,4,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="98"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="45"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding L_ContrastLabel}" Foreground="#94A3B8" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <Slider Grid.Column="1" Minimum="0.5" Maximum="2.5" Value="{Binding DisplayContrast, Mode=TwoWay}" VerticalAlignment="Center" SmallChange="0.05" LargeChange="0.2"/>
+                    <TextBlock Grid.Column="2" Text="{Binding DisplayContrastText}" Foreground="#38BDF8" FontWeight="Bold" FontSize="11" TextAlignment="Right" VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- Reset Button -->
+                <Button Content="{Binding L_ResetAdjustments}"
+                        Command="{Binding ResetDisplayAdjustmentsCommand}"
+                        Style="{StaticResource ModernButtonStyle}"
+                        HorizontalAlignment="Right"
+                        FontSize="10.5" Padding="10,4"/>
+            </StackPanel>
+        </Border>
+
+        <!-- ==================== DRAGGABLE FLOATING WINDOW 4: PHOTOS & MOSAIC MANAGER ==================== -->
+        <Border x:Name="MosaicDrawerBorder"
+                Grid.Row="3"
+                HorizontalAlignment="Right" VerticalAlignment="Top"
+                Margin="0,14,18,0"
+                Width="355" MaxHeight="560"
+                Panel.ZIndex="108"
+                Style="{StaticResource FloatingPanelStyle}"
+                PreviewMouseDown="FloatingPanel_PreviewMouseDown"
+                Visibility="{Binding IsMosaicDrawerOpen, Converter={StaticResource BoolToVis}}">
+            <Border.RenderTransform>
+                <TranslateTransform X="0" Y="0"/>
+            </Border.RenderTransform>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Draggable Header -->
+                <Border Grid.Row="0"
+                        Background="Transparent"
+                        Cursor="SizeAll"
+                        Margin="0,0,0,10"
+                        ToolTip="Taşımak için sürükleyin / Drag to move"
+                        MouseLeftButtonDown="FloatingPanelHeader_MouseLeftButtonDown"
+                        MouseMove="FloatingPanelHeader_MouseMove"
+                        MouseLeftButtonUp="FloatingPanelHeader_MouseLeftButtonUp">
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="✕"
+                                Command="{Binding CloseMosaicDrawerCommand}"
+                                Style="{StaticResource ModernButtonStyle}"
+                                Padding="4,0" FontSize="11" Width="22" Height="22"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⋮⋮" Foreground="#64748B" FontWeight="Bold" FontSize="12" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="🧩" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding L_MosaicDrawerTitle}" Foreground="#F8FAFC" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- Consolidated Single Action Bar (No Duplicate Clear / Scan Buttons) -->
+                <StackPanel Grid.Row="1" Margin="0,0,0,8">
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="{Binding L_AddPhotosButton}"
+                                Command="{Binding AddPhotosCommand}"
+                                Style="{StaticResource PrimaryButtonStyle}"
+                                Padding="6,5" FontSize="10.5" Margin="0,0,4,0"
+                                ToolTip="Projeye veya mozaik atlasına yeni fotoğraflar ekle"/>
+                        <Button Grid.Column="1" Content="{Binding L_AlignAllButton}"
+                                Command="{Binding PlateSolveAllPanelsCommand}"
+                                Style="{StaticResource ModernButtonStyle}"
+                                Padding="6,5" FontSize="10.5" Margin="2,0,4,0"
+                                ToolTip="Tüm fotoğrafları katalog ve komşu yıldızlarla hizalar ve yeniden analiz eder"/>
+                        <Button Grid.Column="2" Content="{Binding L_ClearAllButton}"
+                                Command="{Binding ClearAllPanelsCommand}"
+                                Style="{StaticResource ModernButtonStyle}"
+                                Padding="9,5" FontSize="10.5"
+                                ToolTip="Tüm fotoğrafları ve mozaik katmanlarını temizle"/>
+                    </Grid>
+
+                    <!-- Feathered Blending Toggle -->
+                    <CheckBox Content="{Binding L_FeatheredBlending}"
+                              IsChecked="{Binding UseFeatheredBlending, Mode=TwoWay}"
+                              Margin="2,0,0,4" Foreground="#CBD5E1" FontSize="11"
+                              ToolTip="{Binding L_FeatheredBlending}"/>
+
+                    <TextBlock Text="{Binding L_DragReorderHint}" Foreground="#64748B" FontSize="9.5" Margin="2,0,0,6"/>
+
+                    <!-- Compact Mosaic Counting Results Summary -->
+                    <Border Background="#0E1B31" BorderBrush="#1E3F66" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="0,0,0,2"
+                            Visibility="{Binding HasMosaicCountResult, Converter={StaticResource BoolToVis}}">
+                        <DockPanel LastChildFill="True">
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding MosaicOverlapStarsCount, StringFormat='{}↔ {0:N0}'}" FontSize="10" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding MosaicUniqueStarsCount, StringFormat='{}🌌 {0:N0}'}" FontSize="11" FontWeight="Bold" Foreground="#00E676" VerticalAlignment="Center"/>
+                        </DockPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Scrollable Photo Cards List -->
+                <ScrollViewer x:Name="MosaicCardsScrollViewer" Grid.Row="2" VerticalScrollBarVisibility="Auto" MaxHeight="390">
+                    <StackPanel>
+                        <TextBlock Text="{Binding L_EmptyMosaic}"
+                                   Foreground="#64748B" FontSize="11" FontStyle="Italic" Margin="8,16"
+                                   HorizontalAlignment="Center"
+                                   Visibility="{Binding MosaicPanels.Count, Converter={StaticResource BoolToVis}, ConverterParameter=invert}"/>
+
+                        <ItemsControl x:Name="MosaicCardsItemsControl" ItemsSource="{Binding MosaicPanels}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{Binding CardBackground}"
+                                            BorderBrush="{Binding CardBorderBrush}"
+                                            BorderThickness="{Binding CardBorderThickness}"
+                                            CornerRadius="8" Padding="10,8" Margin="0,0,0,7"
+                                            AllowDrop="True"
+                                            Cursor="Hand"
+                                            Tag="{Binding}"
+                                            PreviewMouseLeftButtonDown="PhotoCard_PreviewMouseLeftButtonDown"
+                                            PreviewMouseMove="PhotoCard_PreviewMouseMove"
+                                            DragOver="PhotoCard_DragOver"
+                                            Drop="PhotoCard_Drop">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <!-- Row 0: Visibility checkbox, Name, and Layer Ordering Actions -->
+                                            <DockPanel Grid.Row="0" LastChildFill="True">
+                                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Button Content="▲"
+                                                            Command="{Binding DataContext.MoveMosaicPanelUpCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{StaticResource ModernButtonStyle}"
+                                                            Padding="5,1" FontSize="9" Margin="0,0,2,0" ToolTip="{Binding DataContext.L_MoveUp, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                                    <Button Content="▼"
+                                                            Command="{Binding DataContext.MoveMosaicPanelDownCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{StaticResource ModernButtonStyle}"
+                                                            Padding="5,1" FontSize="9" Margin="0,0,4,0" ToolTip="{Binding DataContext.L_MoveDown, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                                    <Button Content="✕"
+                                                            Command="{Binding DataContext.RemoveMosaicPanelCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                            CommandParameter="{Binding}"
+                                                            Style="{StaticResource ModernButtonStyle}"
+                                                            Padding="5,1" FontSize="10"
+                                                            ToolTip="{Binding DataContext.L_RemovePanel, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                                </StackPanel>
+                                                <CheckBox IsChecked="{Binding IsVisible, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                <Button Style="{StaticResource ModernButtonStyle}"
+                                                        Command="{Binding DataContext.SelectMosaicPanelCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Background="Transparent" BorderBrush="Transparent"
+                                                        Padding="2,0" HorizontalAlignment="Left">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="⋮⋮ " Foreground="#64748B" FontWeight="Bold" FontSize="10" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{Binding Name}" Foreground="#38BDF8" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" MaxWidth="135" TextTrimming="CharacterEllipsis"/>
+                                                        <Border Background="{Binding FormatBadgeBackground}" BorderBrush="{Binding FormatBadgeBorder}" BorderThickness="1" CornerRadius="4" Padding="4,1" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="{Binding FormatBadgeTooltip}">
+                                                            <TextBlock Text="{Binding FormatBadgeText}" Foreground="{Binding FormatBadgeForeground}" FontSize="8.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                        </Border>
+                                                    </StackPanel>
+                                                </Button>
+                                            </DockPanel>
+
+                                            <!-- Row 1: Target / Coordinates Info -->
+                                            <StackPanel Grid.Row="1" Margin="22,4,0,5">
+                                                <DockPanel LastChildFill="True">
+                                                    <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Foreground="#34D399" FontSize="9.5" FontWeight="SemiBold"/>
+                                                    <TextBlock Text="{Binding CenterCoordinatesText}" Foreground="#94A3B8" FontSize="10"/>
+                                                </DockPanel>
+                                                <TextBlock Text="{Binding ResolutionText}" Foreground="#64748B" FontSize="9"/>
+                                            </StackPanel>
+
+                                            <!-- Row 2: Opacity Slider -->
+                                            <Grid Grid.Row="2" Margin="22,0,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="34"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding L_OpacityLabel}" Foreground="#94A3B8" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                <Slider Grid.Column="1" Minimum="0.05" Maximum="1.0" Value="{Binding Opacity, Mode=TwoWay}" SmallChange="0.05" LargeChange="0.2" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding Opacity, StringFormat='{}{0:P0}'}" Foreground="#CBD5E1" FontSize="10" TextAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+
+        <!-- ==================== DRAGGABLE FLOATING WINDOW 5: ADVANCED EXPORT ==================== -->
+        <Border x:Name="ExportPanelBorder"
+                Grid.Row="3"
+                HorizontalAlignment="Center" VerticalAlignment="Center"
+                Width="425"
+                Panel.ZIndex="120"
+                Style="{StaticResource FloatingPanelStyle}"
+                BorderBrush="#38BDF8"
+                PreviewMouseDown="FloatingPanel_PreviewMouseDown"
+                Visibility="{Binding IsExportPanelOpen, Converter={StaticResource BoolToVis}}">
+            <Border.RenderTransform>
+                <TranslateTransform X="0" Y="0"/>
+            </Border.RenderTransform>
+            <StackPanel>
+                <!-- Draggable Header -->
+                <Border Background="Transparent"
+                        Cursor="SizeAll"
+                        Margin="0,0,0,12"
+                        ToolTip="{Binding L_PanelDragHint}"
+                        MouseLeftButtonDown="FloatingPanelHeader_MouseLeftButtonDown"
+                        MouseMove="FloatingPanelHeader_MouseMove"
+                        MouseLeftButtonUp="FloatingPanelHeader_MouseLeftButtonUp">
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="✕"
+                                Command="{Binding CloseExportPanelCommand}"
+                                Style="{StaticResource ModernButtonStyle}"
+                                Padding="4,0" FontSize="11" Width="24" Height="24"/>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⋮⋮" Foreground="#64748B" FontWeight="Bold" FontSize="12" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="🚀" FontSize="14" Margin="0,0,7,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding L_ExportPanelTitle}" Foreground="#F8FAFC" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- Projection / Output Mode Card (2D Canvas vs 360° Equirectangular Panorama) -->
+                <Border Background="#131C2E" BorderBrush="#1F2E47" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="{Binding L_ExportProjectionLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,8"/>
+                        <WrapPanel Orientation="Horizontal">
+                            <RadioButton Content="{Binding L_ExportProj2D}" IsChecked="{Binding IsExportCanvas2D, Mode=TwoWay}" GroupName="ProjGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,2"/>
+                            <RadioButton Content="{Binding L_ExportProj360}" IsChecked="{Binding IsExportPanorama360, Mode=TwoWay}" GroupName="ProjGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,0,2"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Format Selection Card -->
+                <Border Background="#131C2E" BorderBrush="#1F2E47" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="{Binding L_ExportFormatLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,8"/>
+                        <WrapPanel Orientation="Horizontal">
+                            <RadioButton Content="PNG" IsChecked="{Binding IsFormatPng, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                            <RadioButton Content="{Binding L_FormatTiffLossless}" IsChecked="{Binding IsFormatTiff, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                            <RadioButton Content="JPG" IsChecked="{Binding IsFormatJpg, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                            <RadioButton Content="CSV" IsChecked="{Binding IsFormatCsv, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                            <RadioButton Content="JSON" IsChecked="{Binding IsFormatJson, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Layers & Overlays Options -->
+                <Border Background="#131C2E" BorderBrush="#1F2E47" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="{Binding L_ExportLayersLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,8"/>
+                        <UniformGrid Columns="2">
+                            <CheckBox Content="{Binding L_ExportBoxes}" IsChecked="{Binding ExportIncludeBoxes, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,6"/>
+                            <CheckBox Content="{Binding L_ExportLabels}" IsChecked="{Binding ExportIncludeLabels, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,6"/>
+                            <CheckBox Content="{Binding L_ExportGrid}" IsChecked="{Binding ExportIncludeGrid, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,4"/>
+                            <CheckBox Content="{Binding L_ExportConstellations}" IsChecked="{Binding ExportIncludeConstellations, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,4"/>
+                        </UniformGrid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Resolution Selection Card -->
+                <Border Background="#131C2E" BorderBrush="#1F2E47" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,14">
+                    <DockPanel LastChildFill="True">
+                        <TextBlock Text="{Binding L_ExportScaleLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <RadioButton Content="{Binding L_Scale1x}" IsChecked="{Binding IsScale1x, Mode=TwoWay}" GroupName="ScaleGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,0"/>
+                            <RadioButton Content="{Binding L_Scale2x}" IsChecked="{Binding IsScale2x, Mode=TwoWay}" GroupName="ScaleGroup" Style="{StaticResource ChipRadioStyle}"/>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- Actions -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="{Binding L_Cancel}" Command="{Binding CloseExportPanelCommand}" Style="{StaticResource ModernButtonStyle}" Padding="12,5" Margin="0,0,8,0" FontSize="11"/>
+                    <Button Content="{Binding L_PerformExport}" Command="{Binding PerformExportCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="16,6" FontSize="11" FontWeight="Bold"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- ==================== ROW 4: MINIMALIST STATUS BAR ==================== -->
+        <Border Grid.Row="4" Background="#070B14" BorderBrush="#141E30" BorderThickness="0,1,0,0" Padding="16,6">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="150"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Status Text -->
-                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" Foreground="#94A3B8" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Grid.Column="0" Text="{Binding StatusMessage}" Foreground="#94A3B8" FontSize="11.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+
+                <!-- Subtle Hardware Info Pill -->
+                <Border Grid.Column="1" Background="#0E1729" BorderBrush="#1C2940" BorderThickness="1" CornerRadius="6" Padding="8,2" Margin="10,0,14,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding HardwareInfo}" Foreground="#10B981" FontWeight="SemiBold" FontSize="10.5"/>
+                </Border>
 
                 <!-- Cursor Celestial Coordinates -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,20,0" VerticalAlignment="Center">
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,16,0" VerticalAlignment="Center">
                     <TextBlock Text="{Binding L_CursorLabel}" Foreground="#64748B" FontSize="11"/>
                     <TextBlock Text="{Binding CursorCelestialText}" Foreground="#38BDF8" FontSize="11" FontWeight="SemiBold"/>
                 </StackPanel>
 
                 <!-- Zoom Level -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,16,0" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding L_ZoomLabel}" Foreground="#64748B" FontSize="11"/>
-                    <TextBlock x:Name="ZoomPercentText" Text="100%" Foreground="#CBD5E1" FontSize="11" FontWeight="SemiBold"/>
-                    <Button Content="{Binding L_FitButton}" Click="FitZoom_Click" Style="{StaticResource ModernButtonStyle}" Padding="6,2" Margin="8,0,0,0" FontSize="10"/>
-                    <Button Content="100%" Click="ResetZoom_Click" Style="{StaticResource ModernButtonStyle}" Padding="6,2" Margin="4,0,0,0" FontSize="10"/>
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Margin="0,0,14,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding L_ZoomLabel}" Foreground="#64748B" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ZoomPercentText" Text="100%" Foreground="#CBD5E1" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Width="38"/>
+                    <Button Content="{Binding L_FitButton}" Click="FitZoom_Click" Style="{StaticResource ModernButtonStyle}" Padding="7,2" Margin="4,0,0,0" FontSize="10"/>
+                    <Button Content="100%" Click="ResetZoom_Click" Style="{StaticResource ModernButtonStyle}" Padding="7,2" Margin="4,0,0,0" FontSize="10"/>
                 </StackPanel>
 
                 <!-- Progress Bar -->
-                <ProgressBar Grid.Column="3"
-                             Height="8"
+                <ProgressBar Grid.Column="4"
+                             Height="6"
                              Value="{Binding ProgressValue, Mode=OneWay}"
                              Minimum="0" Maximum="100"
-                             Foreground="#00E5FF"
-                             Background="#1E293B"
+                             Foreground="#38BDF8"
+                             Background="#131C2E"
                              BorderThickness="0"/>
             </Grid>
         </Border>

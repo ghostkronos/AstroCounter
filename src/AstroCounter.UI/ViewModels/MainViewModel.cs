@@ -30,6 +30,14 @@ public enum ScanTool
     Polygon
 }
 
+public enum InspectorTab
+{
+    TelemetryEngine,
+    Astrometry,
+    ImageAdjustments,
+    Mosaic
+}
+
 public class MainViewModel : INotifyPropertyChanged, IDisposable
 {
     private string? _selectedImagePath;
@@ -48,10 +56,45 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private int _tier2Count;
     private int _tier3Count;
     private int _speculativeCount;
-    private bool _showBoundingBoxes = true;
-    private bool _showLabels = true;
-    private bool _isAutoBrightnessEnabled = true;
+    private bool _showBoundingBoxes = false;
+    private bool _showLabels = false;
+    private bool _isAutoBrightnessEnabled = false;
     private string _brightnessStatusText = string.Empty;
+    private SkiaSharp.SKBitmap? _originalSkBitmap;
+    private double _displayBrightness = 0.0;
+    private double _displayExposure = 1.0;
+    private double _displayContrast = 1.0;
+    private bool _isLightPanelOpen = false;
+    private bool _isMosaicDrawerOpen = false;
+    private bool _isExportPanelOpen = false;
+    private string _exportFormat = "PNG";
+    private string _exportProjectionMode = "Canvas2D";
+    private bool _exportIncludeBoxes = true;
+    private bool _exportIncludeLabels = true;
+    private bool _exportIncludeGrid = false;
+    private bool _exportIncludeConstellations = false;
+    private int _exportScale = 1;
+    private MosaicPanel? _selectedMosaicPanel;
+    private bool _suppressConfidenceSync;
+    private bool _suppressDisplaySync;
+    private double _sphereCameraRa = 310.0;
+    private double _sphereCameraDec = 45.0;
+    private double _sphereCameraFov = 50.0;
+
+    private string? _formatBadgeText;
+    private string? _formatWarningToolTip;
+    private string _formatBadgeIcon = "ℹ️";
+    private Brush _formatBadgeBackground = new SolidColorBrush(Color.FromRgb(0x16, 0x20, 0x32));
+    private Brush _formatBadgeBorder = new SolidColorBrush(Color.FromRgb(0x2A, 0x36, 0x4D));
+    private Brush _formatBadgeForeground = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8));
+
+    public bool HasFormatBadge => !string.IsNullOrEmpty(_formatBadgeText);
+    public string? FormatBadgeText => _formatBadgeText;
+    public string? FormatWarningToolTip => _formatWarningToolTip;
+    public string FormatBadgeIcon => _formatBadgeIcon;
+    public Brush FormatBadgeBackground => _formatBadgeBackground;
+    public Brush FormatBadgeBorder => _formatBadgeBorder;
+    public Brush FormatBadgeForeground => _formatBadgeForeground;
     private string? _modelPath;
 
     private ScanTool _tool = ScanTool.Pan;
@@ -61,6 +104,32 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private IReadOnlyList<AstrophotographyObject> _visibleObjects = Array.Empty<AstrophotographyObject>();
 
     private DetectionResult? _lastDetectionResult;
+    private float _optimalConfidenceThreshold = 0.25f;
+
+    public float OptimalConfidenceThreshold
+    {
+        get => _optimalConfidenceThreshold;
+        set => SetProperty(ref _optimalConfidenceThreshold, value);
+    }
+
+    public string L_ConfidencePanelTitle => IsTurkish ? "Algoritma & Güven Eşiği" : "Algorithm & Confidence Threshold";
+    public string L_ConfidencePanelToolTip => IsTurkish
+        ? "Yıldız tespit hassasiyeti ve fotoğraf bazlı güven eşiği ayarlarını açar"
+        : "Opens detection sensitivity and per-photo confidence settings";
+    public string L_AutoConfidenceToggle => IsTurkish ? "Otomatik Güven Eşiği (Format Duyarlı)" : "Automatic Confidence Threshold (Format-Aware)";
+    public string L_AutoConfidenceDesc => IsTurkish
+        ? "Fotoğrafın gürültü tabanı (knee-point) ve dosya formatına (kayıplı JPG vs kayıpsız TIFF/FITS) göre fotoğraf başına ideal eşiği arka planda hesaplar."
+        : "Automatically calculates optimal threshold per photo based on background noise knee-point and file format (lossy JPG vs lossless TIFF/FITS).";
+    public string L_RecalculateAuto => IsTurkish ? "⚡ Otomatik Eşiği Yeniden Kilitle" : "⚡ Recalculate Auto";
+    public string L_QuickPresets => IsTurkish ? "HIZLI ÖN AYARLAR:" : "QUICK PRESETS:";
+    public string L_PerPhotoConfidenceHeader => IsTurkish ? "FOTOĞRAF BAZLI GÜVEN EŞİĞİ:" : "PER-PHOTO CONFIDENCE THRESHOLD:";
+    public string L_ActivePhotoLabel => IsTurkish ? "Seçili Fotoğraf:" : "Selected Photo:";
+    public string L_DragReorderHint => IsTurkish ? "💡 Katman sırasını değiştirmek için kartları sürükleyip bırakın" : "💡 Drag and drop cards to reorder layers";
+    public string L_AnomaliesBadgeLabel => IsTurkish ? "Anomali:" : "Anomalies:";
+
+    public string L_AutoConfidenceToolTip => IsTurkish
+        ? "Görselin fiziksel gürültü tabanı (knee-point) ve yapay zekâ analizine göre dinamik güven eşiğini kilitler"
+        : "Automatically locks confidence threshold based on physical noise floor knee-point and AI feedback";
     private IInferenceEngine? _engine;
     private CancellationTokenSource? _analysisCts;
 
@@ -72,6 +141,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _isStellariumSyncEnabled = true;
     private bool _isStellariumZoomSyncEnabled = true;
     private bool _showSphericalGrid = false;
+    private bool _showHipparcosStars = true;
+    private bool _showConstellations = true;
+    private bool _showDsoMarkers = true;
+    private double _photoOpacity = 1.0;
     private double _imageRotationAngle = 0.0;
     private double _stellariumSkyAngle = 0.0;
     private double _solvedCameraAngle = 0.0;
@@ -96,6 +169,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public event Action<double, double>? RequestCenterOnPixel;
     public event Action<double>? RequestSetVisiblePixelsHeight;
+    public event Action<double, double, double>? RequestSet3DCamera;
+    public event Action<MosaicPanel>? RequestScrollToMosaicPanel;
     public event Action? RequestInvalidateOverlay;
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -106,20 +181,40 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     // Localized UI Strings
     public string L_WindowTitle => IsTurkish
-        ? "AstroCounter v1.1.2 - Astrofotoğraf Nesne Tespiti ve Stellarium 1:1 Senkronizasyonu"
-        : "AstroCounter v1.1.2 - Astrophotography Object Detection & Stellarium 1:1 Synchronization";
+        ? "AstroCounter v1.3.0 - Astrofotoğraf Nesne Tespiti ve 3D Planetaryum"
+        : "AstroCounter v1.3.0 - Astrophotography Object Detection & 3D Celestial Planetarium";
     public string L_HeaderSubtitle => IsTurkish
-        ? "v1.1.2 • Fotometri + YOLO/SAHI + Stellarium 1:1"
-        : "v1.1.2 • Photometry + YOLO/SAHI + Stellarium 1:1";
+        ? "v1.3.0 • Modern Minimalist Arayüz & Eşzamanlı 2D/3D Gök Koordinatı Projeksiyonu"
+        : "v1.3.0 • Modern Minimalist Workspace & Lockstep 2D/3D Celestial Coordinate Projection";
+    public string L_VersionBadge => "v1.3.0";
+    public string L_PhotosButtonText => MosaicProject.Count > 0
+        ? (IsTurkish ? $"Fotoğraflar ({MosaicProject.Count})" : $"Photos ({MosaicProject.Count})")
+        : (IsTurkish ? "Fotoğraflar" : "Photos");
+    public string L_AddPhotosButton => IsTurkish ? "➕ Foto Ekle" : "➕ Add Photos";
+    public string L_AlignAllButton => IsTurkish ? "🔭 Tümünü Hizala" : "🔭 Align All";
+    public string L_ClearAllButton => IsTurkish ? "🗑 Temizle" : "🗑 Clear";
     public string L_SelectImage => IsTurkish ? "Görsel Seç" : "Select Image";
     public string L_Reanalyze => IsTurkish ? "Yeniden Analiz Et" : "Re-Analyze";
     public string L_ExportCsv => IsTurkish ? "CSV Dışa Aktar" : "Export CSV";
     public string L_ExportImage => IsTurkish ? "Görseli Kaydet" : "Save Image";
 
     public string L_EngineGroup => IsTurkish ? "MOTOR" : "ENGINE";
+    public string L_HybridFusion => IsTurkish ? "🔬 Hibrit Füzyon" : "🔬 Hybrid Fusion";
     public string L_Photometry => IsTurkish ? "Fotometri" : "Photometry";
     public string L_Yolo => "YOLO";
     public string L_SelectModel => IsTurkish ? "Model Seç..." : "Select Model...";
+    public string L_LightPanelButton => IsTurkish ? "Işık Ayarları" : "Display & Light";
+    public string L_LightPanelTitle => IsTurkish ? "Görüntü ve Işık Ayarları" : "Image & Light Settings";
+    public string L_LightPanelToolTip => IsTurkish
+        ? "Fotoğrafın parlaklık, pozlama ve kontrastını ayarlamak için ışık panelini açar"
+        : "Opens display brightness, exposure, and contrast adjustment panel";
+    public string L_AutoBalanceLabel => IsTurkish ? "Otomatik Işık ve Renk Dengeleme (MTF)" : "Auto Exposure & Color Balance (MTF)";
+    public string L_AutoBalanceNow => IsTurkish ? "⚡ Şimdi Dengele" : "⚡ Balance Now";
+    public string L_BrightnessLabel => IsTurkish ? "Parlaklık:" : "Brightness:";
+    public string L_ExposureLabel => IsTurkish ? "Pozlama (Gama):" : "Exposure (Gamma):";
+    public string L_ContrastLabel => IsTurkish ? "Kontrast:" : "Contrast:";
+    public string L_ResetAdjustments => IsTurkish ? "↺ Ayarları Sıfırla" : "↺ Reset Defaults";
+
     public string L_AutoBrightnessToolTip => IsTurkish
         ? "Çok karanlık veya çok parlak fotoğrafların parlaklık ve arka plan dengesini algoritmanın yıldızları en net seçebileceği seviyeye otomatik getirir"
         : "Automatically balances exposure and background of underexposed or light-polluted images for optimal star detection";
@@ -133,7 +228,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string L_Undo => IsTurkish ? "Geri Al" : "Undo";
     public string L_Clear => IsTurkish ? "Temizle" : "Clear";
 
-    public string L_StellariumGroup => "STELLARIUM 1:1";
+    public string L_StellariumGroup => IsTurkish ? "GÖK KUBBE / PLANETARYUM" : "CELESTIAL PLANETARIUM";
     public string L_PlateSolveButton => IsTurkish ? "Yıldızlardan Eşle" : "Solve Star Pattern";
     public string L_PlateSolveToolTip => IsTurkish
         ? "Fotoğraftaki yıldızların konumlarını ve üçgen geometrisini analiz ederek gökyüzündeki gerçek koordinatları, ölçeği ve açıyı otomatik bulur"
@@ -143,9 +238,25 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         : "Lists celestial objects detected within the image field of view; selecting an object centers directly on it";
     public string L_TwoWaySync => IsTurkish ? "Çift Yönlü 1:1" : "Two-Way 1:1";
     public string L_TwoWaySyncToolTip => IsTurkish
-        ? "Fotoğraf ve Stellarium çift yönlü birbirine bağlanır: Fotoğrafı veya Stellarium'u kaydırıp yakınlaştırdığınızda diğeri bire bir hareket eder"
-        : "Links the image and Stellarium bidirectionally: panning or zooming either view moves the other 1:1";
+        ? "Fotoğraf ve 3D gök kubbe çift yönlü birbirine bağlanır: Fotoğrafı kaydırıp yakınlaştırdığınızda kubbe bire bir eşitlenir"
+        : "Links the image and celestial dome bidirectionally: panning or zooming either view syncs the other 1:1";
     public string L_SphericalGrid => IsTurkish ? "Küresel Izgara" : "Spherical Grid";
+    public string L_HipparcosStars => IsTurkish ? "Yıldızlar (HIP)" : "Stars (HIP)";
+    public string L_HipparcosStarsToolTip => IsTurkish
+        ? "117.955 ESA Hipparcos yıldız kataloğunu, B-V spektral renkleri ve parlaklıklarıyla doğrudan fotoğrafın üzerine izdüşürür"
+        : "Projects 117,955 ESA Hipparcos catalogue stars with realistic B-V spectral colors and magnitudes directly onto the canvas";
+    public string L_Constellations => IsTurkish ? "Takımyıldızlar" : "Constellations";
+    public string L_ConstellationsToolTip => IsTurkish
+        ? "Takımyıldızların çizgilerini ve adlarını gök koordinatlarına göre fotoğraf üzerine çizer"
+        : "Draws constellation stick figures and labels aligned to celestial coordinates";
+    public string L_DsoMarkers => IsTurkish ? "DSO Nesneleri" : "DSO Targets";
+    public string L_DsoMarkersToolTip => IsTurkish
+        ? "Messier ve NGC derin uzay nesnelerinin (bulutsu, galaksi, küme) konum çemberlerini ve adlarını gösterir"
+        : "Displays boundary circles and labels for Messier and NGC deep-sky objects (nebulae, galaxies, clusters)";
+    public string L_PhotoOpacityLabel => IsTurkish ? "Saydamlık:" : "Opacity:";
+    public string L_PhotoOpacityToolTip => IsTurkish
+        ? "Fotoğrafın saydamlığını ayarlayarak arkadaki Hipparcos gök haritası ve takımyıldız kubbesiyle kıyaslayın"
+        : "Adjust photo opacity to compare image stars against the underlying celestial dome and Hipparcos map";
     public string L_SphericalGridToolTip => IsTurkish
         ? "Fotoğrafın üzerine küresel RA/Dec gök koordinat eksenlerini çizer"
         : "Draws spherical RA/Dec equatorial coordinate grid lines over the image";
@@ -153,6 +264,27 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string L_AngleToolTip => IsTurkish
         ? "Fotoğraf Stellarium açısına göre otomatik döner; ayrıca buradan 0°–360° elle döndürebilirsiniz"
         : "The image rotates automatically with Stellarium's sky angle; you can also adjust rotation manually from 0° to 360°";
+    public string L_MosaicDrawerButton => IsTurkish ? "Mozaik Paneli" : "Mosaic Manager";
+    public string L_MosaicDrawerTitle => IsTurkish ? "Mozaik Kareleri Yönetimi" : "Mosaic Tiles Management";
+    public string L_RemovePanel => IsTurkish ? "Kaldır" : "Remove";
+    public string L_TileOpacity => IsTurkish ? "Opaklık" : "Opacity";
+    public string L_EmptyMosaic => IsTurkish ? "Henüz mozaik atlasına eklenmiş kare yok." : "No mosaic panels added yet.";
+
+    public string L_AddToMosaic => IsTurkish ? "Mozaik Atlasına Ekle" : "Add to Mosaic";
+    public string L_AddToMosaicToolTip => IsTurkish
+        ? "Çözülen fotoğrafı gök atlası mozaik paneline ekler; birden çok fotoğrafı bir arada görebilirsiniz"
+        : "Adds the solved photo to the mosaic sky atlas; view multiple photo tiles simultaneously";
+    public string L_ClearMosaic => IsTurkish ? "Mozaik Sıfırla" : "Clear Mosaic";
+    public string L_FeatheredBlending => IsTurkish ? "Yumuşak Dikiş Geçişi (Feathered)" : "Feathered Alpha Blending";
+    public string L_MoveUp => IsTurkish ? "Öne / Yukarı Taşı" : "Move Up / Front";
+    public string L_MoveDown => IsTurkish ? "Arkaya / Aşağı Taşı" : "Move Down / Back";
+    public string L_BringToFront => IsTurkish ? "En Öne Getir" : "Bring to Front";
+    public string L_SendToBack => IsTurkish ? "En Arkaya Gönder" : "Send to Back";
+
+    public string L_SphereMode => IsTurkish ? "🌌 3D Gök Kubbe / Planetaryum" : "🌌 3D Celestial Dome";
+    public string L_SphereModeToolTip => IsTurkish
+        ? "Fotoğraflarınızı ve 117k Hipparcos yıldızını etkileşimli 360° dönebilen bağımsız bir gök kubbe ve planetaryum içinde birleştirir"
+        : "Combines photos and 117k Hipparcos stars inside an interactive 360° navigable celestial dome & planetarium";
     public string L_ResetAngleToolTip => IsTurkish
         ? "Açıyı Stellarium'un doğal gökyüzü açısına sıfırla"
         : "Reset rotation to Stellarium's natural sky angle";
@@ -163,6 +295,15 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string L_ConfidenceLabel => IsTurkish ? "Güven Eşiği: " : "Confidence: ";
     public string L_Boxes => IsTurkish ? "Kutular" : "Boxes";
     public string L_Labels => IsTurkish ? "Etiketler" : "Labels";
+    public string L_LabelsPanelTitle => IsTurkish ? "Görünüm & Katmanlar" : "View & Layers";
+    public string L_LabelsPanelButton => IsTurkish ? "Katmanlar" : "Layers";
+    public string L_LabelsPanelToolTip => IsTurkish
+        ? "Tespit kutuları, etiketler, takımyıldızlar ve gök atlası katmanlarını yönet"
+        : "Manage detection boxes, labels, constellations, and celestial atlas layers";
+    public string L_DetectionsCategory => IsTurkish ? "Obje Tespit Katmanları" : "Object Detection Layers";
+    public string L_AtlasCategory => IsTurkish ? "Gök Haritası & Atlas" : "Sky Map & Atlas";
+    public string L_CheckAll => IsTurkish ? "Tümünü Aç" : "Enable All";
+    public string L_UncheckAll => IsTurkish ? "Tümünü Kapat" : "Disable All";
 
     public string L_PlaceholderTitle => IsTurkish
         ? "Astrofotoğrafınızı Buraya Sürükleyip Bırakın"
@@ -177,6 +318,13 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string L_CursorLabel => IsTurkish ? "İmleç: " : "Cursor: ";
     public string L_ZoomLabel => IsTurkish ? "Yakınlaştırma: " : "Zoom: ";
     public string L_FitButton => IsTurkish ? "Sığdır" : "Fit";
+
+    public string L_Mode2D => IsTurkish ? "2D Görünüm" : "2D View";
+    public string L_Mode3D => IsTurkish ? "3D Kubbe" : "3D Dome";
+    public string L_TabDetection => IsTurkish ? "Nesne Sayımı" : "Object Detection";
+    public string L_TabAstrometry => IsTurkish ? "Astrometri" : "Astrometry";
+    public string L_TabImage => IsTurkish ? "Işık & Renk" : "Image Tuning";
+    public string L_TabMosaic => IsTurkish ? "Mozaik Atlası" : "Mosaic Atlas";
 
     public MainViewModel()
     {
@@ -202,7 +350,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             ? "Analiz edilecek astrofotoğrafı sürükleyip bırakın veya 'Görsel Seç'e tıklayın."
             : "Drag and drop an astrophotograph to analyze, or click 'Select Image'.";
         _brightnessStatusText = IsTurkish ? "Oto Parlaklık" : "Auto Brightness";
-        _stellariumStatusText = IsTurkish ? "Stellarium: Bağlan" : "Stellarium: Connect";
+        _stellariumStatusText = IsTurkish ? "Canlı Senk: Bağlan" : "Live Sync: Connect";
 
         InitializeEngine();
 
@@ -223,10 +371,85 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         UndoRegionCommand = new RelayCommand(UndoRegion, () => !_mask.IsEmpty);
         ClearRegionsCommand = new RelayCommand(ClearRegions, () => !_mask.IsEmpty);
         ToggleStellariumCommand = new RelayCommand(async () => await ToggleStellariumAsync());
-        PlateSolveCommand = new RelayCommand(async () => await ExecutePlateSolveAsync(), () => !IsLoading && !IsPlateSolving && !string.IsNullOrEmpty(SelectedImagePath));
+        PlateSolveCommand = new RelayCommand(async () => await ExecuteSmartPlateSolveAsync(), () => !IsLoading && !IsPlateSolving && (!string.IsNullOrEmpty(SelectedImagePath) || MosaicProject.Count > 0));
         SyncToStellariumCommand = new RelayCommand(async () => await SyncCurrentCenterToStellariumAsync(), () => CanSyncToStellarium);
         ResetRotationCommand = new RelayCommand(ResetRotationToStellarium);
+        AddToMosaicCommand = new RelayCommand(ExecuteAddToMosaic, () => CurrentWcs != null);
+        ClearMosaicCommand = new RelayCommand(ExecuteClearMosaic, () => MosaicProject.Count > 0);
+        ToggleSphereModeCommand = new RelayCommand(() => IsSphereModeActive = !IsSphereModeActive);
+        Select2DViewCommand = new RelayCommand(() => IsSphereModeActive = false);
+        Select3DViewCommand = new RelayCommand(() => IsSphereModeActive = true);
         ToggleLanguageCommand = new RelayCommand(ExecuteToggleLanguage);
+        ToggleInspectorCommand = new RelayCommand(() => IsInspectorOpen = !IsInspectorOpen);
+        SelectInspectorTabCommand = new RelayCommand(p =>
+        {
+            if (p is InspectorTab t)
+            {
+                CurrentInspectorTab = t;
+                IsInspectorOpen = true;
+            }
+            else if (p is string s && Enum.TryParse<InspectorTab>(s, true, out var parsed))
+            {
+                CurrentInspectorTab = parsed;
+                IsInspectorOpen = true;
+            }
+        });
+        ToggleLabelsPanelCommand = new RelayCommand(() => IsLabelsPanelOpen = !IsLabelsPanelOpen);
+        CloseLabelsPanelCommand = new RelayCommand(() => IsLabelsPanelOpen = false);
+        CheckAllOverlaysCommand = new RelayCommand(() =>
+        {
+            ShowBoundingBoxes = true;
+            ShowLabels = true;
+            ShowHipparcosStars = true;
+            ShowConstellations = true;
+            ShowDsoMarkers = true;
+            ShowSphericalGrid = true;
+        });
+        UncheckAllOverlaysCommand = new RelayCommand(() =>
+        {
+            ShowBoundingBoxes = false;
+            ShowLabels = false;
+            ShowHipparcosStars = false;
+            ShowConstellations = false;
+            ShowDsoMarkers = false;
+            ShowSphericalGrid = false;
+        });
+        ToggleConfidencePanelCommand = new RelayCommand(() => IsConfidencePanelOpen = !IsConfidencePanelOpen);
+        CloseConfidencePanelCommand = new RelayCommand(() => IsConfidencePanelOpen = false);
+        PresetConfidenceCommand = new RelayCommand(p =>
+        {
+            if (p is string s && float.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float val))
+            {
+                IsAutoConfidenceEnabled = false;
+                ConfidenceThreshold = val;
+            }
+            else if (p is double d)
+            {
+                IsAutoConfidenceEnabled = false;
+                ConfidenceThreshold = (float)d;
+            }
+        });
+        ToggleLightPanelCommand = new RelayCommand(() => IsLightPanelOpen = !IsLightPanelOpen);
+        ToggleMosaicDrawerCommand = new RelayCommand(() => IsMosaicDrawerOpen = !IsMosaicDrawerOpen);
+        ApplyAutoConfidenceCommand = new RelayCommand(ExecuteApplyAutoConfidence, () => _lastDetectionResult != null);
+        ToggleExportPanelCommand = new RelayCommand(() => IsExportPanelOpen = !IsExportPanelOpen, () => HasLoadedImage || _lastDetectionResult != null);
+        CloseExportPanelCommand = new RelayCommand(() => IsExportPanelOpen = false);
+        PerformExportCommand = new RelayCommand(ExecutePerformExport);
+        CloseMosaicDrawerCommand = new RelayCommand(() => IsMosaicDrawerOpen = false);
+        RemoveMosaicPanelCommand = new RelayCommand(p => ExecuteRemoveMosaicPanel(p as MosaicPanel));
+        MoveMosaicPanelUpCommand = new RelayCommand(p => ExecuteMoveMosaicPanelUp(p as MosaicPanel));
+        MoveMosaicPanelDownCommand = new RelayCommand(p => ExecuteMoveMosaicPanelDown(p as MosaicPanel));
+        BringMosaicPanelToFrontCommand = new RelayCommand(p => ExecuteBringMosaicPanelToFront(p as MosaicPanel));
+        SendMosaicPanelToBackCommand = new RelayCommand(p => ExecuteSendMosaicPanelToBack(p as MosaicPanel));
+        SelectMosaicPanelCommand = new RelayCommand(p => ExecuteSelectMosaicPanel(p as MosaicPanel));
+        CountMosaicAtlasCommand = new RelayCommand(async () => await ExecuteAnalyzeAsync(), () => MosaicProject.Count > 0 && !IsLoading);
+        AddPhotosCommand = new RelayCommand(ExecuteAddPhotos);
+        ClearAllPanelsCommand = new RelayCommand(ExecuteClearMosaic);
+        PlateSolveAllPanelsCommand = new RelayCommand(async () => await ExecutePlateSolveAllPanelsAsync(), () => MosaicProject.Count > 0 && !IsLoading);
+        ToggleFeatheredBlendingCommand = new RelayCommand(() => UseFeatheredBlending = !UseFeatheredBlending);
+        CloseLightPanelCommand = new RelayCommand(() => IsLightPanelOpen = false);
+        ResetDisplayAdjustmentsCommand = new RelayCommand(ResetDisplayAdjustments);
+        AutoBalanceNowCommand = new RelayCommand(AutoBalanceNow);
     }
 
     private void ExecuteToggleLanguage()
@@ -247,11 +470,11 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
         if (!IsStellariumConnected)
         {
-            StellariumStatusText = IsTurkish ? "Stellarium: Bağlan" : "Stellarium: Connect";
+            StellariumStatusText = IsTurkish ? "Canlı Senk: Bağlan" : "Live Sync: Connect";
         }
         else
         {
-            StellariumStatusText = IsTurkish ? "Stellarium Bağlı" : "Stellarium Connected";
+            StellariumStatusText = IsTurkish ? "Canlı Senk: Bağlı" : "Live Sync: Active";
         }
 
         if (!IsAutoBrightnessEnabled)
@@ -296,23 +519,30 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             }
         }
 
+        foreach (var p in MosaicProject.Panels)
+        {
+            p.NotifyLocalizationChanged();
+        }
+
         // Notify WPF to refresh all bindings on MainViewModel
         OnPropertyChanged(string.Empty);
         RequestInvalidateOverlay?.Invoke();
     }
 
-    private bool _isPhotometricMode = true;
-    public bool IsPhotometricMode
+    private DetectionEngineMode _selectedEngineMode = DetectionEngineMode.HybridFusion;
+    public DetectionEngineMode SelectedEngineMode
     {
-        get => _isPhotometricMode;
+        get => _selectedEngineMode;
         set
         {
-            if (SetProperty(ref _isPhotometricMode, value))
+            if (SetProperty(ref _selectedEngineMode, value))
             {
+                OnPropertyChanged(nameof(IsHybridFusionMode));
+                OnPropertyChanged(nameof(IsPhotometricMode));
                 OnPropertyChanged(nameof(IsYoloMode));
                 if (_engine != null)
                 {
-                    _engine.Mode = value ? DetectionEngineMode.Photometric : DetectionEngineMode.DeepLearningYolo;
+                    _engine.Mode = value;
                     HardwareInfo = _engine.ExecutionProviderName;
                 }
                 if (!string.IsNullOrEmpty(SelectedImagePath))
@@ -323,10 +553,22 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    public bool IsHybridFusionMode
+    {
+        get => _selectedEngineMode == DetectionEngineMode.HybridFusion;
+        set { if (value) SelectedEngineMode = DetectionEngineMode.HybridFusion; }
+    }
+
+    public bool IsPhotometricMode
+    {
+        get => _selectedEngineMode == DetectionEngineMode.Photometric;
+        set { if (value) SelectedEngineMode = DetectionEngineMode.Photometric; }
+    }
+
     public bool IsYoloMode
     {
-        get => !_isPhotometricMode;
-        set => IsPhotometricMode = !value;
+        get => _selectedEngineMode == DetectionEngineMode.DeepLearningYolo;
+        set { if (value) SelectedEngineMode = DetectionEngineMode.DeepLearningYolo; }
     }
 
     private void InitializeEngine()
@@ -334,8 +576,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             _engine?.Dispose();
-            var initialMode = _isPhotometricMode ? DetectionEngineMode.Photometric : DetectionEngineMode.DeepLearningYolo;
-            _engine = new OnnxInferenceEngine(_modelPath, initialMode: initialMode);
+            _engine = new OnnxInferenceEngine(_modelPath, initialMode: _selectedEngineMode);
             HardwareInfo = _engine.ExecutionProviderName;
         }
         catch (Exception ex)
@@ -368,15 +609,58 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (SetProperty(ref _selectedImagePath, value))
             {
+                OnPropertyChanged(nameof(ImageFileName));
+                OnPropertyChanged(nameof(HasLoadedImage));
                 if (!string.IsNullOrEmpty(value) && File.Exists(value))
                 {
-                    ResetForNewImage();
-                    LoadBitmapPreview(value);
-                    _ = AnalyzeAndPlateSolveSequentiallyAsync();
+                    if (MosaicProject.Count <= 1)
+                    {
+                        ResetForNewImage();
+                        LoadBitmapPreview(value);
+                        _ = AnalyzeAndPlateSolveSequentiallyAsync();
+                    }
+                    else
+                    {
+                        LoadBitmapPreview(value);
+                        RequestInvalidateOverlay?.Invoke();
+                    }
                 }
             }
         }
     }
+
+    public string? ImageFileName => string.IsNullOrEmpty(SelectedImagePath) ? null : Path.GetFileName(SelectedImagePath);
+    public string ImageDimensionText => ImageWidth > 0 && ImageHeight > 0 ? $"{(int)ImageWidth} × {(int)ImageHeight} px" : string.Empty;
+    public bool HasLoadedImage => ImageBitmap != null || !string.IsNullOrEmpty(SelectedImagePath) || MosaicProject.Count > 0;
+
+    public double CanvasWidth
+    {
+        get
+        {
+            if (MosaicProject.Count > 1)
+            {
+                if (CurrentWcs != null) return CurrentWcs.ImageWidth;
+                double sumW = MosaicProject.Panels.Sum(p => (double)p.Width);
+                return sumW > 10 ? sumW : Math.Max(1, ImageWidth);
+            }
+            return Math.Max(1, ImageWidth);
+        }
+    }
+
+    public double CanvasHeight
+    {
+        get
+        {
+            if (MosaicProject.Count > 1)
+            {
+                if (CurrentWcs != null) return CurrentWcs.ImageHeight;
+                double maxH = MosaicProject.Panels.Count > 0 ? MosaicProject.Panels.Max(p => (double)p.Height) : 0;
+                return maxH > 10 ? maxH : Math.Max(1, ImageHeight);
+            }
+            return Math.Max(1, ImageHeight);
+        }
+    }
+    public bool IsSingleImageActive => MosaicProject.Count <= 1;
 
     private async Task AnalyzeAndPlateSolveSequentiallyAsync()
     {
@@ -392,42 +676,104 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             if (SetProperty(ref _imageBitmap, value))
             {
                 OnPropertyChanged(nameof(IsPlaceholderVisible));
+                OnPropertyChanged(nameof(HasLoadedImage));
+                OnPropertyChanged(nameof(ImageDimensionText));
             }
         }
     }
 
-    public bool IsPlaceholderVisible => ImageBitmap == null;
+    public bool IsPlaceholderVisible => ImageBitmap == null && MosaicProject.Count == 0;
 
     public double ImageWidth
     {
         get => _imageWidth;
-        private set => SetProperty(ref _imageWidth, value);
+        private set
+        {
+            if (SetProperty(ref _imageWidth, value))
+            {
+                OnPropertyChanged(nameof(CanvasWidth));
+                OnPropertyChanged(nameof(ImageDimensionText));
+            }
+        }
     }
 
     public double ImageHeight
     {
         get => _imageHeight;
-        private set => SetProperty(ref _imageHeight, value);
+        private set
+        {
+            if (SetProperty(ref _imageHeight, value))
+            {
+                OnPropertyChanged(nameof(CanvasHeight));
+                OnPropertyChanged(nameof(ImageDimensionText));
+            }
+        }
     }
+
+    public MosaicPanel? SelectedMosaicPanel
+    {
+        get => _selectedMosaicPanel;
+        private set
+        {
+            if (SetProperty(ref _selectedMosaicPanel, value))
+            {
+                OnPropertyChanged(nameof(ActivePanelDisplayName));
+            }
+        }
+    }
+
+    public string ActivePanelDisplayName => _selectedMosaicPanel != null
+        ? $"{_selectedMosaicPanel.Name} ({_selectedMosaicPanel.FormatBadgeText})"
+        : (!string.IsNullOrEmpty(ImageFileName) ? ImageFileName : (IsTurkish ? "Fotoğraf Seçilmedi" : "No Photo Selected"));
 
     public float ConfidenceThreshold
     {
         get => _confidenceThreshold;
         set
         {
-            if (SetProperty(ref _confidenceThreshold, (float)Math.Round(value, 2)))
+            float rounded = (float)Math.Round(Math.Clamp(value, 0.02f, 0.99f), 2);
+            if (SetProperty(ref _confidenceThreshold, rounded))
             {
+                if (!_suppressConfidenceSync)
+                {
+                    var activePanel = GetActiveMosaicPanel();
+                    if (activePanel != null)
+                    {
+                        activePanel.IsAutoConfidenceEnabled = _isAutoConfidenceEnabled;
+                        activePanel.ConfidenceThreshold = rounded;
+                    }
+                }
                 OnPropertyChanged(nameof(ConfidencePercentText));
                 OnPropertyChanged(nameof(ConfidenceBrush));
                 OnPropertyChanged(nameof(ConfidenceStatusText));
+                OnPropertyChanged(nameof(ConfidenceButtonText));
                 ApplyLiveFilter();
             }
         }
     }
 
+    private MosaicPanel? GetActiveMosaicPanel()
+    {
+        if (_selectedMosaicPanel != null && MosaicProject.Panels.Contains(_selectedMosaicPanel))
+        {
+            return _selectedMosaicPanel;
+        }
+        if (!string.IsNullOrEmpty(SelectedImagePath))
+        {
+            return MosaicProject.Panels.FirstOrDefault(p =>
+                !string.IsNullOrEmpty(p.FilePath) &&
+                string.Equals(p.FilePath, SelectedImagePath, StringComparison.OrdinalIgnoreCase));
+        }
+        return MosaicProject.Panels.FirstOrDefault();
+    }
+
     public string ConfidencePercentText => IsTurkish
         ? $"%{(int)Math.Round(_confidenceThreshold * 100)}"
         : $"{(int)Math.Round(_confidenceThreshold * 100)}%";
+
+    public string ConfidenceButtonText => _isAutoConfidenceEnabled
+        ? (IsTurkish ? $"⚡ Otomatik Güven ({ConfidencePercentText})" : $"⚡ Auto Confidence ({ConfidencePercentText})")
+        : (IsTurkish ? $"⚡ Güven Eşiği ({ConfidencePercentText})" : $"⚡ Confidence ({ConfidencePercentText})");
 
     private static readonly SolidColorBrush CyanConfidenceBrush = new(Color.FromRgb(0x00, 0xE5, 0xFF));
     private static readonly SolidColorBrush YellowConfidenceBrush = new(Color.FromRgb(0xFF, 0xD6, 0x00));
@@ -521,6 +867,22 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         get => _tier3Count;
         private set => SetProperty(ref _tier3Count, value);
     }
+
+    private int _anomalyCount;
+    public int AnomalyCount
+    {
+        get => _anomalyCount;
+        private set
+        {
+            if (SetProperty(ref _anomalyCount, value))
+            {
+                OnPropertyChanged(nameof(HasAnomalies));
+            }
+        }
+    }
+
+    public bool HasAnomalies => _anomalyCount > 0;
+
 
     public int SpeculativeCount
     {
@@ -655,6 +1017,25 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    private void ExecuteApplyAutoConfidence()
+    {
+        if (_lastDetectionResult == null) return;
+        var activePanel = GetActiveMosaicPanel();
+        if (activePanel != null)
+        {
+            activePanel.IsAutoConfidenceEnabled = true;
+            activePanel.ConfidenceThreshold = activePanel.AutoConfidenceThreshold;
+            ConfidenceThreshold = activePanel.AutoConfidenceThreshold;
+        }
+        else
+        {
+            ConfidenceThreshold = _lastDetectionResult.RecommendedConfidence;
+        }
+        StatusMessage = IsTurkish
+            ? $"⚡ Dinamik güven eşiği kilitlendi: %{(int)Math.Round(ConfidenceThreshold * 100)} (Format duyarlı gürültü tabanı)"
+            : $"⚡ Dynamic confidence locked: {(int)Math.Round(ConfidenceThreshold * 100)}% (Format-aware noise floor knee-point)";
+    }
+
     private void ClearRegions()
     {
         if (_mask.IsEmpty) return;
@@ -680,12 +1061,26 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         RegionSnapshot = Array.Empty<SelectionRegion>();
         VisibleObjects = Array.Empty<AstrophotographyObject>();
         TotalCount = 0;
+        AnomalyCount = 0;
         Tier1Count = 0;
         Tier2Count = 0;
         Tier3Count = 0;
         SpeculativeCount = 0;
-        CurrentWcs = null;
-        SolvedCoordinatesText = "-";
+        var existingMosaicPanel = !string.IsNullOrEmpty(SelectedImagePath)
+            ? MosaicProject.Panels.FirstOrDefault(p =>
+                !string.IsNullOrEmpty(p.FilePath) &&
+                string.Equals(p.FilePath, SelectedImagePath, StringComparison.OrdinalIgnoreCase))
+            : null;
+        if (MosaicProject.Count <= 1)
+        {
+            CurrentWcs = existingMosaicPanel?.Wcs;
+        }
+        else
+        {
+            var masterWcs = MosaicProject.ComputeMasterWcs();
+            CurrentWcs = masterWcs ?? existingMosaicPanel?.Wcs;
+        }
+        SolvedCoordinatesText = existingMosaicPanel?.Wcs != null ? existingMosaicPanel.Wcs.CenterCoordinates.ToString() : "-";
         DiagnosticWarningText = null;
         StellariumGuideText = null;
         TargetDetailsText = "";
@@ -705,6 +1100,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         CommandManager.InvalidateRequerySuggested();
     }
 
+    public ICommand ApplyAutoConfidenceCommand { get; }
     public ICommand SelectImageCommand { get; }
     public ICommand AnalyzeCommand { get; }
     public ICommand ExportCsvCommand { get; }
@@ -716,7 +1112,674 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand PlateSolveCommand { get; }
     public ICommand SyncToStellariumCommand { get; }
     public ICommand ResetRotationCommand { get; }
+    public ICommand AddToMosaicCommand { get; }
+    public ICommand ClearMosaicCommand { get; }
+    public ICommand AddPhotosCommand { get; }
+    public ICommand ClearAllPanelsCommand { get; }
+    public ICommand PlateSolveAllPanelsCommand { get; }
+    public ICommand ToggleSphereModeCommand { get; }
+    public ICommand Select2DViewCommand { get; }
+    public ICommand Select3DViewCommand { get; }
+
+    private bool _isSphereModeActive = false;
+    public bool IsSphereModeActive
+    {
+        get => _isSphereModeActive;
+        set
+        {
+            if (SetProperty(ref _isSphereModeActive, value))
+            {
+                OnPropertyChanged(nameof(Is2DViewActive));
+            }
+        }
+    }
+
+    public bool Is2DViewActive
+    {
+        get => !_isSphereModeActive;
+        set
+        {
+            if (value)
+            {
+                IsSphereModeActive = false;
+            }
+            else
+            {
+                IsSphereModeActive = true;
+            }
+        }
+    }
+
+    public bool IsExportPanelOpen
+    {
+        get => _isExportPanelOpen;
+        set => SetProperty(ref _isExportPanelOpen, value);
+    }
+
+    public string ExportFormat
+    {
+        get => _exportFormat;
+        set
+        {
+            if (SetProperty(ref _exportFormat, value))
+            {
+                OnPropertyChanged(nameof(IsFormatPng));
+                OnPropertyChanged(nameof(IsFormatTiff));
+                OnPropertyChanged(nameof(IsFormatJpg));
+                OnPropertyChanged(nameof(IsFormatCsv));
+                OnPropertyChanged(nameof(IsFormatJson));
+            }
+        }
+    }
+
+    public bool IsFormatPng { get => _exportFormat == "PNG"; set { if (value) ExportFormat = "PNG"; } }
+    public bool IsFormatTiff { get => _exportFormat == "TIFF"; set { if (value) ExportFormat = "TIFF"; } }
+    public bool IsFormatJpg { get => _exportFormat == "JPG"; set { if (value) ExportFormat = "JPG"; } }
+    public bool IsFormatCsv { get => _exportFormat == "CSV"; set { if (value) ExportFormat = "CSV"; } }
+    public bool IsFormatJson { get => _exportFormat == "JSON"; set { if (value) ExportFormat = "JSON"; } }
+
+    public bool ExportIncludeBoxes
+    {
+        get => _exportIncludeBoxes;
+        set => SetProperty(ref _exportIncludeBoxes, value);
+    }
+
+    public bool ExportIncludeLabels
+    {
+        get => _exportIncludeLabels;
+        set => SetProperty(ref _exportIncludeLabels, value);
+    }
+
+    public bool ExportIncludeGrid
+    {
+        get => _exportIncludeGrid;
+        set => SetProperty(ref _exportIncludeGrid, value);
+    }
+
+    public bool ExportIncludeConstellations
+    {
+        get => _exportIncludeConstellations;
+        set => SetProperty(ref _exportIncludeConstellations, value);
+    }
+
+    public int ExportScale
+    {
+        get => _exportScale;
+        set
+        {
+            if (SetProperty(ref _exportScale, value))
+            {
+                OnPropertyChanged(nameof(IsScale1x));
+                OnPropertyChanged(nameof(IsScale2x));
+            }
+        }
+    }
+
+    public bool IsScale1x { get => _exportScale == 1; set { if (value) ExportScale = 1; } }
+    public bool IsScale2x { get => _exportScale == 2; set { if (value) ExportScale = 2; } }
+
+    public string L_ExportPanelTitle => IsTurkish ? "Gelişmiş Dışa Aktarma Paneli" : "Advanced Export Panel";
+    public string L_ExportButton => IsTurkish ? "🚀 Dışa Aktar..." : "🚀 Export...";
+    public string L_PerformExport => IsTurkish ? "💾 Dosyayı Kaydet" : "💾 Save File";
+    public string L_ExportProjectionLabel => IsTurkish ? "Çıktı Türü:" : "Output Mode:";
+    public string L_ExportProj2D => IsTurkish ? "🖼️ 2D Görsel / Mozaik" : "🖼️ 2D Canvas / Mosaic";
+    public string L_ExportProj360 => IsTurkish ? "🌐 360° Panoramik Gök Haritası" : "🌐 360° Panoramic Sky Map";
+    public string L_ExportFormatLabel => IsTurkish ? "Format:" : "Format:";
+    public string L_ExportLayersLabel => IsTurkish ? "Katmanlar:" : "Layers:";
+    public string L_ExportScaleLabel => IsTurkish ? "Çözünürlük:" : "Resolution:";
+    public string L_FormatTiffLossless => IsTurkish ? "TIFF (Kayıpsız)" : "TIFF (Lossless)";
+    public string L_ExportBoxes => IsTurkish ? "Tespit Kutuları" : "Detection Boxes";
+    public string L_ExportLabels => IsTurkish ? "Etiketler" : "Labels";
+    public string L_ExportGrid => IsTurkish ? "Küresel Izgara (RA/Dec)" : "Spherical Grid (RA/Dec)";
+    public string L_ExportConstellations => IsTurkish ? "Takımyıldızlar & HIP Yıldızları" : "Constellations & HIP Stars";
+    public string L_Scale1x => IsTurkish ? "1x (Orijinal / 2K)" : "1x (Original / 2K)";
+    public string L_Scale2x => IsTurkish ? "2x (Süper Çözünürlük / 4K)" : "2x (Super-Res / 4K)";
+    public string L_Cancel => IsTurkish ? "İptal" : "Cancel";
+    public string L_PanelDragHint => IsTurkish ? "Sürükleyerek taşıyabilirsiniz" : "Drag to move";
+
+    public string ExportProjectionMode
+    {
+        get => _exportProjectionMode;
+        set
+        {
+            if (SetProperty(ref _exportProjectionMode, value))
+            {
+                OnPropertyChanged(nameof(IsExportCanvas2D));
+                OnPropertyChanged(nameof(IsExportPanorama360));
+            }
+        }
+    }
+
+    public bool IsExportCanvas2D
+    {
+        get => _exportProjectionMode != "Panorama360";
+        set { if (value) ExportProjectionMode = "Canvas2D"; }
+    }
+
+    public bool IsExportPanorama360
+    {
+        get => _exportProjectionMode == "Panorama360";
+        set { if (value) ExportProjectionMode = "Panorama360"; }
+    }
+
+    public ICommand ToggleExportPanelCommand { get; }
+    public ICommand CloseExportPanelCommand { get; }
+    public ICommand PerformExportCommand { get; }
+
+    public bool IsMosaicDrawerOpen
+    {
+        get => _isMosaicDrawerOpen;
+        set => SetProperty(ref _isMosaicDrawerOpen, value);
+    }
+
+    public ICommand ToggleMosaicDrawerCommand { get; }
+    public ICommand CloseMosaicDrawerCommand { get; }
+    public ICommand RemoveMosaicPanelCommand { get; }
+    public ICommand MoveMosaicPanelUpCommand { get; }
+    public ICommand MoveMosaicPanelDownCommand { get; }
+    public ICommand BringMosaicPanelToFrontCommand { get; }
+    public ICommand SendMosaicPanelToBackCommand { get; }
+    public ICommand SelectMosaicPanelCommand { get; }
+    public ICommand CountMosaicAtlasCommand { get; }
+    public ICommand ToggleFeatheredBlendingCommand { get; }
+
+
+    private void ExecuteRemoveMosaicPanel(MosaicPanel? panel)
+    {
+        if (panel == null) return;
+        panel.PropertyChanged -= OnMosaicPanelPropertyChanged;
+        MosaicProject.RemovePanel(panel);
+        RefreshMosaicProperties();
+
+        if (MosaicProject.Count == 0)
+        {
+            ExecuteClearMosaic();
+            return;
+        }
+
+        var masterWcs = MosaicProject.ComputeMasterWcs();
+        CurrentWcs = masterWcs ?? MosaicProject.Panels[0].Wcs;
+        if (SelectedImagePath == panel.FilePath)
+        {
+            var remaining = MosaicProject.Panels.FirstOrDefault();
+            if (remaining != null)
+            {
+                ExecuteSelectMosaicPanel(remaining);
+            }
+        }
+        OnPropertyChanged(nameof(CanvasWidth));
+        OnPropertyChanged(nameof(CanvasHeight));
+        _ = ExecuteAnalyzeAsync();
+
+        StatusMessage = IsTurkish ? $"'{panel.Name}' kaldırıldı." : $"'{panel.Name}' removed.";
+    }
+
+    private void OnMosaicPanelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (sender is MosaicPanel p)
+        {
+            if (e.PropertyName == nameof(MosaicPanel.ConfidenceThreshold) || e.PropertyName == nameof(MosaicPanel.IsAutoConfidenceEnabled))
+            {
+                if (p == GetActiveMosaicPanel() && !_suppressConfidenceSync)
+                {
+                    _suppressConfidenceSync = true;
+                    _confidenceThreshold = p.ConfidenceThreshold;
+                    _isAutoConfidenceEnabled = p.IsAutoConfidenceEnabled;
+                    OnPropertyChanged(nameof(ConfidenceThreshold));
+                    OnPropertyChanged(nameof(IsAutoConfidenceEnabled));
+                    OnPropertyChanged(nameof(ConfidencePercentText));
+                    OnPropertyChanged(nameof(ConfidenceBrush));
+                    OnPropertyChanged(nameof(ConfidenceStatusText));
+                    OnPropertyChanged(nameof(ConfidenceButtonText));
+                    _suppressConfidenceSync = false;
+                }
+                ApplyLiveFilter();
+                return;
+            }
+        }
+        OnPropertyChanged(nameof(MosaicPanels));
+        RequestInvalidateOverlay?.Invoke();
+    }
+
+    public bool UseFeatheredBlending
+    {
+        get => MosaicProject.UseFeatheredBlending;
+        set
+        {
+            if (MosaicProject.UseFeatheredBlending != value)
+            {
+                MosaicProject.UseFeatheredBlending = value;
+                OnPropertyChanged(nameof(UseFeatheredBlending));
+                RefreshMosaicProperties();
+                StatusMessage = value
+                    ? (IsTurkish ? "Yumuşak dikiş geçişi (feathered blending) etkinleştirildi." : "Feathered alpha blending enabled.")
+                    : (IsTurkish ? "Yumuşak dikiş geçişi kapatıldı." : "Feathered blending disabled.");
+            }
+        }
+    }
+
+    private bool _isMosaicCounting;
+    public bool IsMosaicCounting
+    {
+        get => _isMosaicCounting;
+        set => SetProperty(ref _isMosaicCounting, value);
+    }
+
+    private int _mosaicUniqueStarsCount;
+    public int MosaicUniqueStarsCount
+    {
+        get => _mosaicUniqueStarsCount;
+        set
+        {
+            if (SetProperty(ref _mosaicUniqueStarsCount, value))
+            {
+                OnPropertyChanged(nameof(HasMosaicCountResult));
+            }
+        }
+    }
+
+    public bool HasMosaicCountResult => _mosaicUniqueStarsCount > 0;
+
+    private int _mosaicRawStarsCount;
+    public int MosaicRawStarsCount
+    {
+        get => _mosaicRawStarsCount;
+        set => SetProperty(ref _mosaicRawStarsCount, value);
+    }
+
+    private int _mosaicOverlapStarsCount;
+    public int MosaicOverlapStarsCount
+    {
+        get => _mosaicOverlapStarsCount;
+        set => SetProperty(ref _mosaicOverlapStarsCount, value);
+    }
+
+    private string? _mosaicCountingProgressText;
+    public string? MosaicCountingProgressText
+    {
+        get => _mosaicCountingProgressText;
+        set => SetProperty(ref _mosaicCountingProgressText, value);
+    }
+
+    private void ExecuteMoveMosaicPanelUp(MosaicPanel? panel)
+    {
+        if (panel == null) return;
+        if (MosaicProject.MoveUp(panel))
+        {
+            RefreshMosaicProperties();
+            StatusMessage = IsTurkish ? $"'{panel.Name}' öne taşındı (Katman #{MosaicProject.GetLayerIndex(panel)})." : $"'{panel.Name}' moved up (Layer #{MosaicProject.GetLayerIndex(panel)}).";
+        }
+    }
+
+    private void ExecuteMoveMosaicPanelDown(MosaicPanel? panel)
+    {
+        if (panel == null) return;
+        if (MosaicProject.MoveDown(panel))
+        {
+            RefreshMosaicProperties();
+            StatusMessage = IsTurkish ? $"'{panel.Name}' arkaya taşındı (Katman #{MosaicProject.GetLayerIndex(panel)})." : $"'{panel.Name}' moved down (Layer #{MosaicProject.GetLayerIndex(panel)}).";
+        }
+    }
+
+    private void ExecuteBringMosaicPanelToFront(MosaicPanel? panel)
+    {
+        if (panel == null) return;
+        if (MosaicProject.BringToFront(panel))
+        {
+            RefreshMosaicProperties();
+            StatusMessage = IsTurkish ? $"'{panel.Name}' en öne getirildi." : $"'{panel.Name}' brought to front.";
+        }
+    }
+
+    private void ExecuteSendMosaicPanelToBack(MosaicPanel? panel)
+    {
+        if (panel == null) return;
+        if (MosaicProject.SendToBack(panel))
+        {
+            RefreshMosaicProperties();
+            StatusMessage = IsTurkish ? $"'{panel.Name}' en arkaya gönderildi." : $"'{panel.Name}' sent to back.";
+        }
+    }
+
+    public void MoveMosaicPanelTo(MosaicPanel source, MosaicPanel target)
+    {
+        if (source == null || target == null || ReferenceEquals(source, target)) return;
+        int oldIndex = MosaicProject.GetLayerIndex(source) - 1;
+        int targetIndex = MosaicProject.GetLayerIndex(target) - 1;
+        if (oldIndex < 0 || targetIndex < 0) return;
+        if (MosaicProject.Move(oldIndex, targetIndex))
+        {
+            RefreshMosaicProperties();
+            RequestInvalidateOverlay?.Invoke();
+            StatusMessage = IsTurkish
+                ? $"'{source.Name}' katmanı #{MosaicProject.GetLayerIndex(source)} sırasına taşındı."
+                : $"Moved '{source.Name}' to Layer #{MosaicProject.GetLayerIndex(source)}.";
+        }
+    }
+
+    public void SelectAndHighlightPanel(MosaicPanel? panel, bool openDrawer = false)
+    {
+        if (panel == null) return;
+        foreach (var p in MosaicProject.Panels)
+        {
+            p.IsSelected = ReferenceEquals(p, panel);
+        }
+        SelectedMosaicPanel = panel;
+
+        _suppressConfidenceSync = true;
+        _confidenceThreshold = panel.ConfidenceThreshold;
+        _isAutoConfidenceEnabled = panel.IsAutoConfidenceEnabled;
+        OnPropertyChanged(nameof(ConfidenceThreshold));
+        OnPropertyChanged(nameof(IsAutoConfidenceEnabled));
+        OnPropertyChanged(nameof(ConfidencePercentText));
+        OnPropertyChanged(nameof(ConfidenceBrush));
+        OnPropertyChanged(nameof(ConfidenceStatusText));
+        OnPropertyChanged(nameof(ConfidenceButtonText));
+        _suppressConfidenceSync = false;
+
+        _suppressDisplaySync = true;
+        _displayBrightness = panel.Brightness;
+        _displayExposure = panel.Exposure;
+        _displayContrast = panel.Contrast;
+        _isAutoBrightnessEnabled = panel.IsAutoBrightnessEnabled;
+        OnPropertyChanged(nameof(DisplayBrightness));
+        OnPropertyChanged(nameof(DisplayExposure));
+        OnPropertyChanged(nameof(DisplayContrast));
+        OnPropertyChanged(nameof(DisplayBrightnessText));
+        OnPropertyChanged(nameof(DisplayExposureText));
+        OnPropertyChanged(nameof(DisplayContrastText));
+        OnPropertyChanged(nameof(IsAutoBrightnessEnabled));
+        _suppressDisplaySync = false;
+
+        if (!string.IsNullOrEmpty(panel.FilePath) && File.Exists(panel.FilePath))
+        {
+            _selectedImagePath = panel.FilePath;
+            LoadBitmapPreview(panel.FilePath);
+            OnPropertyChanged(nameof(SelectedImagePath));
+            OnPropertyChanged(nameof(ImageFileName));
+            OnPropertyChanged(nameof(HasLoadedImage));
+            OnPropertyChanged(nameof(ImageDimensionText));
+            OnPropertyChanged(nameof(ActivePanelDisplayName));
+        }
+
+        if (openDrawer)
+        {
+            IsMosaicDrawerOpen = true;
+            RequestScrollToMosaicPanel?.Invoke(panel);
+            StatusMessage = IsTurkish
+                ? $"🎯 '{panel.Name}' seçildi (Katman #{MosaicProject.GetLayerIndex(panel)})."
+                : $"🎯 Selected '{panel.Name}' (Layer #{MosaicProject.GetLayerIndex(panel)}).";
+        }
+
+        OnPropertyChanged(nameof(MosaicPanels));
+        RequestInvalidateOverlay?.Invoke();
+    }
+
+    private void ExecuteSelectMosaicPanel(MosaicPanel? panel)
+    {
+        if (panel == null) return;
+        SelectAndHighlightPanel(panel, openDrawer: false);
+        if (MosaicProject.Count > 1 && CurrentWcs != null && panel.Wcs != null)
+        {
+            var centerSky = panel.Wcs.CenterCoordinates;
+            if (CurrentWcs.EquatorialToPixel(centerSky, out double px, out double py))
+            {
+                RequestCenterOnPixel?.Invoke(px, py);
+            }
+            if (IsSphereModeActive)
+            {
+                double span = Math.Max(panel.Wcs.FovWidthDegrees, panel.Wcs.FovHeightDegrees);
+                RequestSet3DCamera?.Invoke(centerSky.RaDegrees, centerSky.DecDegrees, Math.Clamp(span * 1.8, 10.0, 80.0));
+            }
+        }
+    }
+
+    public void RefreshMosaicProperties()
+    {
+        OnPropertyChanged(nameof(MosaicPanels));
+        OnPropertyChanged(nameof(MosaicPanelCount));
+        OnPropertyChanged(nameof(HasPanels));
+        OnPropertyChanged(nameof(HasMultipleMosaicPanels));
+        OnPropertyChanged(nameof(MosaicPanelCountText));
+        OnPropertyChanged(nameof(L_PhotosButtonText));
+        OnPropertyChanged(nameof(CanvasWidth));
+        OnPropertyChanged(nameof(CanvasHeight));
+        OnPropertyChanged(nameof(IsSingleImageActive));
+        OnPropertyChanged(nameof(HasLoadedImage));
+        OnPropertyChanged(nameof(IsPlaceholderVisible));
+    }
+
+    public MosaicProject MosaicProject { get; } = new();
+    public IReadOnlyList<MosaicPanel> MosaicPanels => MosaicProject.Panels.ToList();
+    public int MosaicPanelCount => MosaicProject.Count;
+    public bool HasPanels => MosaicProject.Count > 0;
+    public bool HasMultipleMosaicPanels => MosaicProject.Count > 1;
+    public string MosaicPanelCountText => IsTurkish
+        ? $"Mozaik: {MosaicProject.Count} Panel"
+        : $"Mosaic: {MosaicProject.Count} Panels";
+
+    public void AddOrUpdateMosaicPanel(string? filePath, int width, int height, WcsMatrix wcs, string? targetName)
+    {
+        if (wcs == null || width <= 0 || height <= 0) return;
+
+        string name = !string.IsNullOrWhiteSpace(filePath)
+            ? Path.GetFileNameWithoutExtension(filePath)
+            : $"Panel {MosaicProject.Count + 1}";
+
+        var panel = new MosaicPanel(
+            Guid.NewGuid().ToString("N"),
+            name,
+            width,
+            height,
+            wcs,
+            filePath,
+            targetName);
+
+        panel.PropertyChanged -= OnMosaicPanelPropertyChanged;
+        panel.PropertyChanged += OnMosaicPanelPropertyChanged;
+        MosaicProject.AddOrUpdatePanel(panel);
+        OnPropertyChanged(nameof(MosaicPanels));
+        OnPropertyChanged(nameof(MosaicPanelCount));
+        OnPropertyChanged(nameof(HasMultipleMosaicPanels));
+        OnPropertyChanged(nameof(MosaicPanelCountText));
+        OnPropertyChanged(nameof(L_PhotosButtonText));
+    }
+
+    private void ExecuteAddToMosaic()
+    {
+        if (CurrentWcs == null || ImageWidth <= 0 || ImageHeight <= 0) return;
+
+        if (!string.IsNullOrEmpty(SelectedImagePath) && ImageBitmap != null)
+        {
+            DetectionOverlay.CachePanelBitmap(SelectedImagePath, ImageBitmap);
+        }
+
+        AddOrUpdateMosaicPanel(
+            SelectedImagePath,
+            (int)Math.Round(ImageWidth),
+            (int)Math.Round(ImageHeight),
+            CurrentWcs,
+            SelectedCatalogueTarget?.CommonName);
+
+        StatusMessage = IsTurkish
+            ? $"'{Path.GetFileNameWithoutExtension(SelectedImagePath) ?? "Panel"}' mozaik atlasına eklendi (Toplam panel: {MosaicProject.Count})."
+            : $"Added to mosaic atlas (Total panels: {MosaicProject.Count}).";
+    }
+
+    private void ExecuteClearMosaic()
+    {
+        MosaicProject.Clear();
+        _lastDetectionResult = null;
+        VisibleObjects = Array.Empty<AstrophotographyObject>();
+        TotalCount = 0;
+        Tier1Count = 0;
+        Tier2Count = 0;
+        Tier3Count = 0;
+        SpeculativeCount = 0;
+        AnomalyCount = 0;
+        ImageBitmap = null;
+        _selectedImagePath = null;
+        CurrentWcs = null;
+        SolvedCoordinatesText = "-";
+        OnPropertyChanged(nameof(SelectedImagePath));
+        OnPropertyChanged(nameof(ImageFileName));
+        RefreshMosaicProperties();
+        RequestInvalidateOverlay?.Invoke();
+
+        StatusMessage = IsTurkish ? "Tüm fotoğraflar ve mozaik temizlendi." : "All photos and mosaic cleared.";
+    }
     public ICommand ToggleLanguageCommand { get; }
+    private bool _isInspectorOpen = true;
+    public bool IsInspectorOpen
+    {
+        get => _isInspectorOpen;
+        set => SetProperty(ref _isInspectorOpen, value);
+    }
+
+    private InspectorTab _currentInspectorTab = InspectorTab.TelemetryEngine;
+    public InspectorTab CurrentInspectorTab
+    {
+        get => _currentInspectorTab;
+        set
+        {
+            if (SetProperty(ref _currentInspectorTab, value))
+            {
+                OnPropertyChanged(nameof(IsTabTelemetryEngine));
+                OnPropertyChanged(nameof(IsTabAstrometry));
+                OnPropertyChanged(nameof(IsTabImageAdjustments));
+                OnPropertyChanged(nameof(IsTabMosaic));
+            }
+        }
+    }
+
+    public bool IsTabTelemetryEngine
+    {
+        get => _currentInspectorTab == InspectorTab.TelemetryEngine;
+        set { if (value) CurrentInspectorTab = InspectorTab.TelemetryEngine; }
+    }
+
+    public bool IsTabAstrometry
+    {
+        get => _currentInspectorTab == InspectorTab.Astrometry;
+        set { if (value) CurrentInspectorTab = InspectorTab.Astrometry; }
+    }
+
+    public bool IsTabImageAdjustments
+    {
+        get => _currentInspectorTab == InspectorTab.ImageAdjustments;
+        set { if (value) CurrentInspectorTab = InspectorTab.ImageAdjustments; }
+    }
+
+    public bool IsTabMosaic
+    {
+        get => _currentInspectorTab == InspectorTab.Mosaic;
+        set { if (value) CurrentInspectorTab = InspectorTab.Mosaic; }
+    }
+
+    public string L_InspectorTitle => IsTurkish ? "Denetçi Paneli" : "Inspector";
+    public string L_ToggleInspectorToolTip => IsTurkish ? "Denetçi Panelini Aç/Kapat (Ctrl+B)" : "Toggle Inspector Sidebar (Ctrl+B)";
+
+    public ICommand ToggleInspectorCommand { get; }
+    public ICommand SelectInspectorTabCommand { get; }
+
+
+    public ICommand ToggleLabelsPanelCommand { get; }
+    public ICommand CloseLabelsPanelCommand { get; }
+    public ICommand CheckAllOverlaysCommand { get; }
+    public ICommand UncheckAllOverlaysCommand { get; }
+    public ICommand ToggleLightPanelCommand { get; }
+    public ICommand CloseLightPanelCommand { get; }
+    public ICommand ResetDisplayAdjustmentsCommand { get; }
+    public ICommand AutoBalanceNowCommand { get; }
+
+    private bool _isConfidencePanelOpen;
+    public bool IsConfidencePanelOpen
+    {
+        get => _isConfidencePanelOpen;
+        set => SetProperty(ref _isConfidencePanelOpen, value);
+    }
+
+    private bool _isAutoConfidenceEnabled = true;
+    public bool IsAutoConfidenceEnabled
+    {
+        get => _isAutoConfidenceEnabled;
+        set
+        {
+            if (SetProperty(ref _isAutoConfidenceEnabled, value))
+            {
+                var activePanel = GetActiveMosaicPanel();
+                if (activePanel != null)
+                {
+                    activePanel.IsAutoConfidenceEnabled = value;
+                }
+                OnPropertyChanged(nameof(ConfidenceButtonText));
+                if (value && _lastDetectionResult != null)
+                {
+                    ExecuteApplyAutoConfidence();
+                }
+            }
+        }
+    }
+
+    public ICommand ToggleConfidencePanelCommand { get; }
+    public ICommand CloseConfidencePanelCommand { get; }
+    public ICommand PresetConfidenceCommand { get; }
+
+    private bool _isLabelsPanelOpen = false;
+    public bool IsLabelsPanelOpen
+    {
+        get => _isLabelsPanelOpen;
+        set => SetProperty(ref _isLabelsPanelOpen, value);
+    }
+
+    public bool IsLightPanelOpen
+    {
+        get => _isLightPanelOpen;
+        set => SetProperty(ref _isLightPanelOpen, value);
+    }
+
+    public double DisplayBrightness
+    {
+        get => _displayBrightness;
+        set
+        {
+            if (SetProperty(ref _displayBrightness, value))
+            {
+                OnPropertyChanged(nameof(DisplayBrightnessText));
+                ApplyDisplayAdjustments();
+            }
+        }
+    }
+
+    public double DisplayExposure
+    {
+        get => _displayExposure;
+        set
+        {
+            if (SetProperty(ref _displayExposure, value))
+            {
+                OnPropertyChanged(nameof(DisplayExposureText));
+                ApplyDisplayAdjustments();
+            }
+        }
+    }
+
+    public double DisplayContrast
+    {
+        get => _displayContrast;
+        set
+        {
+            if (SetProperty(ref _displayContrast, value))
+            {
+                OnPropertyChanged(nameof(DisplayContrastText));
+                ApplyDisplayAdjustments();
+            }
+        }
+    }
+
+    public string DisplayBrightnessText => $"{_displayBrightness:+#0;-#0;0}";
+    public string DisplayExposureText => $"{_displayExposure:F2}x";
+    public string DisplayContrastText => $"{_displayContrast:F2}x";
 
     public bool IsAutoBrightnessEnabled
     {
@@ -725,16 +1788,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             if (SetProperty(ref _isAutoBrightnessEnabled, value))
             {
-                if (!string.IsNullOrEmpty(SelectedImagePath) && File.Exists(SelectedImagePath))
-                {
-                    LoadBitmapPreview(SelectedImagePath);
-                }
-                else
-                {
-                    BrightnessStatusText = value
-                        ? (IsTurkish ? "Oto Parlaklık" : "Auto Brightness")
-                        : (IsTurkish ? "Oto Parlaklık: Kapalı" : "Auto Brightness: Off");
-                }
+                ApplyDisplayAdjustments();
             }
         }
     }
@@ -745,67 +1799,151 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         private set => SetProperty(ref _brightnessStatusText, value);
     }
 
+    private void ResetDisplayAdjustments()
+    {
+        _displayBrightness = 0.0;
+        _displayExposure = 1.0;
+        _displayContrast = 1.0;
+        _isAutoBrightnessEnabled = false;
+        OnPropertyChanged(nameof(DisplayBrightness));
+        OnPropertyChanged(nameof(DisplayExposure));
+        OnPropertyChanged(nameof(DisplayContrast));
+        OnPropertyChanged(nameof(IsAutoBrightnessEnabled));
+        OnPropertyChanged(nameof(DisplayBrightnessText));
+        OnPropertyChanged(nameof(DisplayExposureText));
+        OnPropertyChanged(nameof(DisplayContrastText));
+        ApplyDisplayAdjustments();
+    }
+
+    private void AutoBalanceNow()
+    {
+        IsAutoBrightnessEnabled = true;
+        ApplyDisplayAdjustments();
+        StatusMessage = IsTurkish ? "Görsel için otomatik ışık ve renk dengelendi." : "Image exposure and color automatically balanced.";
+    }
+
+    private void ApplyDisplayAdjustments()
+    {
+        if (_originalSkBitmap == null) return;
+
+        try
+        {
+            var activePanel = GetActiveMosaicPanel();
+            if (activePanel != null && !_suppressDisplaySync)
+            {
+                activePanel.Brightness = _displayBrightness;
+                activePanel.Exposure = _displayExposure;
+                activePanel.Contrast = _displayContrast;
+                activePanel.IsAutoBrightnessEnabled = _isAutoBrightnessEnabled;
+            }
+
+            SkiaSharp.SKBitmap baseBmp;
+            if (IsAutoBrightnessEnabled)
+            {
+                baseBmp = ImagePreprocessor.AutoBalanceBrightness(_originalSkBitmap, out var bInfo);
+                BrightnessStatusText = bInfo.WasAdjusted ? bInfo.SummaryText : (IsTurkish ? "Oto Parlaklık: Optimal" : "Auto Brightness: Optimal");
+            }
+            else
+            {
+                baseBmp = _originalSkBitmap.Copy();
+                BrightnessStatusText = IsTurkish ? "Oto Parlaklık: Kapalı" : "Auto Brightness: Off";
+            }
+
+            using (baseBmp)
+            {
+                using var adjusted = ImagePreprocessor.ApplyDisplayToneAdjustment(
+                    baseBmp, _displayBrightness, _displayExposure, _displayContrast);
+
+                var wpfBitmap = ConvertToWpfBitmap(adjusted);
+                ImageWidth = wpfBitmap.PixelWidth;
+                ImageHeight = wpfBitmap.PixelHeight;
+                ImageBitmap = wpfBitmap;
+
+                if (activePanel != null)
+                {
+                    activePanel.CachedBitmap = wpfBitmap;
+                }
+
+                if (!string.IsNullOrEmpty(SelectedImagePath))
+                {
+                    DetectionOverlay.CachePanelBitmap(SelectedImagePath, wpfBitmap);
+                }
+
+                OnPropertyChanged(nameof(MosaicPanels));
+                RequestInvalidateOverlay?.Invoke();
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = IsTurkish ? $"Görsel işleme hatası: {ex.Message}" : $"Display adjustment error: {ex.Message}";
+        }
+    }
+
+    private void UpdateFormatAccuracyBadge(string filePath)
+    {
+        string ext = Path.GetExtension(filePath).ToLowerInvariant();
+        bool isCompressed = ext is ".jpg" or ".jpeg" or ".webp";
+        bool isLossless = ext is ".tif" or ".tiff" or ".fits" or ".fit" or ".png";
+
+        if (isCompressed)
+        {
+            _formatBadgeIcon = "⚠️";
+            _formatBadgeText = IsTurkish ? $"Sıkıştırılmış {ext.ToUpperInvariant().TrimStart('.')}" : $"Compressed {ext.ToUpperInvariant().TrimStart('.')}";
+            _formatWarningToolTip = IsTurkish
+                ? $"Sıkıştırılmış format ({ext.ToUpperInvariant()}): Bloklama ve DCT sıkıştırma artefaktları sönük yıldız tespit doğruluğunu ve fotometrik duyarlılığı etkileyebilir. Bilimsel hassasiyet için 16-bit TIFF veya FITS önerilir."
+                : $"Compressed format ({ext.ToUpperInvariant()}): Lossy compression artifacts may affect faint star detection and photometric accuracy. 16-bit TIFF or FITS is recommended for scientific precision.";
+            _formatBadgeBackground = new SolidColorBrush(Color.FromRgb(0x2D, 0x1B, 0x04));
+            _formatBadgeBorder = new SolidColorBrush(Color.FromRgb(0xD9, 0x77, 0x06));
+            _formatBadgeForeground = new SolidColorBrush(Color.FromRgb(0xFB, 0xBF, 0x24));
+        }
+        else if (isLossless)
+        {
+            _formatBadgeIcon = "✨";
+            _formatBadgeText = IsTurkish ? $"Kayıpsız {ext.ToUpperInvariant().TrimStart('.')}" : $"Lossless {ext.ToUpperInvariant().TrimStart('.')}";
+            _formatWarningToolTip = IsTurkish
+                ? $"Kayıpsız Astronomik Format ({ext.ToUpperInvariant()}): Maksimum piksel doğruluğu ve doğrusal fotometrik duyarlılık."
+                : $"Lossless Astronomical Format ({ext.ToUpperInvariant()}): Maximum pixel fidelity and linear photometric accuracy.";
+            _formatBadgeBackground = new SolidColorBrush(Color.FromRgb(0x06, 0x2A, 0x1F));
+            _formatBadgeBorder = new SolidColorBrush(Color.FromRgb(0x05, 0x96, 0x69));
+            _formatBadgeForeground = new SolidColorBrush(Color.FromRgb(0x34, 0xD3, 0x99));
+        }
+        else
+        {
+            _formatBadgeText = null;
+            _formatWarningToolTip = null;
+        }
+
+        _formatBadgeBackground.Freeze();
+        _formatBadgeBorder.Freeze();
+        _formatBadgeForeground.Freeze();
+
+        OnPropertyChanged(nameof(HasFormatBadge));
+        OnPropertyChanged(nameof(FormatBadgeText));
+        OnPropertyChanged(nameof(FormatWarningToolTip));
+        OnPropertyChanged(nameof(FormatBadgeIcon));
+        OnPropertyChanged(nameof(FormatBadgeBackground));
+        OnPropertyChanged(nameof(FormatBadgeBorder));
+        OnPropertyChanged(nameof(FormatBadgeForeground));
+    }
+
     private void LoadBitmapPreview(string filePath)
     {
         try
         {
-            if (IsAutoBrightnessEnabled)
-            {
-                using var skBitmap = ImagePreprocessor.LoadImage(filePath);
-                using var balanced = ImagePreprocessor.AutoBalanceBrightness(skBitmap, out var info);
-                BrightnessStatusText = info.WasAdjusted
-                    ? info.SummaryText
-                    : (IsTurkish ? "Oto Parlaklık: Optimal" : "Auto Brightness: Optimal");
+            _originalSkBitmap?.Dispose();
+            _originalSkBitmap = ImagePreprocessor.LoadImage(filePath);
 
-                if (info.WasAdjusted)
-                {
-                    var wpfBitmap = ConvertToWpfBitmap(balanced);
-                    ImageWidth = wpfBitmap.PixelWidth;
-                    ImageHeight = wpfBitmap.PixelHeight;
-                    ImageBitmap = wpfBitmap;
-                    StatusMessage = IsTurkish
-                        ? $"Görsel yüklendi ({info.SummaryText})."
-                        : $"Image loaded ({info.SummaryText}).";
-                    return;
-                }
-            }
-            else
-            {
-                BrightnessStatusText = IsTurkish ? "Oto Parlaklık: Kapalı" : "Auto Brightness: Off";
-            }
+            UpdateFormatAccuracyBadge(filePath);
 
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.UriSource = new Uri(filePath, UriKind.Absolute);
-            bitmap.EndInit();
-            bitmap.Freeze();
+            ApplyDisplayAdjustments();
 
-            // Pixel size (not DIP size): detections are in pixel coordinates, so the view must use the same units.
-            ImageWidth = bitmap.PixelWidth;
-            ImageHeight = bitmap.PixelHeight;
-            ImageBitmap = bitmap;
+            StatusMessage = IsTurkish
+                ? $"Görsel yüklendi: {Path.GetFileName(filePath)} ({ImageWidth}x{ImageHeight})"
+                : $"Image loaded: {Path.GetFileName(filePath)} ({ImageWidth}x{ImageHeight})";
         }
-        catch
+        catch (Exception ex)
         {
-            try
-            {
-                // Fallback using AstroCounter.Core's ImagePreprocessor (handles complex TIFF variants)
-                using var skBitmap = ImagePreprocessor.LoadImage(filePath);
-                using var balanced = IsAutoBrightnessEnabled
-                    ? ImagePreprocessor.AutoBalanceBrightness(skBitmap, out var info)
-                    : skBitmap.Copy();
-                var wpfBitmap = ConvertToWpfBitmap(balanced);
-                ImageWidth = wpfBitmap.PixelWidth;
-                ImageHeight = wpfBitmap.PixelHeight;
-                ImageBitmap = wpfBitmap;
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = IsTurkish
-                    ? $"Görsel yüklenirken hata: {ex.Message}"
-                    : $"Error loading image: {ex.Message}";
-            }
+            StatusMessage = IsTurkish ? $"Görsel yüklenirken hata: {ex.Message}" : $"Error loading image: {ex.Message}";
         }
     }
 
@@ -844,13 +1982,17 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
         IsLoading = true;
         ProgressValue = 0;
-        StatusMessage = IsPhotometricMode
+        StatusMessage = IsHybridFusionMode
             ? (IsTurkish
-                ? "Astronomik fotometri: 2D arka plan modelleniyor ve yıldızlar aranıyor..."
-                : "Astronomical photometry: modeling 2D background and extracting star centroids...")
-            : (IsTurkish
-                ? "YOLO SAHI: Görüntü 640x640 dilimleniyor ve model çıkarımı yapılıyor..."
-                : "YOLO SAHI: slicing image into 640x640 tiles and running inference...");
+                ? "🔬 Hibrit Füzyon: Fotometri + Yapay Zekâ analizi yapılıyor..."
+                : "🔬 Hybrid Fusion: Photometry + Deep Learning analysis running...")
+            : (IsPhotometricMode
+                ? (IsTurkish
+                    ? "Astronomik fotometri: 2D arka plan modelleniyor ve yıldızlar aranıyor..."
+                    : "Astronomical photometry: modeling 2D background and extracting star centroids...")
+                : (IsTurkish
+                    ? "YOLO SAHI: Görüntü 640x640 dilimleniyor ve model çıkarımı yapılıyor..."
+                    : "YOLO SAHI: slicing image into 640x640 tiles and running inference..."));
 
         var progress = new Progress<float>(percent =>
         {
@@ -858,9 +2000,11 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
             ProgressValue = percent * 100.0;
             int pct = (int)(percent * 100);
-            StatusMessage = IsPhotometricMode
-                ? (IsTurkish ? $"Fotometrik analiz: %{pct}" : $"Photometric analysis: {pct}%")
-                : (IsTurkish ? $"Dilimler işleniyor: %{pct}" : $"Processing tiles: {pct}%");
+            StatusMessage = IsHybridFusionMode
+                ? (IsTurkish ? $"🔬 Füzyon analizi: %{pct}" : $"🔬 Fusion analysis: {pct}%")
+                : (IsPhotometricMode
+                    ? (IsTurkish ? $"Fotometrik analiz: %{pct}" : $"Photometric analysis: {pct}%")
+                    : (IsTurkish ? $"Dilimler işleniyor: %{pct}" : $"Processing tiles: {pct}%"));
         });
 
         try
@@ -871,16 +2015,159 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             }
             else
             {
-                _engine.Mode = IsPhotometricMode ? DetectionEngineMode.Photometric : DetectionEngineMode.DeepLearningYolo;
+                _engine.Mode = _selectedEngineMode;
                 HardwareInfo = _engine.ExecutionProviderName;
             }
 
-            var config = new TilingConfig(DefaultConfidenceThreshold: 0.25f, MinConfidence: 0.02f);
-            var result = await _engine!.ProcessImageAsync(SelectedImagePath, config, progress, token);
+        if (MosaicProject.Count > 1)
+        {
+            StatusMessage = IsTurkish
+                ? $"🔬 Mozaik atlası tam çözünürlükte taranıyor ({MosaicProject.Count} panel paralel)..."
+                : $"🔬 Scanning mosaic atlas at full sensor resolution ({MosaicProject.Count} panels parallel)...";
+
+            var mosaicProgress = new Progress<MosaicCountingProgress>(p =>
+            {
+                if (token.IsCancellationRequested) return;
+                ProgressValue = p.OverallPercent * 100.0;
+                StatusMessage = IsTurkish
+                    ? $"[{p.CompletedPanels}/{p.TotalPanels}] {p.CurrentPanelName} ({p.TotalRawStars:N0} ham tespit)..."
+                    : $"[{p.CompletedPanels}/{p.TotalPanels}] {p.CurrentPanelName} ({p.TotalRawStars:N0} raw detections)...";
+            });
+
+            try
+            {
+                // In mosaic mode, CurrentWcs MUST ALWAYS be the Master WCS representing the continuous master canvas
+                var masterWcs = MosaicProject.ComputeMasterWcs() ?? MosaicProject.Panels.FirstOrDefault(p => p.Wcs != null)?.Wcs;
+                if (masterWcs != null)
+                {
+                    CurrentWcs = masterWcs;
+                }
+                OnPropertyChanged(nameof(CanvasWidth));
+                OnPropertyChanged(nameof(CanvasHeight));
+
+                var mosaicConfig = new TilingConfig(DefaultConfidenceThreshold: _confidenceThreshold, MinConfidence: Math.Max(0.05f, _confidenceThreshold * 0.35f));
+                var mosaicResult = await MosaicStarCounter.CountMosaicStarsAsync(
+                    MosaicProject,
+                    mosaicConfig,
+                    matchToleranceArcsec: 3.0,
+                    progress: mosaicProgress,
+                    targetWcs: masterWcs ?? _currentWcs,
+                    cancellationToken: token);
+
+                if (token.IsCancellationRequested) return;
+
+                MosaicUniqueStarsCount = mosaicResult.TotalUniqueStars;
+                MosaicRawStarsCount = mosaicResult.RawDetectionsCount;
+                MosaicOverlapStarsCount = mosaicResult.OverlapDetectionsCount;
+
+                var mosaicDetectionResult = new DetectionResult(
+                    mosaicResult.AllObjects,
+                    (int)Math.Max(1, CanvasWidth),
+                    (int)Math.Max(1, CanvasHeight),
+                    MosaicProject.Count,
+                    mosaicResult.ElapsedTime,
+                    HardwareInfo,
+                    _confidenceThreshold);
+
+                _lastDetectionResult = mosaicDetectionResult;
+                OptimalConfidenceThreshold = mosaicDetectionResult.RecommendedConfidence;
+                var activePanel = GetActiveMosaicPanel();
+                if (activePanel != null)
+                {
+                    _suppressConfidenceSync = true;
+                    _confidenceThreshold = activePanel.ConfidenceThreshold;
+                    _isAutoConfidenceEnabled = activePanel.IsAutoConfidenceEnabled;
+                    OnPropertyChanged(nameof(ConfidenceThreshold));
+                    OnPropertyChanged(nameof(IsAutoConfidenceEnabled));
+                    OnPropertyChanged(nameof(ConfidencePercentText));
+                    OnPropertyChanged(nameof(ConfidenceBrush));
+                    OnPropertyChanged(nameof(ConfidenceStatusText));
+                    OnPropertyChanged(nameof(ConfidenceButtonText));
+                    _suppressConfidenceSync = false;
+                }
+                ProcessingTimeText = $"{mosaicResult.ElapsedTime.TotalSeconds:F1} s";
+                TileCountText = IsTurkish ? $"{MosaicProject.Count} Panel" : $"{MosaicProject.Count} Panels";
+
+                ApplyLiveFilter();
+
+                StatusMessage = IsTurkish
+                    ? $"🌌 Mozaik tamamlandı! {MosaicProject.Count} panelde {mosaicResult.TotalUniqueStars:N0} benzersiz gök cismi sayıldı ({mosaicResult.OverlapDetectionsCount:N0} örtüşme birleştirildi, {ProcessingTimeText})."
+                    : $"🌌 Mosaic completed! Counted {mosaicResult.TotalUniqueStars:N0} unique objects across {MosaicProject.Count} panels ({mosaicResult.OverlapDetectionsCount:N0} overlaps merged, {ProcessingTimeText}).";
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                StatusMessage = IsTurkish ? $"Mozaik analiz hatası: {ex.Message}" : $"Mosaic analysis error: {ex.Message}";
+            }
+            finally
+            {
+                if (!token.IsCancellationRequested)
+                {
+                    IsLoading = false;
+                    ProgressValue = 100;
+                }
+            }
+            return;
+        }
+
+        var config = new TilingConfig(DefaultConfidenceThreshold: 0.25f, MinConfidence: 0.02f);
+        var result = await _engine!.ProcessImageAsync(SelectedImagePath, config, progress, token);
 
             if (token.IsCancellationRequested) return;
 
+            var allObjects = result.AllObjects;
+            if (_currentWcs != null)
+            {
+                var anomalyChecked = AstroCounter.Core.Astrometry.TransientAnomalyDetector.DetectAnomalies(
+                    allObjects,
+                    _currentWcs,
+                    (int)ImageWidth,
+                    (int)ImageHeight);
+
+                string? pId = MosaicProject.Panels.FirstOrDefault()?.Id;
+                var withSky = new List<AstrophotographyObject>(anomalyChecked.Count);
+                foreach (var o in anomalyChecked)
+                {
+                    var sky = _currentWcs.PixelToEquatorial(o.CenterX, o.CenterY);
+                    withSky.Add(o.WithCelestialCoordinates(sky.RaDegrees, sky.DecDegrees, pId));
+                }
+                allObjects = withSky;
+            }
+
+            result = new DetectionResult(
+                allObjects,
+                result.ImageWidth,
+                result.ImageHeight,
+                result.TileCount,
+                result.ElapsedTime,
+                result.ExecutionProvider,
+                result.RecommendedConfidence);
+
             _lastDetectionResult = result;
+            var singlePanel = GetActiveMosaicPanel();
+            float formatAwareAuto = AutoConfidenceCalculator.ComputeOptimalThreshold(
+                allObjects,
+                singlePanel?.IsLossyFormat ?? false);
+            OptimalConfidenceThreshold = formatAwareAuto;
+            if (singlePanel != null)
+            {
+                singlePanel.AutoConfidenceThreshold = formatAwareAuto;
+            }
+            if (IsAutoConfidenceEnabled)
+            {
+                _suppressConfidenceSync = true;
+                _confidenceThreshold = formatAwareAuto;
+                if (singlePanel != null)
+                {
+                    singlePanel.ConfidenceThreshold = formatAwareAuto;
+                }
+                OnPropertyChanged(nameof(ConfidenceThreshold));
+                OnPropertyChanged(nameof(ConfidencePercentText));
+                OnPropertyChanged(nameof(ConfidenceBrush));
+                OnPropertyChanged(nameof(ConfidenceStatusText));
+                OnPropertyChanged(nameof(ConfidenceButtonText));
+                _suppressConfidenceSync = false;
+            }
             ProcessingTimeText = $"{result.ElapsedTime.TotalMilliseconds:F0} ms";
             TileCountText = IsPhotometricMode
                 ? (IsTurkish ? "Fotometri - Tam Kare" : "Photometry - Full Frame")
@@ -911,13 +2198,24 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     }
 
     /// <summary>
-    /// Filters detected objects in RAM according to ConfidenceThreshold slider (and the scan areas) without re-running AI.
+    /// Filters detected objects in RAM according to per-photo ConfidenceThreshold sliders AND the scan area mask without re-running AI.
     /// </summary>
     public void ApplyLiveFilter()
     {
         if (_lastDetectionResult == null) return;
 
-        var filtered = _lastDetectionResult.Filter(_confidenceThreshold, _mask);
+        IReadOnlyDictionary<string, float>? perPanelMap = null;
+        if (MosaicProject.Count > 0)
+        {
+            var dict = new Dictionary<string, float>(StringComparer.Ordinal);
+            foreach (var p in MosaicProject.Panels)
+            {
+                dict[p.Id] = p.ConfidenceThreshold;
+            }
+            perPanelMap = dict;
+        }
+
+        var filtered = _lastDetectionResult.Filter(_confidenceThreshold, _mask, perPanelMap);
 
         TotalCount = filtered.TotalCount;
         Tier1Count = filtered.Tier1Count;
@@ -925,8 +2223,285 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         Tier3Count = filtered.Tier3Count;
         SpeculativeCount = filtered.NoiseCount;
         VisibleObjects = filtered.FilteredObjects;
+        AnomalyCount = filtered.FilteredObjects.Count(o => o.IsAnomaly);
 
         CommandManager.InvalidateRequerySuggested();
+    }
+
+    public async Task LoadImagesAsync(IReadOnlyList<string> filePaths, bool append = false)
+    {
+        if (filePaths == null || filePaths.Count == 0) return;
+
+        var valid = filePaths.Where(f => !string.IsNullOrEmpty(f) && File.Exists(f)).ToList();
+        if (valid.Count == 0) return;
+
+        IsLoading = true;
+        StatusMessage = IsTurkish
+            ? $"🌌 {valid.Count} fotoğraf yükleniyor ve hazırlanıyor..."
+            : $"🌌 Loading {valid.Count} photos...";
+
+        if (!append)
+        {
+            MosaicProject.Clear();
+            _lastDetectionResult = null;
+            VisibleObjects = Array.Empty<AstrophotographyObject>();
+            TotalCount = 0;
+            Tier1Count = 0;
+            Tier2Count = 0;
+            Tier3Count = 0;
+            SpeculativeCount = 0;
+            AnomalyCount = 0;
+        }
+
+        // Set active image as primary preview
+        string firstPath = valid[0];
+        LoadBitmapPreview(firstPath);
+        _selectedImagePath = firstPath;
+        OnPropertyChanged(nameof(SelectedImagePath));
+        OnPropertyChanged(nameof(ImageFileName));
+        OnPropertyChanged(nameof(HasLoadedImage));
+        OnPropertyChanged(nameof(ImageDimensionText));
+
+        int existingCount = MosaicProject.Count;
+        var newlyAdded = new List<MosaicPanel>();
+
+        for (int i = 0; i < valid.Count; i++)
+        {
+            string path = valid[i];
+            int w = (int)Math.Max(1, ImageWidth);
+            int h = (int)Math.Max(1, ImageHeight);
+
+            SKBitmap? skBmp = null;
+            try
+            {
+                skBmp = ImagePreprocessor.LoadImage(path);
+                if (skBmp != null)
+                {
+                    w = skBmp.Width;
+                    h = skBmp.Height;
+                    var wpfBmp = ConvertToWpfBitmap(skBmp);
+                    DetectionOverlay.CachePanelBitmap(path, wpfBmp);
+                }
+            }
+            catch { }
+
+            string panelName = !string.IsNullOrWhiteSpace(path)
+                ? Path.GetFileNameWithoutExtension(path)
+                : $"Panel {existingCount + i + 1}";
+
+            // Temporary identity WCS until plate-solving finishes
+            var initialWcs = new WcsMatrix(
+                new CelestialCoordinates(180.0, 30.0),
+                w / 2.0,
+                h / 2.0,
+                2.5,
+                0.0,
+                w,
+                h);
+
+            var panel = new MosaicPanel(
+                Guid.NewGuid().ToString("N"),
+                panelName,
+                w,
+                h,
+                initialWcs,
+                path)
+            {
+                CachedBitmap = skBmp,
+                CachedSkiaBitmap = skBmp
+            };
+
+            panel.PropertyChanged -= OnMosaicPanelPropertyChanged;
+            panel.PropertyChanged += OnMosaicPanelPropertyChanged;
+            MosaicProject.AddPanel(panel);
+            newlyAdded.Add(panel);
+        }
+
+        if (newlyAdded.Count > 0)
+        {
+            foreach (var p in MosaicProject.Panels)
+            {
+                p.IsSelected = ReferenceEquals(p, newlyAdded[0]);
+            }
+            SelectedMosaicPanel = newlyAdded[0];
+        }
+
+        RefreshMosaicProperties();
+
+        // Pass 1: Direct catalogue & star-pattern plate solving for every newly added panel
+        for (int i = 0; i < newlyAdded.Count; i++)
+        {
+            var panel = newlyAdded[i];
+            if (string.IsNullOrEmpty(panel.FilePath)) continue;
+
+            StatusMessage = IsTurkish
+                ? $"🔭 [{i + 1}/{newlyAdded.Count}] '{panel.Name}' yıldız konumları çözümleniyor (Plate Solving)..."
+                : $"🔭 [{i + 1}/{newlyAdded.Count}] Plate solving '{panel.Name}'...";
+
+            try
+            {
+                var solvedNeighbors = MosaicProject.Panels.Where(other => other != panel && other.IsSolved && other.Wcs != null).ToList();
+                PlateSolvingResult? bestCatRes = null;
+
+                // Try with hints from already-solved neighbors first
+                foreach (var neighbor in solvedNeighbors)
+                {
+                    var catRes = await _plateSolver.SolveAsync(
+                        panel.FilePath,
+                        panel.Width,
+                        panel.Height,
+                        detectedStars: null,
+                        cancellationToken: default,
+                        hintCoordinates: neighbor.Wcs!.CenterCoordinates);
+
+                    if (catRes.IsSuccess && catRes.Wcs != null)
+                    {
+                        bestCatRes = catRes;
+                        break;
+                    }
+                }
+
+                // If no neighbor hint succeeded (or no neighbors solved yet), run full blind all-sky plate solve
+                if (bestCatRes == null || !bestCatRes.IsSuccess)
+                {
+                    bestCatRes = await _plateSolver.SolveAsync(
+                        panel.FilePath,
+                        panel.Width,
+                        panel.Height,
+                        detectedStars: null,
+                        cancellationToken: default,
+                        hintCoordinates: null);
+                }
+
+                if (bestCatRes != null && bestCatRes.IsSuccess && bestCatRes.Wcs != null)
+                {
+                    panel.Wcs = bestCatRes.Wcs;
+                    panel.TargetName = bestCatRes.TargetName;
+                }
+            }
+            catch { }
+        }
+
+        // Pass 2: Multi-pass relative star-pattern alignment & neighbor-hint retry for any remaining unsolved panels
+        // (Handles chains where Panel 1 was solved AFTER Panel 0, or Panel 3 overlaps with Panel 2 instead of Panel 0)
+        bool progressMade = true;
+        int pass = 0;
+        while (progressMade && pass < 3)
+        {
+            progressMade = false;
+            pass++;
+            var unsolvedPanels = MosaicProject.Panels.Where(p => !p.IsSolved && !string.IsNullOrEmpty(p.FilePath)).ToList();
+            if (unsolvedPanels.Count == 0) break;
+
+            var solvedNeighbors = MosaicProject.Panels.Where(p => p.IsSolved && p.Wcs != null).ToList();
+            if (solvedNeighbors.Count == 0) break;
+
+            foreach (var panel in unsolvedPanels)
+            {
+                try
+                {
+                    // 2A. Retry catalog solver using newly available neighbor hints
+                    bool solvedNow = false;
+                    foreach (var neighbor in solvedNeighbors)
+                    {
+                        var catRes = await _plateSolver.SolveAsync(
+                            panel.FilePath!,
+                            panel.Width,
+                            panel.Height,
+                            detectedStars: null,
+                            cancellationToken: default,
+                            hintCoordinates: neighbor.Wcs!.CenterCoordinates);
+
+                        if (catRes.IsSuccess && catRes.Wcs != null)
+                        {
+                            panel.Wcs = catRes.Wcs;
+                            panel.TargetName = catRes.TargetName;
+                            solvedNow = true;
+                            progressMade = true;
+                            solvedNeighbors.Add(panel);
+                            break;
+                        }
+                    }
+                    if (solvedNow) continue;
+
+                    // 2B. Try relative star-pattern registration against ALL solved neighbors (pick highest inlier match)
+                    IReadOnlyList<AstrophotographyObject>? detectedStars = panel.DetectedStars;
+                    if (detectedStars == null || detectedStars.Count < 4)
+                    {
+                        SkiaSharp.SKBitmap? bmp = (panel.CachedSkiaBitmap as SkiaSharp.SKBitmap) ?? (panel.CachedBitmap as SkiaSharp.SKBitmap);
+                        bool shouldDisposeBmp = false;
+                        if (bmp == null && !string.IsNullOrEmpty(panel.FilePath) && File.Exists(panel.FilePath))
+                        {
+                            bmp = ImagePreprocessor.LoadImage(panel.FilePath);
+                            shouldDisposeBmp = true;
+                        }
+
+                        if (bmp != null)
+                        {
+                            detectedStars = PhotometricStarFinder.DetectStars(
+                                bmp,
+                                new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f));
+                            panel.DetectedStars = detectedStars;
+                            if (shouldDisposeBmp)
+                            {
+                                bmp.Dispose();
+                            }
+                        }
+                    }
+
+                    if (detectedStars != null && detectedStars.Count >= 4)
+                    {
+                        MosaicStarAligner.AlignmentResult? bestAlign = null;
+                        MosaicPanel? bestNeighbor = null;
+
+                        foreach (var neighbor in solvedNeighbors)
+                        {
+                            var alignRes = MosaicStarAligner.TryAlign(panel, detectedStars, neighbor, neighbor.DetectedStars);
+                            if (alignRes.IsSuccess && alignRes.SolvedWcs != null)
+                            {
+                                if (bestAlign == null ||
+                                    alignRes.MatchedStars > bestAlign.MatchedStars ||
+                                    (alignRes.MatchedStars == bestAlign.MatchedStars && alignRes.RmsResidualPixels < bestAlign.RmsResidualPixels))
+                                {
+                                    bestAlign = alignRes;
+                                    bestNeighbor = neighbor;
+                                }
+                            }
+                        }
+
+                        if (bestAlign != null && bestAlign.SolvedWcs != null && bestNeighbor != null)
+                        {
+                            panel.Wcs = bestAlign.SolvedWcs;
+                            panel.TargetName = $"{bestNeighbor.TargetName} ({bestAlign.MatchedStars} yıldız kenetli)";
+                            progressMade = true;
+                            solvedNeighbors.Add(panel);
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        RefreshMosaicProperties();
+
+        if (MosaicProject.Count == 1)
+        {
+            CurrentWcs = MosaicProject.Panels[0].Wcs;
+            SolvedCoordinatesText = CurrentWcs?.CenterCoordinates.ToString() ?? "-";
+        }
+        else
+        {
+            var masterWcs = MosaicProject.ComputeMasterWcs();
+            CurrentWcs = masterWcs ?? MosaicProject.Panels[0].Wcs;
+            SolvedCoordinatesText = CurrentWcs?.CenterCoordinates.ToString() ?? "-";
+        }
+
+        OnPropertyChanged(nameof(CanvasWidth));
+        OnPropertyChanged(nameof(CanvasHeight));
+        OnPropertyChanged(nameof(IsSingleImageActive));
+
+        // Scan all loaded mosaic panels in parallel at 100% full sensor resolution
+        await ExecuteAnalyzeAsync();
     }
 
     private void ExecuteSelectImage()
@@ -934,14 +2509,357 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         var dialog = new OpenFileDialog
         {
             Title = IsTurkish ? "Astrofotoğraf Seç" : "Select Astrophotograph",
+            Multiselect = true,
             Filter = IsTurkish
-                ? "Desteklenen Görseller (*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp)|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp|TIFF Görselleri (*.tif;*.tiff)|*.tif;*.tiff|PNG Görselleri (*.png)|*.png|JPEG Görselleri (*.jpg;*.jpeg)|*.jpg;*.jpeg|Tüm Dosyalar (*.*)|*.*"
-                : "Supported Images (*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp)|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp|TIFF Images (*.tif;*.tiff)|*.tif;*.tiff|PNG Images (*.png)|*.png|JPEG Images (*.jpg;*.jpeg)|*.jpg;*.jpeg|All Files (*.*)|*.*"
+                ? "Desteklenen Görseller (*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.fits;*.fit;*.fts;*.xisf)|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.fits;*.fit;*.fts;*.xisf|Tüm Dosyalar (*.*)|*.*"
+                : "Supported Images (*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.fits;*.fit;*.fts;*.xisf)|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.fits;*.fit;*.fts;*.xisf|All Files (*.*)|*.*"
         };
 
-        if (dialog.ShowDialog() == true)
+        if (dialog.ShowDialog() == true && dialog.FileNames.Length > 0)
         {
-            SelectedImagePath = dialog.FileName;
+            _ = LoadImagesAsync(dialog.FileNames, append: false);
+        }
+    }
+
+    private void ExecuteAddPhotos()
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = IsTurkish ? "Fotoğrafları Projeye / Mozaik Atlasına Ekle" : "Add Photos to Project / Mosaic Atlas",
+            Multiselect = true,
+            Filter = IsTurkish
+                ? "Desteklenen Görseller (*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.fits;*.fit;*.fts;*.xisf)|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.fits;*.fit;*.fts;*.xisf|Tüm Dosyalar (*.*)|*.*"
+                : "Supported Images (*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.fits;*.fit;*.fts;*.xisf)|*.png;*.jpg;*.jpeg;*.tif;*.tiff;*.bmp;*.fits;*.fit;*.fts;*.xisf|All Files (*.*)|*.*"
+        };
+
+        if (dialog.ShowDialog() == true && dialog.FileNames.Length > 0)
+        {
+            _ = LoadImagesAsync(dialog.FileNames, append: true);
+        }
+    }
+
+    public async Task ExecutePlateSolveAllPanelsAsync()
+    {
+        if (MosaicProject.Count == 0) return;
+        IsLoading = true;
+        for (int i = 0; i < MosaicProject.Count; i++)
+        {
+            var p = MosaicProject.Panels[i];
+            if (string.IsNullOrEmpty(p.FilePath)) continue;
+
+            StatusMessage = IsTurkish
+                ? $"🔭 [{i + 1}/{MosaicProject.Count}] '{p.Name}' plate solving..."
+                : $"🔭 [{i + 1}/{MosaicProject.Count}] Plate solving '{p.Name}'...";
+
+            try
+            {
+                var solvedNeighbors = MosaicProject.Panels.Where(other => other != p && other.IsSolved && other.Wcs != null).ToList();
+                PlateSolvingResult? bestCatRes = null;
+
+                foreach (var neighbor in solvedNeighbors)
+                {
+                    var catRes = await _plateSolver.SolveAsync(
+                        p.FilePath,
+                        p.Width,
+                        p.Height,
+                        detectedStars: null,
+                        cancellationToken: default,
+                        hintCoordinates: neighbor.Wcs!.CenterCoordinates);
+
+                    if (catRes.IsSuccess && catRes.Wcs != null)
+                    {
+                        bestCatRes = catRes;
+                        break;
+                    }
+                }
+
+                if (bestCatRes == null || !bestCatRes.IsSuccess)
+                {
+                    bestCatRes = await _plateSolver.SolveAsync(
+                        p.FilePath,
+                        p.Width,
+                        p.Height,
+                        detectedStars: null,
+                        cancellationToken: default,
+                        hintCoordinates: null);
+                }
+
+                if (bestCatRes != null && bestCatRes.IsSuccess && bestCatRes.Wcs != null)
+                {
+                    p.Wcs = bestCatRes.Wcs;
+                    p.TargetName = bestCatRes.TargetName;
+                }
+            }
+            catch { }
+        }
+
+        // Second pass: relative star-pattern registration against ALL solved neighbors for any remaining unsolved panels
+        bool progressMade = true;
+        int pass = 0;
+        while (progressMade && pass < 3)
+        {
+            progressMade = false;
+            pass++;
+            var unsolvedPanels = MosaicProject.Panels.Where(p => !p.IsSolved && !string.IsNullOrEmpty(p.FilePath)).ToList();
+            if (unsolvedPanels.Count == 0) break;
+
+            var solvedNeighbors = MosaicProject.Panels.Where(p => p.IsSolved && p.Wcs != null).ToList();
+            if (solvedNeighbors.Count == 0) break;
+
+            foreach (var p in unsolvedPanels)
+            {
+                try
+                {
+                    IReadOnlyList<AstrophotographyObject>? detectedStars = p.DetectedStars;
+                    if (detectedStars == null || detectedStars.Count < 4)
+                    {
+                        SkiaSharp.SKBitmap? bmp = (p.CachedSkiaBitmap as SkiaSharp.SKBitmap) ?? (p.CachedBitmap as SkiaSharp.SKBitmap);
+                        bool shouldDisposeBmp = false;
+                        if (bmp == null && !string.IsNullOrEmpty(p.FilePath) && File.Exists(p.FilePath))
+                        {
+                            bmp = ImagePreprocessor.LoadImage(p.FilePath);
+                            shouldDisposeBmp = true;
+                        }
+
+                        if (bmp != null)
+                        {
+                            detectedStars = PhotometricStarFinder.DetectStars(
+                                bmp,
+                                new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f));
+                            p.DetectedStars = detectedStars;
+                            if (shouldDisposeBmp)
+                            {
+                                bmp.Dispose();
+                            }
+                        }
+                    }
+
+                    if (detectedStars != null && detectedStars.Count >= 4)
+                    {
+                        MosaicStarAligner.AlignmentResult? bestAlign = null;
+                        MosaicPanel? bestNeighbor = null;
+
+                        foreach (var neighbor in solvedNeighbors)
+                        {
+                            var alignRes = MosaicStarAligner.TryAlign(p, detectedStars, neighbor, neighbor.DetectedStars);
+                            if (alignRes.IsSuccess && alignRes.SolvedWcs != null)
+                            {
+                                if (bestAlign == null ||
+                                    alignRes.MatchedStars > bestAlign.MatchedStars ||
+                                    (alignRes.MatchedStars == bestAlign.MatchedStars && alignRes.RmsResidualPixels < bestAlign.RmsResidualPixels))
+                                {
+                                    bestAlign = alignRes;
+                                    bestNeighbor = neighbor;
+                                }
+                            }
+                        }
+
+                        if (bestAlign != null && bestAlign.SolvedWcs != null && bestNeighbor != null)
+                        {
+                            p.Wcs = bestAlign.SolvedWcs;
+                            p.TargetName = $"{bestNeighbor.TargetName} ({bestAlign.MatchedStars} yıldız kenetli)";
+                            progressMade = true;
+                            solvedNeighbors.Add(p);
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        var masterWcs = MosaicProject.ComputeMasterWcs();
+        CurrentWcs = masterWcs ?? MosaicProject.Panels[0].Wcs;
+        SolvedCoordinatesText = CurrentWcs?.CenterCoordinates.ToString() ?? "-";
+        RefreshMosaicProperties();
+        await ExecuteAnalyzeAsync();
+    }
+
+    public async Task SolveAndAddMosaicBatchAsync(IEnumerable<string> filePaths)
+    {
+        int count = 0;
+        foreach (var path in filePaths)
+        {
+            if (!File.Exists(path)) continue;
+            try
+            {
+                StatusMessage = IsTurkish
+                    ? $"Mozaik paneli çözümleniyor: {Path.GetFileName(path)}..."
+                    : $"Solving mosaic panel: {Path.GetFileName(path)}...";
+
+                using var skBmp = ImagePreprocessor.LoadImage(path);
+                int w = skBmp.Width;
+                int h = skBmp.Height;
+
+                var solvedNeighbor = MosaicProject.Panels.FirstOrDefault(other => other.TargetName != null && other.Wcs != null);
+                CelestialCoordinates? hint = solvedNeighbor?.Wcs?.CenterCoordinates;
+
+                WcsMatrix? solvedWcs = null;
+                string? solvedTarget = null;
+
+                var res = await _plateSolver.SolveAsync(
+                    path,
+                    w,
+                    h,
+                    detectedStars: null,
+                    cancellationToken: default,
+                    hintCoordinates: hint);
+
+                if (!res.IsSuccess && hint != null)
+                {
+                    res = await _plateSolver.SolveAsync(
+                        path,
+                        w,
+                        h,
+                        detectedStars: null,
+                        cancellationToken: default,
+                        hintCoordinates: null);
+                }
+
+                if (res.IsSuccess && res.Wcs != null)
+                {
+                    solvedWcs = res.Wcs;
+                    solvedTarget = res.TargetName;
+                }
+
+                if (solvedWcs == null && solvedNeighbor != null)
+                {
+                    var detectedStars = PhotometricStarFinder.DetectStars(
+                        skBmp,
+                        new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f));
+
+                    if (detectedStars.Count >= 4)
+                    {
+                        var tempPanel = new MosaicPanel(Guid.NewGuid().ToString("N"), Path.GetFileNameWithoutExtension(path), w, h, null, path)
+                        {
+                            DetectedStars = detectedStars
+                        };
+                        var alignRes = MosaicStarAligner.TryAlign(tempPanel, detectedStars, solvedNeighbor, solvedNeighbor.DetectedStars);
+                        if (alignRes.IsSuccess && alignRes.SolvedWcs != null)
+                        {
+                            solvedWcs = alignRes.SolvedWcs;
+                            solvedTarget = $"{solvedNeighbor.TargetName} ({alignRes.MatchedStars} yıldız kenetli)";
+                        }
+                    }
+                }
+
+                if (solvedWcs != null)
+                {
+                    AddOrUpdateMosaicPanel(path, w, h, solvedWcs, solvedTarget);
+                    count++;
+                }
+            }
+            catch
+            {
+                // Continue
+            }
+        }
+
+        StatusMessage = IsTurkish
+            ? $"{count} yeni mozaik paneli başarıyla küreye eklendi (Toplam panel: {MosaicProject.Count})."
+            : $"{count} mosaic panels added to celestial sphere (Total panels: {MosaicProject.Count}).";
+
+        if (count > 0)
+        {
+            _ = ExecuteAnalyzeAsync();
+        }
+    }
+
+    private void ExecutePerformExport()
+    {
+        if (!HasLoadedImage && _lastDetectionResult == null) return;
+
+        IReadOnlyDictionary<string, float>? perPanelMap = null;
+        if (MosaicProject.Count > 0)
+        {
+            var dict = new Dictionary<string, float>(StringComparer.Ordinal);
+            foreach (var p in MosaicProject.Panels)
+            {
+                dict[p.Id] = p.ConfidenceThreshold;
+            }
+            perPanelMap = dict;
+        }
+
+        var filtered = _lastDetectionResult != null
+            ? (IReadOnlyList<AstrophotographyObject>)_lastDetectionResult.Filter(_confidenceThreshold, _mask, perPanelMap).FilteredObjects
+            : VisibleObjects;
+
+        string fmt = ExportFormat.ToUpperInvariant();
+        if (fmt == "CSV")
+        {
+            var sfd = new SaveFileDialog
+            {
+                Title = IsTurkish ? "CSV Kaydet" : "Save CSV",
+                Filter = "CSV (*.csv)|*.csv",
+                FileName = $"AstroDetections_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
+            };
+            if (sfd.ShowDialog() == true)
+            {
+                AstroCounter.Core.Export.ResultExporter.ExportToCsv(filtered, sfd.FileName);
+                IsExportPanelOpen = false;
+                StatusMessage = IsTurkish ? $"CSV kaydedildi: {Path.GetFileName(sfd.FileName)}" : $"CSV saved: {Path.GetFileName(sfd.FileName)}";
+            }
+            return;
+        }
+
+        if (fmt == "JSON")
+        {
+            var sfd = new SaveFileDialog
+            {
+                Title = IsTurkish ? "JSON Kaydet" : "Save JSON",
+                Filter = "JSON (*.json)|*.json",
+                FileName = $"AstroDetections_{DateTime.Now:yyyyMMdd_HHmmss}.json"
+            };
+            if (sfd.ShowDialog() == true)
+            {
+                AstroCounter.Core.Export.ResultExporter.ExportToJson(filtered, CurrentWcs, sfd.FileName);
+                IsExportPanelOpen = false;
+                StatusMessage = IsTurkish ? $"JSON kaydedildi: {Path.GetFileName(sfd.FileName)}" : $"JSON saved: {Path.GetFileName(sfd.FileName)}";
+            }
+            return;
+        }
+
+        // Image export: TIFF, PNG, JPG
+        string ext = fmt.ToLowerInvariant();
+        string prefix = IsExportPanorama360 ? "AstroPanorama360" : "AstroDetected";
+        var imgSfd = new SaveFileDialog
+        {
+            Title = IsTurkish ? $"{fmt} Olarak Kaydet" : $"Save as {fmt}",
+            Filter = $"{fmt} (*.{ext})|*.{ext}|All Files (*.*)|*.*",
+            FileName = $"{prefix}_{DateTime.Now:yyyyMMdd_HHmmss}.{ext}"
+        };
+
+        if (imgSfd.ShowDialog() == true)
+        {
+            try
+            {
+                var cfg = new AstroCounter.Core.Export.ExportConfig(
+                    Format: fmt,
+                    IncludeBoundingBoxes: ExportIncludeBoxes,
+                    IncludeLabels: ExportIncludeLabels,
+                    IncludeSphericalGrid: ExportIncludeGrid,
+                    IncludeConstellations: ExportIncludeConstellations,
+                    ScaleFactor: ExportScale,
+                    ExportProjectionMode: ExportProjectionMode);
+
+                string sourceImg = SelectedImagePath ?? MosaicProject.Panels.FirstOrDefault(p => !string.IsNullOrEmpty(p.FilePath))?.FilePath ?? string.Empty;
+                AstroCounter.Core.Export.ResultExporter.ExportAdvancedImage(
+                    sourceImg,
+                    filtered,
+                    imgSfd.FileName,
+                    cfg,
+                    CurrentWcs,
+                    _mask,
+                    MosaicProject);
+
+                IsExportPanelOpen = false;
+                StatusMessage = IsTurkish
+                    ? $"{fmt} ({(IsExportPanorama360 ? "360° Panoramik" : "2D Görsel")}) kaydedildi: {Path.GetFileName(imgSfd.FileName)}"
+                    : $"{fmt} ({(IsExportPanorama360 ? "360° Panorama" : "2D Canvas")}) saved: {Path.GetFileName(imgSfd.FileName)}";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = IsTurkish ? $"Dışa aktarma hatası: {ex.Message}" : $"Export error: {ex.Message}";
+            }
         }
     }
 
@@ -1022,6 +2940,38 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         get => _isStellariumZoomSyncEnabled;
         set => SetProperty(ref _isStellariumZoomSyncEnabled, value);
     }
+
+    public bool ShowHipparcosStars
+    {
+        get => _showHipparcosStars;
+        set => SetProperty(ref _showHipparcosStars, value);
+    }
+
+    public bool ShowConstellations
+    {
+        get => _showConstellations;
+        set => SetProperty(ref _showConstellations, value);
+    }
+
+    public bool ShowDsoMarkers
+    {
+        get => _showDsoMarkers;
+        set => SetProperty(ref _showDsoMarkers, value);
+    }
+
+    public double PhotoOpacity
+    {
+        get => _photoOpacity;
+        set
+        {
+            if (SetProperty(ref _photoOpacity, Math.Clamp(value, 0.05, 1.0)))
+            {
+                OnPropertyChanged(nameof(PhotoOpacityPercentText));
+            }
+        }
+    }
+
+    public string PhotoOpacityPercentText => $"{(int)Math.Round(_photoOpacity * 100)}%";
 
     public bool ShowSphericalGrid
     {
@@ -1182,19 +3132,22 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public WcsMatrix? CurrentWcs
     {
         get => _currentWcs;
-        private set
+        set
         {
             if (SetProperty(ref _currentWcs, value))
             {
                 OnPropertyChanged(nameof(IsWcsAvailable));
                 OnPropertyChanged(nameof(CanSyncToStellarium));
+                OnPropertyChanged(nameof(CanvasWidth));
+                OnPropertyChanged(nameof(CanvasHeight));
+                OnPropertyChanged(nameof(IsSingleImageActive));
                 RefreshAvailableTargetsInPhoto();
             }
         }
     }
 
     public bool IsWcsAvailable => CurrentWcs != null;
-    public bool CanSyncToStellarium => IsStellariumConnected && CurrentWcs != null;
+    public bool CanSyncToStellarium => IsStellariumConnected && (CurrentWcs != null || IsSphereModeActive);
 
     private void RefreshAvailableTargetsInPhoto()
     {
@@ -1203,7 +3156,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         TargetMarkerPixel = null;
         TargetMarkerLabel = null;
 
-        if (_currentWcs == null || ImageWidth <= 0 || ImageHeight <= 0)
+        int refW = (int)Math.Max(1, CanvasWidth);
+        int refH = (int)Math.Max(1, CanvasHeight);
+
+        if (_currentWcs == null || refW <= 1 || refH <= 1)
         {
             AvailableTargetsInPhoto = Array.Empty<CataloguePlateSolver.AstronomicalTarget>();
             return;
@@ -1211,8 +3167,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
         AvailableTargetsInPhoto = CataloguePlateSolver.GetTargetsInField(
             _currentWcs,
-            (int)ImageWidth,
-            (int)ImageHeight,
+            refW,
+            refH,
             IsPixelInsideValidPhotoSky);
     }
 
@@ -1227,6 +3183,41 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             CursorCelestialText = $"X: {pixelX:F0}, Y: {pixelY:F0} px";
         }
+    }
+
+    /// <summary>
+    /// Called when the user interactively drags or zooms the 3D celestial sphere.
+    /// Synchronizes Stellarium 1:1 in real time.
+    /// </summary>
+    public void OnSphereCameraMoved(double raDeg, double decDeg, double fovDeg)
+    {
+        _sphereCameraRa = raDeg;
+        _sphereCameraDec = decDeg;
+        _sphereCameraFov = fovDeg;
+
+        var coord = new CelestialCoordinates(raDeg, decDeg);
+        CursorCelestialText = $"RA: {coord.FormatRa()} | Dec: {coord.FormatDec()} (FOV: {fovDeg:F1}°)";
+
+        if (!_isStellariumConnected || !_isStellariumSyncEnabled || _isSyncingFromStellarium) return;
+
+        long now = Environment.TickCount64;
+        if (now - _lastSyncTicks < 60) return;
+        _lastSyncTicks = now;
+
+        _lastPolledStellariumCoords = coord;
+        _lastPolledStellariumFov = fovDeg;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _stellariumClient.FocusCoordinatesAsync(coord, Math.Clamp(fovDeg, 0.5, 130.0), 0.0);
+            }
+            catch
+            {
+                // Ignore transient network errors
+            }
+        });
     }
 
     public void OnViewportMoved(double centerPixelX, double centerPixelY, double visiblePixelsHeight, bool notifyStellarium = true)
@@ -1245,7 +3236,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _lastSyncTicks = now;
 
         var wcs = _currentWcs;
-        double refHeight = visiblePixelsHeight > 10 ? visiblePixelsHeight : ImageHeight;
+        double refHeight = visiblePixelsHeight > 10 ? visiblePixelsHeight : CanvasHeight;
 
         _ = Task.Run(async () =>
         {
@@ -1268,7 +3259,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public async void SetTarget(CataloguePlateSolver.AstronomicalTarget target)
     {
-        if (_currentWcs == null || ImageWidth <= 0 || ImageHeight <= 0)
+        if (_currentWcs == null || CanvasWidth <= 1 || CanvasHeight <= 1)
         {
             return;
         }
@@ -1278,7 +3269,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
-        // Highlight and jump directly to (px, py) on the photo
+        // Highlight and jump directly to (px, py) on the photo / mosaic canvas
         TargetMarkerPixel = new Point(px, py);
         TargetMarkerLabel = target.CommonName;
 
@@ -1291,12 +3282,13 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         double targetVisiblePixelsH = Math.Clamp(
             (targetFovDeg * 3600.0) / Math.Max(0.05, _currentWcs.PixelScaleArcsec),
             80.0,
-            ImageHeight);
+            CanvasHeight);
 
         _isSyncingFromStellarium = true;
         RequestCenterOnPixel?.Invoke(px, py);
         RequestSetVisiblePixelsHeight?.Invoke(targetVisiblePixelsH);
         RequestCenterOnPixel?.Invoke(px, py);
+        RequestSet3DCamera?.Invoke(target.Coordinates.RaDegrees, target.Coordinates.DecDegrees, Math.Clamp(targetFovDeg * 2.2, 8.0, 75.0));
         _isSyncingFromStellarium = false;
 
         SolvedCoordinatesText = $"{target.Coordinates.FormatRa()}  {target.Coordinates.FormatDec()}";
@@ -1361,7 +3353,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private async void StellariumPollTimer_Tick(object? sender, EventArgs e)
     {
-        if (!_isStellariumConnected || !_isStellariumSyncEnabled || _currentWcs == null) return;
+        if (!_isStellariumConnected || !_isStellariumSyncEnabled) return;
+        if (_currentWcs == null && !IsSphereModeActive) return;
         if (Environment.TickCount64 - _lastSyncTicks < 450) return;
 
         try
@@ -1372,17 +3365,20 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 ApplyStellariumSkyAngle(status.SkyRollAngleDegrees);
 
                 bool fovChanged = false;
-                if (_isStellariumZoomSyncEnabled && status.CurrentFovDegrees > 0.01 && _currentWcs.PixelScaleArcsec > 0.01)
+                if (_isStellariumZoomSyncEnabled && status.CurrentFovDegrees > 0.01)
                 {
                     double fovRelDiff = Math.Abs(status.CurrentFovDegrees - _lastPolledStellariumFov) / Math.Max(0.05, _lastPolledStellariumFov);
                     if (fovRelDiff > 0.015)
                     {
                         _lastPolledStellariumFov = status.CurrentFovDegrees;
                         fovChanged = true;
-                        double targetVisiblePixelsH = (status.CurrentFovDegrees * 3600.0) / _currentWcs.PixelScaleArcsec;
-                        _isSyncingFromStellarium = true;
-                        RequestSetVisiblePixelsHeight?.Invoke(targetVisiblePixelsH);
-                        _isSyncingFromStellarium = false;
+                        if (_currentWcs != null && _currentWcs.PixelScaleArcsec > 0.01)
+                        {
+                            double targetVisiblePixelsH = (status.CurrentFovDegrees * 3600.0) / _currentWcs.PixelScaleArcsec;
+                            _isSyncingFromStellarium = true;
+                            RequestSetVisiblePixelsHeight?.Invoke(targetVisiblePixelsH);
+                            _isSyncingFromStellarium = false;
+                        }
                     }
                 }
 
@@ -1394,15 +3390,30 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 if (dRa > moveThresholdDeg || dDec > moveThresholdDeg || fovChanged)
                 {
                     _lastPolledStellariumCoords = status.CurrentCoordinates;
-                    if (_currentWcs.EquatorialToPixel(status.CurrentCoordinates, out double px, out double py))
+                    _isSyncingFromStellarium = true;
+                    try
                     {
-                        if (px >= -ImageWidth * 0.5 && px <= ImageWidth * 1.5 &&
-                            py >= -ImageHeight * 0.5 && py <= ImageHeight * 1.5)
+                        // Always sync the 3D celestial sphere camera when Stellarium moves
+                        RequestSet3DCamera?.Invoke(
+                            status.CurrentCoordinates.RaDegrees,
+                            status.CurrentCoordinates.DecDegrees,
+                            status.CurrentFovDegrees > 0.5 ? status.CurrentFovDegrees : _sphereCameraFov);
+
+                        // Also sync the 2D canvas if WCS is available
+                        if (_currentWcs != null && _currentWcs.EquatorialToPixel(status.CurrentCoordinates, out double px, out double py))
                         {
-                            _isSyncingFromStellarium = true;
-                            RequestCenterOnPixel?.Invoke(px, py);
-                            _isSyncingFromStellarium = false;
+                            double cw = Math.Max(1.0, CanvasWidth);
+                            double ch = Math.Max(1.0, CanvasHeight);
+                            if (px >= -cw * 1.5 && px <= cw * 2.5 &&
+                                py >= -ch * 1.5 && py <= ch * 2.5)
+                            {
+                                RequestCenterOnPixel?.Invoke(px, py);
+                            }
                         }
+                    }
+                    finally
+                    {
+                        _isSyncingFromStellarium = false;
                     }
                 }
             }
@@ -1419,7 +3430,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             _stellariumPollTimer.Stop();
             IsStellariumConnected = false;
-            StellariumStatusText = IsTurkish ? "Stellarium: Bağlan" : "Stellarium: Connect";
+            StellariumStatusText = IsTurkish ? "Canlı Senk: Bağlan" : "Live Sync: Connect";
             StatusMessage = IsTurkish ? "Stellarium bağlantısı kesildi." : "Stellarium disconnected.";
             return;
         }
@@ -1453,24 +3464,24 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         if (ok)
         {
             IsStellariumConnected = true;
-            StellariumStatusText = IsTurkish ? "Stellarium Bağlı" : "Stellarium Connected";
+            StellariumStatusText = IsTurkish ? "Canlı Senk: Bağlı" : "Live Sync: Active";
             _stellariumPollTimer.Start();
 
             // Ensure windowed mode, dark sky, and paused clock via API
             await _stellariumClient.EnsureWindowedModeAsync();
 
-            if (_currentWcs != null)
+            if (_currentWcs != null || IsSphereModeActive)
             {
                 StatusMessage = IsTurkish
-                    ? "Stellarium pencereli modda bağlandı. 1:1 odaklanılıyor..."
-                    : "Connected to Stellarium in windowed mode. Synchronizing 1:1...";
+                    ? "Canlı gök senkronizasyonuna bağlandı. 1:1 odaklanılıyor..."
+                    : "Connected to live sky sync. Synchronizing 1:1...";
                 await SyncCurrentCenterToStellariumAsync();
             }
             else if (!string.IsNullOrEmpty(SelectedImagePath))
             {
                 StatusMessage = IsTurkish
-                    ? "Stellarium pencereli modda bağlandı. Görsel 1:1 eşitleniyor..."
-                    : "Connected to Stellarium in windowed mode. Solving and synchronizing image 1:1...";
+                    ? "Canlı gök senkronizasyonuna bağlandı. Görsel 1:1 eşitleniyor..."
+                    : "Connected to live sky sync. Solving and synchronizing image 1:1...";
                 await ExecutePlateSolveAsync();
             }
             else
@@ -1481,17 +3492,29 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                     ApplyStellariumSkyAngle(status.SkyRollAngleDegrees);
                 }
                 StatusMessage = IsTurkish
-                    ? "Stellarium pencereli modda başarıyla bağlandı. Çift yönlü 1:1 senkronizasyon aktif."
-                    : "Connected to Stellarium in windowed mode. Bidirectional 1:1 synchronization is active.";
+                    ? "Canlı gök senkronizasyonu aktif. Çift yönlü 1:1 eşitleme devrede."
+                    : "Live sky synchronization active. Bidirectional 1:1 synchronization enabled.";
             }
         }
         else
         {
             IsStellariumConnected = false;
-            StellariumStatusText = IsTurkish ? "Stellarium Bulunamadı" : "Stellarium Not Found";
+            StellariumStatusText = IsTurkish ? "Canlı Senk: Çevrimdışı" : "Live Sync: Offline";
             StatusMessage = IsTurkish
-                ? "Stellarium bulunamadı veya açılamadı! Lütfen Stellarium'un kurulu olduğundan ve Ayarlar > Eklentiler > Uzaktan Denetim eklentisinin açık olduğundan (Port 8090) emin olun."
-                : "Stellarium was not found or could not be started. Please ensure Stellarium is installed and the Remote Control plugin is enabled on Port 8090.";
+                ? "Harici planetaryum gök sunucusu bulunamadı veya açılamadı! Lütfen sunucu eklentisinin açık olduğundan (Port 8090) emin olun."
+                : "External celestial planetarium server was not found or could not be reached (Port 8090).";
+        }
+    }
+
+    private async Task ExecuteSmartPlateSolveAsync()
+    {
+        if (MosaicProject.Count > 1)
+        {
+            await ExecutePlateSolveAllPanelsAsync();
+        }
+        else
+        {
+            await ExecutePlateSolveAsync();
         }
     }
 
@@ -1514,7 +3537,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 SelectedImagePath,
                 (int)ImageWidth,
                 (int)ImageHeight,
-                VisibleObjects);
+                VisibleObjects.Count > 0 ? VisibleObjects : null);
 
             if (result.IsSuccess && result.Wcs != null)
             {
@@ -1525,6 +3548,33 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 DiagnosticWarningText = result.WarningMessage;
                 StellariumGuideText = result.StellariumGuide;
 
+                if (!string.IsNullOrEmpty(SelectedImagePath) && ImageBitmap != null)
+                {
+                    DetectionOverlay.CachePanelBitmap(SelectedImagePath, ImageBitmap);
+                }
+
+                if (MosaicProject.Count <= 1)
+                {
+                    AddOrUpdateMosaicPanel(
+                        SelectedImagePath,
+                        (int)Math.Round(ImageWidth),
+                        (int)Math.Round(ImageHeight),
+                        result.Wcs,
+                        result.TargetName);
+                }
+                else
+                {
+                    var existing = MosaicProject.Panels.FirstOrDefault(p =>
+                        !string.IsNullOrEmpty(p.FilePath) &&
+                        string.Equals(p.FilePath, SelectedImagePath, StringComparison.OrdinalIgnoreCase));
+                    if (existing != null)
+                    {
+                        existing.Wcs = result.Wcs;
+                        existing.TargetName = result.TargetName;
+                        RefreshMosaicProperties();
+                    }
+                }
+
                 // Immediately orient photo to North-Up (plus Stellarium sky roll if connected)
                 ApplyStellariumSkyAngle(_stellariumSkyAngle);
                 RequestCenterOnPixel?.Invoke(ImageWidth / 2.0, ImageHeight / 2.0);
@@ -1533,10 +3583,42 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 double refHeight = _lastVisiblePixelsHeight > 10 ? _lastVisiblePixelsHeight : ImageHeight;
                 double fov = Math.Clamp((refHeight * result.Wcs.PixelScaleArcsec) / 3600.0, 0.05, 130.0);
 
+                if (_lastDetectionResult != null && result.Wcs != null)
+                {
+                    var anomalyChecked = AstroCounter.Core.Astrometry.TransientAnomalyDetector.DetectAnomalies(
+                        _lastDetectionResult.AllObjects,
+                        result.Wcs,
+                        (int)ImageWidth,
+                        (int)ImageHeight);
+
+                    string? pId = MosaicProject.Panels.FirstOrDefault(p =>
+                        !string.IsNullOrEmpty(p.FilePath) &&
+                        string.Equals(p.FilePath, SelectedImagePath, StringComparison.OrdinalIgnoreCase))?.Id
+                        ?? MosaicProject.Panels.FirstOrDefault()?.Id;
+
+                    var withSky = new List<AstrophotographyObject>(anomalyChecked.Count);
+                    foreach (var o in anomalyChecked)
+                    {
+                        var sky = result.Wcs.PixelToEquatorial(o.CenterX, o.CenterY);
+                        withSky.Add(o.WithCelestialCoordinates(sky.RaDegrees, sky.DecDegrees, pId));
+                    }
+
+                    _lastDetectionResult = new DetectionResult(
+                        withSky,
+                        _lastDetectionResult.ImageWidth,
+                        _lastDetectionResult.ImageHeight,
+                        _lastDetectionResult.TileCount,
+                        _lastDetectionResult.ElapsedTime,
+                        _lastDetectionResult.ExecutionProvider,
+                        _lastDetectionResult.RecommendedConfidence);
+
+                    ApplyLiveFilter();
+                }
+
                 SolvedCoordinatesText = $"{coords.FormatRa()}  {coords.FormatDec()}";
                 TargetDetailsText = IsTurkish
-                    ? $"{result.TargetName} ({result.MatchedStarCount} yıldız eşleşti, Kadrajda {AvailableTargetsInPhoto.Count} gök cismi bulundu, FOV: {result.Wcs.FovWidthDegrees:F1}°x{result.Wcs.FovHeightDegrees:F1}°)"
-                    : $"{result.TargetName} ({result.MatchedStarCount} stars matched, {AvailableTargetsInPhoto.Count} catalog objects in frame, FOV: {result.Wcs.FovWidthDegrees:F1}°x{result.Wcs.FovHeightDegrees:F1}°)";
+                    ? $"{result.TargetName} ({result.MatchedStarCount} yıldız eşleşti, Kadrajda {AvailableTargetsInPhoto.Count} gök cismi bulundu, FOV: {result.Wcs!.FovWidthDegrees:F1}°x{result.Wcs!.FovHeightDegrees:F1}°)"
+                    : $"{result.TargetName} ({result.MatchedStarCount} stars matched, {AvailableTargetsInPhoto.Count} catalog objects in frame, FOV: {result.Wcs!.FovWidthDegrees:F1}°x{result.Wcs!.FovHeightDegrees:F1}°)";
                 
                 if (!string.IsNullOrEmpty(result.WarningMessage))
                 {
@@ -1585,29 +3667,44 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public async Task SyncCurrentCenterToStellariumAsync()
     {
-        if (!IsStellariumConnected || _currentWcs == null) return;
+        if (!IsStellariumConnected) return;
+        if (_currentWcs == null && !IsSphereModeActive) return;
         try
         {
-            RequestCenterOnPixel?.Invoke(ImageWidth / 2.0, ImageHeight / 2.0);
-            double refHeight = _lastVisiblePixelsHeight > 10 ? _lastVisiblePixelsHeight : ImageHeight;
-            double fov = Math.Clamp((refHeight * _currentWcs.PixelScaleArcsec) / 3600.0, 0.05, 130.0);
-            _lastPolledStellariumCoords = _currentWcs.CenterCoordinates;
+            CelestialCoordinates targetCoords;
+            double fov;
+
+            if (IsSphereModeActive)
+            {
+                targetCoords = _currentWcs != null ? _currentWcs.CenterCoordinates : new CelestialCoordinates(_sphereCameraRa, _sphereCameraDec);
+                fov = Math.Clamp(_sphereCameraFov, 2.0, 100.0);
+                RequestSet3DCamera?.Invoke(targetCoords.RaDegrees, targetCoords.DecDegrees, fov);
+            }
+            else
+            {
+                RequestCenterOnPixel?.Invoke(CanvasWidth / 2.0, CanvasHeight / 2.0);
+                double refHeight = _lastVisiblePixelsHeight > 10 ? _lastVisiblePixelsHeight : CanvasHeight;
+                fov = Math.Clamp((refHeight * _currentWcs!.PixelScaleArcsec) / 3600.0, 0.05, 130.0);
+                targetCoords = _currentWcs.CenterCoordinates;
+            }
+
+            _lastPolledStellariumCoords = targetCoords;
             _lastPolledStellariumFov = fov;
             _lastSyncTicks = Environment.TickCount64;
 
-            await _stellariumClient.FocusCoordinatesAsync(_currentWcs.CenterCoordinates, fov, 0.0);
+            await _stellariumClient.FocusCoordinatesAsync(targetCoords, fov, 0.0);
             var status = await _stellariumClient.GetStatusAsync();
             if (status.IsConnected)
             {
                 ApplyStellariumSkyAngle(status.SkyRollAngleDegrees);
             }
             StatusMessage = IsTurkish
-                ? $"Stellarium görsel merkezine, büyüklüğüne ({fov:F1}°) ve açısına 1:1 odaklandı."
-                : $"Stellarium synchronized 1:1 to image center, FOV ({fov:F1}°), and roll angle.";
+                ? $"Gök kubbe görsel merkezine, büyüklüğüne ({fov:F1}°) ve açısına 1:1 odaklandı."
+                : $"Celestial dome synchronized 1:1 to image center, FOV ({fov:F1}°), and roll angle.";
         }
         catch (Exception ex)
         {
-            StatusMessage = IsTurkish ? $"Stellarium eşitleme hatası: {ex.Message}" : $"Stellarium sync error: {ex.Message}";
+            StatusMessage = IsTurkish ? $"Gök kubbe eşitleme hatası: {ex.Message}" : $"Celestial sync error: {ex.Message}";
         }
     }
 
@@ -1615,6 +3712,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         _stellariumPollTimer.Stop();
         _stellariumClient.Dispose();
+        _originalSkBitmap?.Dispose();
         _engine?.Dispose();
     }
 
@@ -1633,3 +3731,6 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+
+
+
