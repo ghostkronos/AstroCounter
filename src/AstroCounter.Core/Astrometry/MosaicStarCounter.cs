@@ -127,6 +127,18 @@ public static class MosaicStarCounter
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                bool isTr = CataloguePlateSolver.UseTurkishLanguage;
+                int currentDone = Volatile.Read(ref completedCount);
+                progress?.Report(new MosaicCountingProgress(
+                    currentDone,
+                    totalPanels,
+                    Volatile.Read(ref rawDetectionsSum),
+                    Volatile.Read(ref rawDetectionsSum),
+                    isTr
+                        ? $"'{panel.Name}' tam çözünürlükte yıldız sayımı yapılıyor ({panel.Width}x{panel.Height} px)"
+                        : $"Counting stars in '{panel.Name}' at full resolution ({panel.Width}x{panel.Height} px)",
+                    Math.Max(0.05f, (float)currentDone / totalPanels * 0.80f)));
+
                 SKBitmap? bmp = null;
                 bool shouldDispose = false;
 
@@ -202,8 +214,11 @@ public static class MosaicStarCounter
 
         // Step 2: Celestial Coordinate Merging & Deduplication across overlapping panels
         // Uses high-performance spherical angular hash partitioning
+        bool tr = CataloguePlateSolver.UseTurkishLanguage;
         progress?.Report(new MosaicCountingProgress(
-            totalPanels, totalPanels, rawDetectionsSum, 0, "Gök Koordinatlarında Birleştiriliyor...", 0.90f));
+            totalPanels, totalPanels, rawDetectionsSum, 0,
+            tr ? "Gök Koordinatlarında Birleştiriliyor (Küresel Tekilleştirme)..." : "Merging in Celestial Coordinates (Spherical Deduplication)...",
+            0.90f));
 
         var projectionWcs = targetWcs ?? masterWcs;
 
@@ -217,7 +232,7 @@ public static class MosaicStarCounter
             totalPanels,
             rawDetectionsSum,
             deduplicatedStars.Count,
-            "Tamamlandı",
+            tr ? "Tamamlandı" : "Completed",
             1.0f));
 
         return new MosaicCountingResult(

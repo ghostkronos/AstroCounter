@@ -303,8 +303,8 @@ public sealed class DetectionOverlay : FrameworkElement
 
         double inv = 1.0 / Math.Max(_zoom, 0.20);
 
-        // Layer 0: Background Photo Mosaic Panels (Base Raster)
-        if (MosaicPanels != null && MosaicPanels.Count > 1)
+        // Layer 0: Background Photo Mosaic Panels (Base Raster & Selection Outline)
+        if (MosaicPanels != null && MosaicPanels.Count > 0)
         {
             DrawMosaicPanels(dc, inv, width, height);
         }
@@ -1123,7 +1123,15 @@ public sealed class DetectionOverlay : FrameworkElement
         var panels = MosaicPanels;
         var wcs = Wcs;
         if (panels == null || panels.Count == 0) return null;
-        if (panels.Count == 1) return panels[0];
+        if (panels.Count == 1)
+        {
+            var p0 = panels[0];
+            if (p0.IsVisible && canvasPt.X >= 0 && canvasPt.X <= p0.Width && canvasPt.Y >= 0 && canvasPt.Y <= p0.Height)
+            {
+                return p0;
+            }
+            return null;
+        }
 
         for (int pIndex = panels.Count - 1; pIndex >= 0; pIndex--)
         {
@@ -1226,14 +1234,12 @@ public sealed class DetectionOverlay : FrameworkElement
     /// </summary>
     public static System.Windows.Media.Imaging.BitmapSource? GetOrLoadFeatheredPanelBitmap(string? path, System.Windows.Media.Imaging.BitmapSource? fallback = null)
     {
-        string key = !string.IsNullOrEmpty(path) ? path : (fallback != null ? fallback.GetHashCode().ToString() : string.Empty);
-        if (string.IsNullOrEmpty(key)) return fallback;
+        var baseBmp = fallback ?? GetOrLoadPanelBitmap(path);
+        if (baseBmp == null) return null;
 
+        string key = !string.IsNullOrEmpty(path) ? $"{path}_{baseBmp.GetHashCode()}" : baseBmp.GetHashCode().ToString();
         if (_featheredBitmapCache.TryGetValue(key, out var cached))
             return cached;
-
-        var baseBmp = GetOrLoadPanelBitmap(path) ?? fallback;
-        if (baseBmp == null) return null;
 
         var feathered = CreateFeatheredBitmap(baseBmp, featherFraction: 0.05);
         _featheredBitmapCache[key] = feathered;
@@ -1324,38 +1330,27 @@ public sealed class DetectionOverlay : FrameworkElement
     {
         var panels = MosaicPanels;
         var wcs = Wcs;
-        if (panels == null || panels.Count <= 1) return;
+        if (panels == null || panels.Count == 0) return;
 
-        var pen = new Pen(MosaicBorderBrush, 1.8 * inv)
+        var selectedBorderPen = new Pen(MakeBrush(56, 189, 248, 250), 2.8 * inv);
+        selectedBorderPen.Freeze();
+        var unsolvedBorderPen = new Pen(MakeBrush(251, 191, 36, 200), 1.8 * inv)
         {
             DashStyle = new DashStyle(new double[] { 5, 3 }, 0)
         };
-        pen.Freeze();
+        unsolvedBorderPen.Freeze();
 
         double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
         double labelFontSize = Math.Clamp(11.0 * inv, 10.0, 24.0);
-        string? activePath = ActiveFilePath;
 
         for (int pIndex = 0; pIndex < panels.Count; pIndex++)
         {
             var p = panels[pIndex];
             if (!p.IsVisible || p.Width <= 0 || p.Height <= 0) continue;
 
-            // Check if this panel represents the active image already rendered on the canvas
-            bool isCurrentActive = false;
-            if (panels.Count <= 1)
-            {
-                if (!string.IsNullOrEmpty(activePath) && !string.IsNullOrEmpty(p.FilePath))
-                {
-                    isCurrentActive = string.Equals(System.IO.Path.GetFullPath(p.FilePath), System.IO.Path.GetFullPath(activePath), StringComparison.OrdinalIgnoreCase);
-                }
-                if (!isCurrentActive && wcs != null && p.Wcs != null)
-                {
-                    isCurrentActive = Math.Abs(p.Wcs.CenterCoordinates.RaDegrees - wcs.CenterCoordinates.RaDegrees) < 0.005 &&
-                                      Math.Abs(p.Wcs.CenterCoordinates.DecDegrees - wcs.CenterCoordinates.DecDegrees) < 0.005;
-                }
-            }
+            // Single-photo mode already renders the image via AstroImage, so only draw outline if selected
+            bool isSingleMode = panels.Count == 1;
 
             var tr = MosaicProject.GetPanelCanvasTransform(p, wcs, pIndex);
             Matrix matrix = new Matrix(tr.M11, tr.M12, tr.M21, tr.M22, tr.OffsetX, tr.OffsetY);
@@ -1366,12 +1361,13 @@ public sealed class DetectionOverlay : FrameworkElement
             var pt3 = matrix.Transform(new Point(p.Width, p.Height));
             var pt4 = matrix.Transform(new Point(0, p.Height));
 
-            // Render photo image if not the active base canvas image
-            if (!isCurrentActive)
+            // Render photo image if in multi-photo mosaic mode
+            if (!isSingleMode)
             {
+                var panelBmp = GetPanelBitmap(p);
                 var bmp = UseFeatheredBlending
-                    ? (GetOrLoadFeatheredPanelBitmap(p.FilePath, GetPanelBitmap(p)) ?? GetPanelBitmap(p))
-                    : GetPanelBitmap(p);
+                    ? (GetOrLoadFeatheredPanelBitmap(p.FilePath, panelBmp) ?? panelBmp)
+                    : panelBmp;
                 if (bmp != null)
                 {
                     dc.PushTransform(new MatrixTransform(matrix));
@@ -1382,40 +1378,40 @@ public sealed class DetectionOverlay : FrameworkElement
                 }
             }
 
-            // Draw seamless dashed boundary matching image geometry (highlighted in bright cyan if selected)
-            bool isSelectedPanel = p.IsSelected || (!string.IsNullOrEmpty(activePath) && !string.IsNullOrEmpty(p.FilePath) &&
-                string.Equals(p.FilePath, activePath, StringComparison.OrdinalIgnoreCase));
-            Pen panelPen = pen;
-            if (isSelectedPanel)
+            // Only draw outline border when the photo is explicitly selected (or unsolved warning in mosaic)
+            bool isSelectedPanel = p.IsSelected;
+            if (isSelectedPanel || (!isSingleMode && !p.IsSolved))
             {
-                panelPen = new Pen(MakeBrush(56, 189, 248, 250), 2.8 * inv);
-                panelPen.Freeze();
+                Pen panelPen = isSelectedPanel ? selectedBorderPen : unsolvedBorderPen;
+                var streamGeom = new StreamGeometry();
+                using (var ctx = streamGeom.Open())
+                {
+                    ctx.BeginFigure(pt1, isFilled: false, isClosed: true);
+                    ctx.LineTo(pt2, isStroked: true, isSmoothJoin: false);
+                    ctx.LineTo(pt3, isStroked: true, isSmoothJoin: false);
+                    ctx.LineTo(pt4, isStroked: true, isSmoothJoin: false);
+                }
+                streamGeom.Freeze();
+                dc.DrawGeometry(null, panelPen, streamGeom);
             }
 
-            var streamGeom = new StreamGeometry();
-            using (var ctx = streamGeom.Open())
+            // Show badge when selected or when unsolved in multi-panel mode
+            if (isSelectedPanel || (!isSingleMode && !p.IsSolved))
             {
-                ctx.BeginFigure(pt1, isFilled: false, isClosed: true);
-                ctx.LineTo(pt2, isStroked: true, isSmoothJoin: false);
-                ctx.LineTo(pt3, isStroked: true, isSmoothJoin: false);
-                ctx.LineTo(pt4, isStroked: true, isSmoothJoin: false);
+                bool trLang = CataloguePlateSolver.UseTurkishLanguage;
+                string badge = p.IsSolved
+                    ? $"🎯 [{p.Name}] ({p.Width}x{p.Height})"
+                    : (trLang
+                        ? $"⚠️ [{p.Name}] Hizalanamadı — Katalog/Yıldız Eşleşmesi Yok"
+                        : $"⚠️ [{p.Name}] Unsolved — No Catalog/Star Match");
+                var badgeBrush = p.IsSolved ? MakeBrush(56, 189, 248, 255) : MakeBrush(251, 191, 36, 255);
+                var ft = new FormattedText(badge, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                    typeface, labelFontSize, badgeBrush, dpi);
+
+                var bgRect = new Rect(pt1.X + (4.0 * inv), pt1.Y + (4.0 * inv), ft.Width + (8.0 * inv), ft.Height + (4.0 * inv));
+                dc.DrawRoundedRectangle(LabelBackground, null, bgRect, 3.0 * inv, 3.0 * inv);
+                dc.DrawText(ft, new Point(pt1.X + (8.0 * inv), pt1.Y + (6.0 * inv)));
             }
-            streamGeom.Freeze();
-            dc.DrawGeometry(null, panelPen, streamGeom);
-
-            bool trLang = CataloguePlateSolver.UseTurkishLanguage;
-            string badge = p.IsSolved
-                ? $"[{p.Name}] ({p.Width}x{p.Height})"
-                : (trLang
-                    ? $"⚠️ [{p.Name}] Hizalanamadı — Katalog/Yıldız Eşleşmesi Yok"
-                    : $"⚠️ [{p.Name}] Unsolved — No Catalog/Star Match");
-            var badgeBrush = p.IsSolved ? (isSelectedPanel ? MakeBrush(56, 189, 248, 255) : MosaicTextBrush) : MakeBrush(251, 191, 36, 255);
-            var ft = new FormattedText(badge, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
-                typeface, labelFontSize, badgeBrush, dpi);
-
-            var bgRect = new Rect(pt1.X + (4.0 * inv), pt1.Y + (4.0 * inv), ft.Width + (8.0 * inv), ft.Height + (4.0 * inv));
-            dc.DrawRoundedRectangle(LabelBackground, null, bgRect, 3.0 * inv, 3.0 * inv);
-            dc.DrawText(ft, new Point(pt1.X + (8.0 * inv), pt1.Y + (6.0 * inv)));
         }
     }
 

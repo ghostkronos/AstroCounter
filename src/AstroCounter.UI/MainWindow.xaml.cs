@@ -15,6 +15,7 @@ public partial class MainWindow : Window
 {
     private const double MinZoom = 0.02;
     private const double MaxZoom = 16.0;
+    private const double InfiniteCanvasMargin = 25000.0;
 
     private Point _lastDragPoint;
     private bool _isPanning;
@@ -62,7 +63,18 @@ public partial class MainWindow : Window
         }
 
         SphereControl.CameraMoved += (ra, dec, fov) => Vm?.OnSphereCameraMoved(ra, dec, fov);
-        SphereControl.PanelDoubleClicked += panel => Vm?.SelectAndHighlightPanel(panel, openDrawer: true);
+        SphereControl.PanelDoubleClicked += panel =>
+        {
+            if (panel != null)
+            {
+                bool multi = (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0;
+                Vm?.SelectAndHighlightPanel(panel, openDrawer: true, toggleMultiSelect: multi);
+            }
+            else
+            {
+                Vm?.ClearPanelSelection();
+            }
+        };
 
         ApplyToolCursor();
     }
@@ -151,14 +163,14 @@ public partial class MainWindow : Window
         {
             case nameof(MainViewModel.ImageBitmap):
                 CancelDrawing();
-                if (Vm != null && Vm.ImageBitmap != null)
+                if (Vm != null && (Vm.ImageBitmap != null || Vm.MosaicProject.Count > 0))
                 {
-                    ImageSurface.Margin = new Thickness(0);
-                    _lastCenterPixel = new Point(Vm.ImageWidth / 2.0, Vm.ImageHeight / 2.0);
+                    CanvasContainer.Margin = new Thickness(InfiniteCanvasMargin);
+                    _lastCenterPixel = new Point(Vm.CanvasWidth / 2.0, Vm.CanvasHeight / 2.0);
                 }
                 else
                 {
-                    ImageSurface.Margin = new Thickness(0);
+                    CanvasContainer.Margin = new Thickness(0);
                 }
                 // Wait for layout so the viewport size is known, then fit the new image to the window.
                 Dispatcher.BeginInvoke(new Action(FitToView), DispatcherPriority.Loaded);
@@ -187,6 +199,12 @@ public partial class MainWindow : Window
             case nameof(MainViewModel.CanvasWidth):
             case nameof(MainViewModel.CanvasHeight):
             case nameof(MainViewModel.MosaicPanels):
+                if (Vm != null)
+                {
+                    CanvasContainer.Margin = (Vm.ImageBitmap != null || Vm.MosaicProject.Count > 0)
+                        ? new Thickness(InfiniteCanvasMargin)
+                        : new Thickness(0);
+                }
                 if (Vm != null && Vm.Is2DViewActive)
                 {
                     Dispatcher.BeginInvoke(new Action(() =>
@@ -284,8 +302,8 @@ public partial class MainWindow : Window
         {
             Point viewCenter = new(viewW / 2.0, viewH / 2.0);
             Point centerInImage = ViewerScrollViewer.TranslatePoint(viewCenter, Overlay);
-            double centerPxX = Math.Clamp(centerInImage.X, -maxW * 0.5, maxW * 1.5);
-            double centerPxY = Math.Clamp(centerInImage.Y, -maxH * 0.5, maxH * 1.5);
+            double centerPxX = centerInImage.X;
+            double centerPxY = centerInImage.Y;
             _lastCenterPixel = new Point(centerPxX, centerPxY);
 
             double visibleW = viewW / z;
@@ -375,17 +393,22 @@ public partial class MainWindow : Window
 
         bool overImage = Overlay.IsMouseOver;
 
-        // Double-click in Pan mode selects and highlights the photo in the Photos drawer
-        if (e.ChangedButton == MouseButton.Left && e.ClickCount == 2 && vm.Tool == ScanTool.Pan && overImage)
+        // Double-click in Pan mode selects/toggles photo in the Photos drawer, or clears selection when double-clicking empty space
+        if (e.ChangedButton == MouseButton.Left && e.ClickCount == 2 && vm.Tool == ScanTool.Pan)
         {
             Point canvasPt = e.GetPosition(Overlay);
             var hitPanel = Overlay.HitTestPanelAtCanvasPoint(canvasPt);
             if (hitPanel != null)
             {
-                vm.SelectAndHighlightPanel(hitPanel, openDrawer: true);
-                e.Handled = true;
-                return;
+                bool multi = (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0;
+                vm.SelectAndHighlightPanel(hitPanel, openDrawer: true, toggleMultiSelect: multi);
             }
+            else
+            {
+                vm.ClearPanelSelection();
+            }
+            e.Handled = true;
+            return;
         }
 
         bool leftPan = e.ChangedButton == MouseButton.Left &&
@@ -566,6 +589,12 @@ public partial class MainWindow : Window
     {
         if (e.Key == Key.Escape)
         {
+            if (Vm != null && Vm.IsHelpPanelOpen)
+            {
+                Vm.IsHelpPanelOpen = false;
+                e.Handled = true;
+                return;
+            }
             if (Vm != null && Vm.IsExportPanelOpen)
             {
                 Vm.IsExportPanelOpen = false;
@@ -574,6 +603,14 @@ public partial class MainWindow : Window
             }
             CancelDrawing();
             e.Handled = true;
+        }
+        else if (e.Key == Key.F1)
+        {
+            if (Vm != null)
+            {
+                Vm.IsHelpPanelOpen = !Vm.IsHelpPanelOpen;
+                e.Handled = true;
+            }
         }
         else if (e.Key == Key.Enter && _polygonPoints.Count >= 3)
         {

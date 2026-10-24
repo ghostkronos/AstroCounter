@@ -66,6 +66,67 @@ public class AstrometryTests
     }
 
     [Fact]
+    public void WcsMatrix_WithPixelShift_AccuratelyShiftsPredictedPixels()
+    {
+        var center = new CelestialCoordinates(10.6847, 41.2687);
+        int width = 3000;
+        int height = 2000;
+        double pixelScale = 1.5;
+
+        var wcs = new WcsMatrix(center, width / 2.0, height / 2.0, pixelScale, 25.0, width, height);
+
+        var testCoord = new CelestialCoordinates(10.80, 41.40);
+        wcs.EquatorialToPixel(testCoord, out double origPx, out double origPy);
+
+        double shiftX = 18.5;
+        double shiftY = -12.3;
+
+        var shiftedWcs = wcs.WithPixelShift(shiftX, shiftY);
+        shiftedWcs.EquatorialToPixel(testCoord, out double newPx, out double newPy);
+
+        Assert.Equal(origPx + shiftX, newPx, precision: 1);
+        Assert.Equal(origPy + shiftY, newPy, precision: 1);
+    }
+
+    [Fact]
+    public void WcsMatrix_WithRadialDistortion_RoundTripMatchesAccurately()
+    {
+        var center = new CelestialCoordinates(10.6847, 41.2687);
+        int width = 4000;
+        int height = 3000;
+        double pixelScale = 2.0;
+
+        // Realistic lens distortion (barrel k1=-0.06, k2=+0.01)
+        var wcs = new WcsMatrix(
+            centerCoordinates: center,
+            referencePixelX: width / 2.0,
+            referencePixelY: height / 2.0,
+            pixelScaleArcsec: pixelScale,
+            rotationDegrees: 25.0,
+            imageWidth: width,
+            imageHeight: height,
+            radialDistortionK1: -0.06,
+            radialDistortionK2: 0.01);
+
+        (double x, double y)[] testPixels =
+        {
+            (width / 2.0, height / 2.0),
+            (1000.0, 1200.0),
+            (200.0, 300.0),
+            (3800.0, 2700.0)
+        };
+
+        foreach (var (px, py) in testPixels)
+        {
+            var coord = wcs.PixelToEquatorial(px, py);
+            bool projected = wcs.EquatorialToPixel(coord, out double backX, out double backY);
+            Assert.True(projected);
+            Assert.Equal(px, backX, precision: 1);
+            Assert.Equal(py, backY, precision: 1);
+        }
+    }
+
+    [Fact]
     public async Task CataloguePlateSolver_SolvesAndromedaImageSuccessfully()
     {
         var solver = new CataloguePlateSolver();
@@ -409,5 +470,76 @@ public class AstrometryTests
         Assert.InRange(res.Wcs.RotationDegrees, 310.0, 325.0);
         Assert.InRange(res.Wcs.FovWidthDegrees, 6.0, 7.5);
         Assert.True(res.MatchedStarCount >= 8);
+    }
+
+    [Fact]
+    public async Task CataloguePlateSolver_StrictTokenMatching_RejectsRandomSubstrings()
+    {
+        var solver = new CataloguePlateSolver();
+
+        // 1. Random filenames with substrings like "de", "av", "ring", "star", "black" MUST NOT match
+        string[] randomNames =
+        [
+            "travel_vacation.jpg",    // contains "av" -> was falsely matching M106
+            "spring_sky.png",         // contains "ring" -> was falsely matching M57
+            "deneme_calismasi.fits",  // contains "de" -> was falsely matching M43
+            "model_01_raw.jpg",       // contains "de" -> was falsely matching M43
+            "black_screen_test.png",  // contains "black" -> was falsely matching M64
+            "starry_night.tif",       // contains "star" -> was falsely matching IC348
+            "unrelated_photo_1.jpg",
+            "tile_unknown_2.png"
+        ];
+
+        foreach (var name in randomNames)
+        {
+            var res = await solver.SolveAsync(name, 1920, 1080);
+            Assert.False(res.IsSuccess, $"Filename '{name}' should not falsely match any astronomical catalog target!");
+        }
+
+        // 2. Legitimate tokens MUST match their intended targets accurately
+        var m42Res = await solver.SolveAsync("m42_tile_01.jpg", 1920, 1080);
+        Assert.True(m42Res.IsSuccess);
+        Assert.Contains("M42", m42Res.TargetName);
+
+        var orionRes = await solver.SolveAsync("orion_widefield.png", 1920, 1080);
+        Assert.True(orionRes.IsSuccess);
+        Assert.Contains("Orion", orionRes.TargetName);
+
+        var m31Res = await solver.SolveAsync("andromeda_galaxy_m31.tif", 1920, 1080);
+        Assert.True(m31Res.IsSuccess);
+        Assert.Contains("M31", m31Res.TargetName);
+
+        var ic434Res = await solver.SolveAsync("ic434_horsehead.jpg", 1920, 1080);
+        Assert.True(ic434Res.IsSuccess);
+        Assert.Contains("Horsehead", ic434Res.TargetName);
+    }
+
+    [Fact]
+    public void Mosaic_ComputeBounds_PrioritizesSolvedPanelsOverDefaultFallback()
+    {
+        var project = new MosaicProject();
+
+        // Panel 1: Solved M42 panel at RA ~83.82, Dec ~-5.39
+        var m42Wcs = new WcsMatrix(new CelestialCoordinates(83.82, -5.39), 500, 500, 2.0, 0.0, 1000, 1000);
+        var p1 = new MosaicPanel("p1", "M42 Tile 1", 1000, 1000, m42Wcs, "p1.png") { TargetName = "M42" };
+        project.AddPanel(p1);
+
+        // Panel 2: Unsolved fallback panel at default (180.0, 30.0) with null TargetName
+        var fallbackWcs = new WcsMatrix(new CelestialCoordinates(180.0, 30.0), 500, 500, 2.5, 0.0, 1000, 1000);
+        var p2 = new MosaicPanel("p2", "Tile 2", 1000, 1000, fallbackWcs, "p2.png") { TargetName = null };
+        project.AddPanel(p2);
+
+        // ComputeBounds must prioritize the solved M42 panel and NOT stretch 100 degrees across the sky to (180, 30)
+        var bounds = project.ComputeBounds();
+        Assert.NotNull(bounds);
+        Assert.InRange(bounds!.Center.RaDegrees, 80.0, 88.0);
+        Assert.InRange(bounds.Center.DecDegrees, -8.0, -2.0);
+        Assert.True(bounds.AngularWidthDegrees < 10.0, $"Bounds angular width should be tightly scoped to M42 (<10°), but was {bounds.AngularWidthDegrees}°");
+
+        // Master WCS should be centered around M42
+        var masterWcs = project.ComputeMasterWcs();
+        Assert.NotNull(masterWcs);
+        Assert.InRange(masterWcs!.CenterCoordinates.RaDegrees, 80.0, 88.0);
+        Assert.InRange(masterWcs.CenterCoordinates.DecDegrees, -8.0, -2.0);
     }
 }

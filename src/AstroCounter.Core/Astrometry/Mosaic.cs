@@ -240,7 +240,7 @@ public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
     public bool IsSolved => Wcs != null && (TargetName != null || Math.Abs(Wcs.CenterCoordinates.RaDegrees - 180.0) > 1e-3 || Math.Abs(Wcs.CenterCoordinates.DecDegrees - 30.0) > 1e-3);
     public string StatusText => IsSolved
         ? (TargetName != null ? $"✅ {TargetName}" : (CataloguePlateSolver.UseTurkishLanguage ? "✅ Çözümlendi" : "✅ Solved"))
-        : (CataloguePlateSolver.UseTurkishLanguage ? "⚠️ Hizalanamadı / Hizalanıyor" : "⚠️ Unsolved / Hizalanıyor");
+        : (CataloguePlateSolver.UseTurkishLanguage ? "⚠️ Hizalanamadı / Hizalanıyor" : "⚠️ Unsolved / Aligning");
     public string CenterCoordinatesText => Wcs != null ? $"{Wcs.CenterCoordinates.FormatRa()}  {Wcs.CenterCoordinates.FormatDec()}" : "-";
     public string ResolutionText => $"{Width} × {Height} px";
     public string L_OpacityLabel => CataloguePlateSolver.UseTurkishLanguage ? "Opaklık:" : "Opacity:";

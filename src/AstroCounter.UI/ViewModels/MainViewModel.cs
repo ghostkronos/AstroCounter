@@ -67,6 +67,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _isLightPanelOpen = false;
     private bool _isMosaicDrawerOpen = false;
     private bool _isExportPanelOpen = false;
+    private bool _isHelpPanelOpen = false;
     private string _exportFormat = "PNG";
     private string _exportProjectionMode = "Canvas2D";
     private bool _exportIncludeBoxes = true;
@@ -123,9 +124,44 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string L_RecalculateAuto => IsTurkish ? "⚡ Otomatik Eşiği Yeniden Kilitle" : "⚡ Recalculate Auto";
     public string L_QuickPresets => IsTurkish ? "HIZLI ÖN AYARLAR:" : "QUICK PRESETS:";
     public string L_PerPhotoConfidenceHeader => IsTurkish ? "FOTOĞRAF BAZLI GÜVEN EŞİĞİ:" : "PER-PHOTO CONFIDENCE THRESHOLD:";
-    public string L_ActivePhotoLabel => IsTurkish ? "Seçili Fotoğraf:" : "Selected Photo:";
-    public string L_DragReorderHint => IsTurkish ? "💡 Katman sırasını değiştirmek için kartları sürükleyip bırakın" : "💡 Drag and drop cards to reorder layers";
+    public string L_ActivePhotoLabel => IsTurkish ? "Hedef Fotoğraflar:" : "Target Photos:";
+    public string L_DragReorderHint => IsTurkish ? "💡 Katman sırasını değiştirmek için sürükleyin · Çoklu seçim için kartlara tıklayın" : "💡 Drag cards to reorder layers · Click cards to multi-select";
     public string L_AnomaliesBadgeLabel => IsTurkish ? "Anomali:" : "Anomalies:";
+    public string L_SelectAllPhotosButton => IsTurkish ? "☑ Tümü" : "☑ All";
+    public string L_ClearSelectionButton => IsTurkish ? "☐ Seçimi Sıfırla" : "☐ Clear Selection";
+    public string L_AiModelBadge => IsTurkish ? "🧠 Yapay Zekâ Modeli: YOLO11n ONNX" : "🧠 AI Model: YOLO11n ONNX";
+    public string L_AiModelBadgeToolTip => IsTurkish
+        ? "SDSS DR16 derin uzay gözlem verileriyle eğitilmiş YOLO11n ONNX modeli (DirectML GPU hızlandırmalı)"
+        : "YOLO11n ONNX neural network trained on SDSS DR16 astronomical survey cutouts (DirectML GPU accelerated)";
+
+    // Help Panel Localized Strings
+    public string L_HelpButton => IsTurkish ? "❓ Yardım" : "❓ Help";
+    public string L_HelpToolTip => IsTurkish ? "Kullanım kılavuzu, kontroller ve kısayollar panelini açar (F1)" : "Opens interactive user guide, controls, and shortcuts panel (F1)";
+    public string L_HelpPanelTitle => IsTurkish ? "Kullanım Kılavuzu & Yardım Merkezi" : "User Guide & Help Center";
+    public string L_HelpSec1Title => IsTurkish ? "🖱️ 1. 2D & 3D Gezinme ve Sınırsız Kaydırma" : "🖱️ 1. 2D & 3D Navigation & Infinite Panning";
+    public string L_HelpSec1Body => IsTurkish
+        ? "• 2D Görünüm: Sol tık veya orta tekerleğe basılı tutarak sınırsız gökyüzü kanvasında istediğiniz yöne kaydırın. Fare tekerleği ile yakınlaştırın.\n• 3D Gök Kubbe: Sol tık + sürükleyerek 360° planetaryum kubbesinde dolaşın, tekerlek ile görüş açısını (FOV) değiştirin."
+        : "• 2D View: Left-drag or middle-drag to pan infinitely across the sky canvas in any direction. Use mouse wheel to zoom.\n• 3D Celestial Dome: Left-drag to look around the 360° planetarium dome; scroll wheel to adjust Field of View (FOV).";
+    public string L_HelpSec2Title => IsTurkish ? "🎯 2. Çoklu Fotoğraf Seçimi & Katman Yönetimi" : "🎯 2. Multi-Photo Selection & Layer Management";
+    public string L_HelpSec2Body => IsTurkish
+        ? "• Çift Tıklama: 2D veya 3D ekranda bir fotoğrafa çift tıklayarak seçin (Ctrl veya Shift ile tıklayarak birden çok fotoğrafı aynı anda seçebilirsiniz).\n• Seçimi Sıfırlama: Boşluğa çift tıkladığınızda tüm seçimler ve kenar çizgileri kaldırılır. Hiçbir fotoğraf seçili değilken kenar çizgisi gösterilmez.\n• Katman Sıralama: 'Fotoğraflar' çekmecesinde kartları sürükleyip bırakarak (Drag & Drop) üst/alt katman sırasını değiştirin."
+        : "• Double-Click: Double-click any photo in 2D or 3D to select it (hold Ctrl/Shift or click cards in the Photos panel to select multiple photos at once).\n• Clear Selection: Double-click empty space to clear all selections and outlines. Unselected photos have no outline border.\n• Layer Reordering: Drag and drop photo cards inside the 'Photos' drawer to change layer order.";
+    public string L_HelpSec3Title => IsTurkish ? "☀️ 3. Işık Ayarları & Fotoğraf Bazlı Güven Eşiği" : "☀️ 3. Display Light & Per-Photo Confidence";
+    public string L_HelpSec3Body => IsTurkish
+        ? "• Işık Ayarları (☀️): Parlaklık, Pozlama (Gama), Kontrast ve Otomatik MTF Dengeleme ayarları, o anda seçili olan tüm fotoğraflara (seçim yoksa tüm fotoğraflara) hem 2D hem 3D ekranda anında uygulanır.\n• Otomatik Güven (⚡): Her fotoğrafın sıkıştırma formatına (Kayıplı JPEG vs Kayıpsız TIFF/FITS) göre arka planda ideal eşik hesaplanır; isterseniz fotoğraf başına ayrı ayrı değiştirebilirsiniz."
+        : "• Display & Light (☀️): Brightness, Exposure (Gamma), Contrast, and Auto MTF Balance apply simultaneously in real time to all currently selected photos (or all photos if none selected) in both 2D and 3D.\n• Auto Confidence (⚡): Computes a format-aware noise threshold in the background per photo (stricter on lossy JPEG, sensitive on lossless TIFF/FITS) with individual per-photo sliders.";
+    public string L_HelpSec4Title => IsTurkish ? "🔬 4. Motorlar: Hibrit Füzyon, Fotometri & DirectML (YOLO)" : "🔬 4. Engines: Hybrid Fusion, Photometry & DirectML (YOLO)";
+    public string L_HelpSec4Body => IsTurkish
+        ? "• Hibrit Füzyon: DAOStarFinder PSF/SNR fotometrisi ile DirectML hızlandırmalı YOLO11n yapay zekâ modelini birleştirir.\n• Tarama Alanı (ROI): Dikdörtgen veya Çokgen araçlarıyla sadece belirli bölgeleri tarayabilir veya hariç tutabilirsiniz."
+        : "• Hybrid Fusion: Combines DAOStarFinder PSF/SNR photometry with DirectML-accelerated YOLO11n deep learning.\n• Scan Area (ROI): Use Rectangle or Polygon tools to include or exclude custom regions.";
+    public string L_HelpSec5Title => IsTurkish ? "🔭 5. Astrometri, Stellarium & 360° Panoramik Çıktı" : "🔭 5. Astrometry, Stellarium & 360° Panoramic Export";
+    public string L_HelpSec5Body => IsTurkish
+        ? "• Yıldızlardan Eşle: 117.955 Hipparcos ve yoğun Gaia/Tycho kataloğu ile kör üçgen eşleme ve ikili mozaik yıldız kenetleme yapar.\n• Stellarium 1:1: Hem 2D hem 3D kubbe ekranında çift yönlü canlı senkronizasyon sağlar.\n• Dışa Aktar (🚀): 2D Mozaik Kanvası veya 360°×180° Panoramik (Equirectangular) gök haritası olarak PNG, kayıpsız TIFF, JPG, CSV ve JSON çıktısı alır."
+        : "• Plate Solving: Blind triangle matching against 117,955 Hipparcos + dense Gaia/Tycho catalogs and pairwise star alignment.\n• Stellarium 1:1: Real-time bidirectional sync in both 2D and 3D views.\n• Export (🚀): Export as 2D Mosaic Canvas or 360°×180° Equirectangular Panorama in PNG, lossless TIFF, JPG, CSV, and JSON.";
+    public string L_HelpSec6Title => IsTurkish ? "⌨️ 6. Klavye Kısayolları" : "⌨️ 6. Keyboard Shortcuts";
+    public string L_HelpSec6Body => IsTurkish
+        ? "• Ctrl + O : Görsel Seç   |   Ctrl + E : Gelişmiş Dışa Aktar\n• F1 : Yardım Ekranı   |   F11 : Tam Ekran   |   Esc : Çizimi / Paneli Kapat"
+        : "• Ctrl + O : Select Image   |   Ctrl + E : Advanced Export\n• F1 : Help Panel   |   F11 : Fullscreen   |   Esc : Cancel Drawing / Close Panel";
 
     public string L_AutoConfidenceToolTip => IsTurkish
         ? "Görselin fiziksel gürültü tabanı (knee-point) ve yapay zekâ analizine göre dinamik güven eşiğini kilitler"
@@ -201,7 +237,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string L_EngineGroup => IsTurkish ? "MOTOR" : "ENGINE";
     public string L_HybridFusion => IsTurkish ? "🔬 Hibrit Füzyon" : "🔬 Hybrid Fusion";
     public string L_Photometry => IsTurkish ? "Fotometri" : "Photometry";
-    public string L_Yolo => "YOLO";
+    public string L_Yolo => "DirectML";
     public string L_SelectModel => IsTurkish ? "Model Seç..." : "Select Model...";
     public string L_LightPanelButton => IsTurkish ? "Işık Ayarları" : "Display & Light";
     public string L_LightPanelTitle => IsTurkish ? "Görüntü ve Işık Ayarları" : "Image & Light Settings";
@@ -450,6 +486,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         CloseLightPanelCommand = new RelayCommand(() => IsLightPanelOpen = false);
         ResetDisplayAdjustmentsCommand = new RelayCommand(ResetDisplayAdjustments);
         AutoBalanceNowCommand = new RelayCommand(AutoBalanceNow);
+        ToggleHelpPanelCommand = new RelayCommand(() => IsHelpPanelOpen = !IsHelpPanelOpen);
+        CloseHelpPanelCommand = new RelayCommand(() => IsHelpPanelOpen = false);
+        SelectAllPanelsCommand = new RelayCommand(SelectAllPanels, () => MosaicProject.Count > 0);
+        ClearPanelSelectionCommand = new RelayCommand(ClearPanelSelection, () => MosaicProject.Panels.Any(p => p.IsSelected));
     }
 
     private void ExecuteToggleLanguage()
@@ -722,9 +762,30 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public string ActivePanelDisplayName => _selectedMosaicPanel != null
-        ? $"{_selectedMosaicPanel.Name} ({_selectedMosaicPanel.FormatBadgeText})"
-        : (!string.IsNullOrEmpty(ImageFileName) ? ImageFileName : (IsTurkish ? "Fotoğraf Seçilmedi" : "No Photo Selected"));
+    public string ActivePanelDisplayName
+    {
+        get
+        {
+            var selected = MosaicProject.Panels.Where(p => p.IsSelected).ToList();
+            if (selected.Count > 1)
+            {
+                return IsTurkish ? $"{selected.Count} Fotoğraf Seçili" : $"{selected.Count} Photos Selected";
+            }
+            if (selected.Count == 1)
+            {
+                return $"{selected[0].Name} ({selected[0].FormatBadgeText})";
+            }
+            if (MosaicProject.Count > 0)
+            {
+                return IsTurkish
+                    ? $"Tüm Fotoğraflar ({MosaicProject.Count})"
+                    : $"All Photos ({MosaicProject.Count})";
+            }
+            return !string.IsNullOrEmpty(ImageFileName)
+                ? ImageFileName
+                : (IsTurkish ? "Fotoğraf Seçilmedi" : "No Photo Selected");
+        }
+    }
 
     public float ConfidenceThreshold
     {
@@ -1262,6 +1323,17 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         set { if (value) ExportProjectionMode = "Panorama360"; }
     }
 
+    public bool IsHelpPanelOpen
+    {
+        get => _isHelpPanelOpen;
+        set => SetProperty(ref _isHelpPanelOpen, value);
+    }
+
+    public ICommand ToggleHelpPanelCommand { get; }
+    public ICommand CloseHelpPanelCommand { get; }
+    public ICommand SelectAllPanelsCommand { get; }
+    public ICommand ClearPanelSelectionCommand { get; }
+
     public ICommand ToggleExportPanelCommand { get; }
     public ICommand CloseExportPanelCommand { get; }
     public ICommand PerformExportCommand { get; }
@@ -1457,18 +1529,62 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    public void SelectAndHighlightPanel(MosaicPanel? panel, bool openDrawer = false)
+    public void ClearPanelSelection()
     {
-        if (panel == null) return;
         foreach (var p in MosaicProject.Panels)
         {
-            p.IsSelected = ReferenceEquals(p, panel);
+            p.IsSelected = false;
         }
-        SelectedMosaicPanel = panel;
+        SelectedMosaicPanel = null;
+        OnPropertyChanged(nameof(ActivePanelDisplayName));
+        OnPropertyChanged(nameof(MosaicPanels));
+        CommandManager.InvalidateRequerySuggested();
+        RequestInvalidateOverlay?.Invoke();
+        StatusMessage = IsTurkish ? "Fotoğraf seçimi sıfırlandı." : "Photo selection cleared.";
+    }
 
+    public void SelectAllPanels()
+    {
+        foreach (var p in MosaicProject.Panels)
+        {
+            p.IsSelected = true;
+        }
+        SelectedMosaicPanel = MosaicProject.Panels.FirstOrDefault();
+        OnPropertyChanged(nameof(ActivePanelDisplayName));
+        OnPropertyChanged(nameof(MosaicPanels));
+        CommandManager.InvalidateRequerySuggested();
+        RequestInvalidateOverlay?.Invoke();
+        StatusMessage = IsTurkish
+            ? $"Tüm fotoğraflar seçildi ({MosaicProject.Count} fotoğraf)."
+            : $"Selected all photos ({MosaicProject.Count} photos).";
+    }
+
+    public void SelectAndHighlightPanel(MosaicPanel? panel, bool openDrawer = false, bool toggleMultiSelect = false)
+    {
+        if (panel == null)
+        {
+            ClearPanelSelection();
+            return;
+        }
+
+        if (toggleMultiSelect)
+        {
+            panel.IsSelected = !panel.IsSelected;
+            SelectedMosaicPanel = panel.IsSelected ? panel : MosaicProject.Panels.FirstOrDefault(p => p.IsSelected);
+        }
+        else
+        {
+            foreach (var p in MosaicProject.Panels)
+            {
+                p.IsSelected = ReferenceEquals(p, panel);
+            }
+            SelectedMosaicPanel = panel;
+        }
+
+        var syncPanel = SelectedMosaicPanel ?? panel;
         _suppressConfidenceSync = true;
-        _confidenceThreshold = panel.ConfidenceThreshold;
-        _isAutoConfidenceEnabled = panel.IsAutoConfidenceEnabled;
+        _confidenceThreshold = syncPanel.ConfidenceThreshold;
+        _isAutoConfidenceEnabled = syncPanel.IsAutoConfidenceEnabled;
         OnPropertyChanged(nameof(ConfidenceThreshold));
         OnPropertyChanged(nameof(IsAutoConfidenceEnabled));
         OnPropertyChanged(nameof(ConfidencePercentText));
@@ -1478,10 +1594,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _suppressConfidenceSync = false;
 
         _suppressDisplaySync = true;
-        _displayBrightness = panel.Brightness;
-        _displayExposure = panel.Exposure;
-        _displayContrast = panel.Contrast;
-        _isAutoBrightnessEnabled = panel.IsAutoBrightnessEnabled;
+        _displayBrightness = syncPanel.Brightness;
+        _displayExposure = syncPanel.Exposure;
+        _displayContrast = syncPanel.Contrast;
+        _isAutoBrightnessEnabled = syncPanel.IsAutoBrightnessEnabled;
         OnPropertyChanged(nameof(DisplayBrightness));
         OnPropertyChanged(nameof(DisplayExposure));
         OnPropertyChanged(nameof(DisplayContrast));
@@ -1491,24 +1607,32 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(IsAutoBrightnessEnabled));
         _suppressDisplaySync = false;
 
-        if (!string.IsNullOrEmpty(panel.FilePath) && File.Exists(panel.FilePath))
+        if (!string.IsNullOrEmpty(syncPanel.FilePath) && File.Exists(syncPanel.FilePath))
         {
-            _selectedImagePath = panel.FilePath;
-            LoadBitmapPreview(panel.FilePath);
+            _selectedImagePath = syncPanel.FilePath;
+            LoadBitmapPreview(syncPanel.FilePath);
             OnPropertyChanged(nameof(SelectedImagePath));
             OnPropertyChanged(nameof(ImageFileName));
             OnPropertyChanged(nameof(HasLoadedImage));
             OnPropertyChanged(nameof(ImageDimensionText));
-            OnPropertyChanged(nameof(ActivePanelDisplayName));
         }
+
+        OnPropertyChanged(nameof(ActivePanelDisplayName));
+        CommandManager.InvalidateRequerySuggested();
 
         if (openDrawer)
         {
             IsMosaicDrawerOpen = true;
-            RequestScrollToMosaicPanel?.Invoke(panel);
-            StatusMessage = IsTurkish
-                ? $"🎯 '{panel.Name}' seçildi (Katman #{MosaicProject.GetLayerIndex(panel)})."
-                : $"🎯 Selected '{panel.Name}' (Layer #{MosaicProject.GetLayerIndex(panel)}).";
+            if (panel.IsSelected)
+            {
+                RequestScrollToMosaicPanel?.Invoke(panel);
+            }
+            int selCount = MosaicProject.Panels.Count(p => p.IsSelected);
+            StatusMessage = selCount > 1
+                ? (IsTurkish ? $"🎯 {selCount} fotoğraf seçili." : $"🎯 {selCount} photos selected.")
+                : (IsTurkish
+                    ? $"🎯 '{panel.Name}' seçildi (Katman #{MosaicProject.GetLayerIndex(panel)})."
+                    : $"🎯 Selected '{panel.Name}' (Layer #{MosaicProject.GetLayerIndex(panel)}).");
         }
 
         OnPropertyChanged(nameof(MosaicPanels));
@@ -1518,8 +1642,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private void ExecuteSelectMosaicPanel(MosaicPanel? panel)
     {
         if (panel == null) return;
-        SelectAndHighlightPanel(panel, openDrawer: false);
-        if (MosaicProject.Count > 1 && CurrentWcs != null && panel.Wcs != null)
+        bool multi = (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0 ||
+                     MosaicProject.Panels.Any(p => p.IsSelected);
+        SelectAndHighlightPanel(panel, openDrawer: false, toggleMultiSelect: multi);
+        if (panel.IsSelected && MosaicProject.Count > 1 && CurrentWcs != null && panel.Wcs != null)
         {
             var centerSky = panel.Wcs.CenterCoordinates;
             if (CurrentWcs.EquatorialToPixel(centerSky, out double px, out double py))
@@ -1824,18 +1950,71 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void ApplyDisplayAdjustments()
     {
-        if (_originalSkBitmap == null) return;
+        if (_originalSkBitmap == null && MosaicProject.Count == 0) return;
 
         try
         {
-            var activePanel = GetActiveMosaicPanel();
-            if (activePanel != null && !_suppressDisplaySync)
+            var selectedPanels = MosaicProject.Panels.Where(p => p.IsSelected).ToList();
+            var targetPanels = selectedPanels.Count > 0 ? selectedPanels : MosaicProject.Panels.ToList();
+
+            if (!_suppressDisplaySync && targetPanels.Count > 0)
             {
-                activePanel.Brightness = _displayBrightness;
-                activePanel.Exposure = _displayExposure;
-                activePanel.Contrast = _displayContrast;
-                activePanel.IsAutoBrightnessEnabled = _isAutoBrightnessEnabled;
+                foreach (var tp in targetPanels)
+                {
+                    tp.Brightness = _displayBrightness;
+                    tp.Exposure = _displayExposure;
+                    tp.Contrast = _displayContrast;
+                    tp.IsAutoBrightnessEnabled = _isAutoBrightnessEnabled;
+
+                    SkiaSharp.SKBitmap? panelSkBmp = tp.CachedSkiaBitmap as SkiaSharp.SKBitmap;
+                    if (panelSkBmp == null && !string.IsNullOrEmpty(tp.FilePath) && File.Exists(tp.FilePath))
+                    {
+                        panelSkBmp = ImagePreprocessor.LoadImage(tp.FilePath);
+                        tp.CachedSkiaBitmap = panelSkBmp;
+                    }
+
+                    if (panelSkBmp != null)
+                    {
+                        SkiaSharp.SKBitmap panelBase;
+                        if (_isAutoBrightnessEnabled)
+                        {
+                            panelBase = ImagePreprocessor.AutoBalanceBrightness(panelSkBmp, out var pInfo);
+                            BrightnessStatusText = pInfo.WasAdjusted ? pInfo.SummaryText : (IsTurkish ? "Oto Parlaklık: Optimal" : "Auto Brightness: Optimal");
+                        }
+                        else
+                        {
+                            panelBase = panelSkBmp.Copy();
+                            BrightnessStatusText = IsTurkish ? "Oto Parlaklık: Kapalı" : "Auto Brightness: Off";
+                        }
+
+                        using (panelBase)
+                        {
+                            using var panelAdjusted = ImagePreprocessor.ApplyDisplayToneAdjustment(
+                                panelBase, _displayBrightness, _displayExposure, _displayContrast);
+                            var panelWpfBmp = ConvertToWpfBitmap(panelAdjusted);
+                            tp.CachedBitmap = panelWpfBmp;
+                            if (!string.IsNullOrEmpty(tp.FilePath))
+                            {
+                                DetectionOverlay.CachePanelBitmap(tp.FilePath, panelWpfBmp);
+                            }
+                            if (!string.IsNullOrEmpty(SelectedImagePath) &&
+                                !string.IsNullOrEmpty(tp.FilePath) &&
+                                string.Equals(tp.FilePath, SelectedImagePath, StringComparison.OrdinalIgnoreCase))
+                            {
+                                ImageWidth = panelWpfBmp.PixelWidth;
+                                ImageHeight = panelWpfBmp.PixelHeight;
+                                ImageBitmap = panelWpfBmp;
+                            }
+                        }
+                    }
+                }
+
+                OnPropertyChanged(nameof(MosaicPanels));
+                RequestInvalidateOverlay?.Invoke();
+                return;
             }
+
+            if (_originalSkBitmap == null) return;
 
             SkiaSharp.SKBitmap baseBmp;
             if (IsAutoBrightnessEnabled)
@@ -1859,6 +2038,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 ImageHeight = wpfBitmap.PixelHeight;
                 ImageBitmap = wpfBitmap;
 
+                var activePanel = GetActiveMosaicPanel();
                 if (activePanel != null)
                 {
                     activePanel.CachedBitmap = wpfBitmap;
@@ -2021,17 +2201,19 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
         if (MosaicProject.Count > 1)
         {
+            ProgressValue = 40.0;
             StatusMessage = IsTurkish
-                ? $"🔬 Mozaik atlası tam çözünürlükte taranıyor ({MosaicProject.Count} panel paralel)..."
-                : $"🔬 Scanning mosaic atlas at full sensor resolution ({MosaicProject.Count} panels parallel)...";
+                ? $"🔬 [Aşama 3/3 - Yıldız Sayımı] {MosaicProject.Count} fotoğraftaki binlerce yıldız tam çözünürlükte sayılıyor ve tekilleştiriliyor..."
+                : $"🔬 [Stage 3/3 - Star Counting] Counting & deduplicating thousands of stars across {MosaicProject.Count} photos at full resolution...";
+            await Task.Yield();
 
             var mosaicProgress = new Progress<MosaicCountingProgress>(p =>
             {
                 if (token.IsCancellationRequested) return;
-                ProgressValue = p.OverallPercent * 100.0;
+                ProgressValue = 40.0 + (p.OverallPercent * 60.0);
                 StatusMessage = IsTurkish
-                    ? $"[{p.CompletedPanels}/{p.TotalPanels}] {p.CurrentPanelName} ({p.TotalRawStars:N0} ham tespit)..."
-                    : $"[{p.CompletedPanels}/{p.TotalPanels}] {p.CurrentPanelName} ({p.TotalRawStars:N0} raw detections)...";
+                    ? $"⭐ [Aşama 3/3 - Yıldız Sayımı {p.CompletedPanels}/{p.TotalPanels}] {p.CurrentPanelName} — {p.TotalRawStars:N0} ham yıldız tespit edildi..."
+                    : $"⭐ [Stage 3/3 - Star Counting {p.CompletedPanels}/{p.TotalPanels}] {p.CurrentPanelName} — {p.TotalRawStars:N0} raw stars detected...";
             });
 
             try
@@ -2321,9 +2503,9 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         {
             foreach (var p in MosaicProject.Panels)
             {
-                p.IsSelected = ReferenceEquals(p, newlyAdded[0]);
+                p.IsSelected = false;
             }
-            SelectedMosaicPanel = newlyAdded[0];
+            SelectedMosaicPanel = null;
         }
 
         RefreshMosaicProperties();
@@ -2334,9 +2516,11 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             var panel = newlyAdded[i];
             if (string.IsNullOrEmpty(panel.FilePath)) continue;
 
+            ProgressValue = 5.0 + ((double)(i + 1) / newlyAdded.Count) * 35.0;
             StatusMessage = IsTurkish
-                ? $"🔭 [{i + 1}/{newlyAdded.Count}] '{panel.Name}' yıldız konumları çözümleniyor (Plate Solving)..."
-                : $"🔭 [{i + 1}/{newlyAdded.Count}] Plate solving '{panel.Name}'...";
+                ? $"🔭 [Aşama 1/3 - Astrometri {i + 1}/{newlyAdded.Count}] '{panel.Name}' yıldız üçgenleri Hipparcos & Gaia kataloğuyla eşleştiriliyor..."
+                : $"🔭 [Stage 1/3 - Astrometry {i + 1}/{newlyAdded.Count}] Matching '{panel.Name}' star triangles against Hipparcos & Gaia catalog...";
+            await Task.Yield();
 
             try
             {
@@ -2398,6 +2582,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
             foreach (var panel in unsolvedPanels)
             {
+                StatusMessage = IsTurkish
+                    ? $"🔗 [Aşama 2/3 - Mozaik Kenetleme] '{panel.Name}' komşu karelerle ortak yıldızlardan hizalanıyor..."
+                    : $"🔗 [Stage 2/3 - Mosaic Alignment] Aligning '{panel.Name}' against solved neighbor panels via shared stars...";
+                await Task.Yield();
                 try
                 {
                     // 2A. Retry catalog solver using newly available neighbor hints
@@ -2438,9 +2626,13 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
                         if (bmp != null)
                         {
-                            detectedStars = PhotometricStarFinder.DetectStars(
+                            StatusMessage = IsTurkish
+                                ? $"⭐ [Aşama 2/3 - Yıldız Çıkarımı] '{panel.Name}' ({panel.Width}x{panel.Height} px) üzerindeki binlerce yıldız taranıyor..."
+                                : $"⭐ [Stage 2/3 - Star Extraction] Extracting thousands of stars in '{panel.Name}' ({panel.Width}x{panel.Height} px)...";
+                            await Task.Yield();
+                            detectedStars = await Task.Run(() => PhotometricStarFinder.DetectStars(
                                 bmp,
-                                new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f));
+                                new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f)));
                             panel.DetectedStars = detectedStars;
                             if (shouldDisposeBmp)
                             {
@@ -2608,6 +2800,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
             foreach (var p in unsolvedPanels)
             {
+                StatusMessage = IsTurkish
+                    ? $"🔗 [Aşama 2/3 - Mozaik Kenetleme] '{p.Name}' komşu karelerle ortak yıldızlardan hizalanıyor..."
+                    : $"🔗 [Stage 2/3 - Mosaic Alignment] Aligning '{p.Name}' against solved neighbor panels via shared stars...";
+                await Task.Yield();
                 try
                 {
                     IReadOnlyList<AstrophotographyObject>? detectedStars = p.DetectedStars;
@@ -2623,9 +2819,13 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
                         if (bmp != null)
                         {
-                            detectedStars = PhotometricStarFinder.DetectStars(
+                            StatusMessage = IsTurkish
+                                ? $"⭐ [Aşama 2/3 - Yıldız Çıkarımı] '{p.Name}' ({p.Width}x{p.Height} px) üzerindeki binlerce yıldız taranıyor..."
+                                : $"⭐ [Stage 2/3 - Star Extraction] Extracting thousands of stars in '{p.Name}' ({p.Width}x{p.Height} px)...";
+                            await Task.Yield();
+                            detectedStars = await Task.Run(() => PhotometricStarFinder.DetectStars(
                                 bmp,
-                                new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f));
+                                new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f)));
                             p.DetectedStars = detectedStars;
                             if (shouldDisposeBmp)
                             {
