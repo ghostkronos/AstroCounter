@@ -217,12 +217,12 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     // Localized UI Strings
     public string L_WindowTitle => IsTurkish
-        ? "AstroCounter v1.3.0 - Astrofotoğraf Nesne Tespiti ve 3D Planetaryum"
-        : "AstroCounter v1.3.0 - Astrophotography Object Detection & 3D Celestial Planetarium";
+        ? "AstroCounter v1.3.1 - Astrofotoğraf Nesne Tespiti ve 3D Planetaryum"
+        : "AstroCounter v1.3.1 - Astrophotography Object Detection & 3D Celestial Planetarium";
     public string L_HeaderSubtitle => IsTurkish
-        ? "v1.3.0 • Modern Minimalist Arayüz & Eşzamanlı 2D/3D Gök Koordinatı Projeksiyonu"
-        : "v1.3.0 • Modern Minimalist Workspace & Lockstep 2D/3D Celestial Coordinate Projection";
-    public string L_VersionBadge => "v1.3.0";
+        ? "v1.3.1 • 2.5M Gaia/Tycho, 14K OpenNGC & 88 IAU Takımyıldızı Büyük Katalog Entegrasyonu"
+        : "v1.3.1 • 2.5M Gaia/Tycho, 14K OpenNGC & 88 IAU Constellations High-Density Sky Atlas";
+    public string L_VersionBadge => "v1.3.1";
     public string L_PhotosButtonText => MosaicProject.Count > 0
         ? (IsTurkish ? $"Fotoğraflar ({MosaicProject.Count})" : $"Photos ({MosaicProject.Count})")
         : (IsTurkish ? "Fotoğraflar" : "Photos");

@@ -1,9 +1,9 @@
-# AstroCounter v1.3.0
+# AstroCounter v1.3.1
 
 **Language / Dil:** **English (Default)** | [**Türkçe Dokümantasyon (TR)**](README.tr.md)
 
 [![Build & Test](https://github.com/ghostkronos/AstroCounter/actions/workflows/build-test.yml/badge.svg)](https://github.com/ghostkronos/AstroCounter/actions)
-[![Version](https://img.shields.io/badge/Version-v1.3.0-00E5FF.svg)](https://github.com/ghostkronos/AstroCounter/releases)
+[![Version](https://img.shields.io/badge/Version-v1.3.1-00E5FF.svg)](https://github.com/ghostkronos/AstroCounter/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Framework](https://img.shields.io/badge/.NET-10.0_WPF-purple.svg)](https://dotnet.microsoft.com/)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX_Runtime-DirectML-orange.svg)](https://onnxruntime.ai/)
@@ -13,7 +13,7 @@
 
 > [!NOTE]
 > **Project Scope:**  
-> AstroCounter is an open-source desktop application designed for astrophotography analysis, full-resolution photometric source extraction, multi-panel mosaic stitching, blind geometric plate solving, 3D celestial sphere visualization, and real-time Stellarium synchronization. It ships with a trained neural network model (`models/astro_yolo11n.onnx`) fine-tuned on Sloan Digital Sky Survey (SDSS DR16) astronomical cutouts and an embedded J2000 reference star and deep-sky catalog.
+> AstroCounter is an open-source desktop application designed for astrophotography analysis, full-resolution photometric source extraction, multi-panel mosaic stitching, blind geometric plate solving, 3D celestial sphere visualization, and real-time Stellarium synchronization. It ships with a trained neural network model (`models/astro_yolo11n.onnx`) fine-tuned on Sloan Digital Sky Survey (SDSS DR16) astronomical cutouts, an ultra-dense **2.5 Million Gaia DR3 / Tycho-2** reference star catalog (`catalogs/gaia_tycho_dense.bin`), the complete **13,963 OpenNGC** deep-sky object catalog, and all **88 official IAU constellations**.
 
 ---
 
@@ -21,12 +21,16 @@
 
 High-resolution astrophotography frames and multi-panel sky mosaics frequently exceed 24 MP to 100 MP+ and exhibit extreme dynamic range variations—from severely underexposed linear stacks to frames affected by urban sky glow or lossy JPEG compression. Standard object detection pipelines downscale full frames into small input tensors, causing faint stellar point sources and compact deep-sky objects to vanish.
 
-**AstroCounter v1.3.0** integrates four core astrophotography processing layers into a modern, minimalist Windows interface with movable in-app floating windows:
+**AstroCounter v1.3.1** integrates five core astrophotography processing layers into a modern, minimalist Windows interface with movable in-app floating windows:
 
-1. **Multi-Engine Source Detection (`Hybrid Fusion`, `Photometry`, `DirectML`):** Combines analytical point-spread-function signal-to-noise ratio photometry (DAOStarFinder standard) with Slicing Aided Hyper Inference (SAHI) powered by a hardware-accelerated `YOLO11n ONNX` model via Windows DirectML.
-2. **Format-Aware Per-Photo Auto-Confidence & Simultaneous Multi-Photo Light Processing:** Automatically computes optimal noise knee-point thresholds per photograph in the background—applying stricter filtering on lossy formats (`.jpg`/`.jpeg`) to suppress compression artifacts while preserving faint `2σ–3σ` structures on lossless scientific formats (`.tiff`, `.fits`, `.png`). Display & Light adjustments (MTF Auto-Balance, Brightness, Exposure, Contrast) apply in real time across all selected photos in both 2D and 3D views.
-3. **Blind Geometric Plate Solving & Multi-Tile Mosaic Alignment:** Extracts sub-pixel stellar centroids, matches scale- and rotation-invariant geometric invariants against an embedded J2000 catalog using RANSAC, bridges adjacent panels via pairwise star-correspondence homography, and deduplicates 100,000+ stars across overlapping mosaic frames in spherical sky coordinates (`RA`/`Dec`).
-4. **2D Infinite Sky Canvas, 3D Planetarium Dome & 2-Way Stellarium Sync:** Provides unconstrained 2D infinite canvas panning, an interactive 360° 3D celestial dome, bidirectional real-time camera synchronization with Stellarium in both 2D and 3D modes, and 360° × 180° equirectangular panoramic exporting.
+1. **Ultra-Dense Catalog Suite (2.5M Stars + 14K DSOs + 88 Constellations):**
+   - **2,500,000 Gaia DR3 / Tycho-2 Stars** down to magnitude 14.0 for robust sub-pixel astrometric plate solving, thin-plate spline (TPS) lens distortion correction, and dense celestial background rendering.
+   - **13,963 OpenNGC Deep-Sky Objects** embedded directly in the core engine (all Messier M1–M110, NGC, IC, and Caldwell objects) with automatic dynamic FOV filtering (`CataloguePlateSolver.GetTargetsInField`).
+   - **All 88 Official IAU Constellations** with 695 stick-figure line segments and bilingual English/Turkish nomenclature.
+2. **Multi-Engine Source Detection (`Hybrid Fusion`, `Photometry`, `DirectML`):** Combines analytical point-spread-function signal-to-noise ratio photometry (DAOStarFinder standard) with Slicing Aided Hyper Inference (SAHI) powered by a hardware-accelerated `YOLO11n ONNX` model via Windows DirectML.
+3. **Format-Aware Per-Photo Auto-Confidence & Simultaneous Multi-Photo Light Processing:** Automatically computes optimal noise knee-point thresholds per photograph in the background—applying stricter filtering on lossy formats (`.jpg`/`.jpeg`) to suppress compression artifacts while preserving faint `2σ–3σ` structures on lossless scientific formats (`.tiff`, `.fits`, `.png`). Display & Light adjustments (MTF Auto-Balance, Brightness, Exposure, Contrast) apply in real time across all selected photos in both 2D and 3D views.
+4. **Blind Geometric Plate Solving & Multi-Tile Mosaic Alignment:** Extracts sub-pixel stellar centroids, matches scale- and rotation-invariant geometric invariants against the dense J2000 catalog using RANSAC, bridges adjacent panels via pairwise star-correspondence homography, and deduplicates 100,000+ stars across overlapping mosaic frames in spherical sky coordinates (`RA`/`Dec`).
+5. **2D Infinite Sky Canvas, 3D Planetarium Dome & 2-Way Stellarium Sync:** Provides unconstrained 2D infinite canvas panning, an interactive 360° 3D celestial dome, bidirectional real-time camera synchronization with Stellarium in both 2D and 3D modes, and 360° × 180° equirectangular panoramic exporting.
 
 ![AstroCounter 3D Celestial Dome and Multi-Photo Light Controls](assets/screenshots/02_stellarium_sync_andromeda.png)
 
@@ -57,9 +61,14 @@ flowchart TD
 
 ---
 
-## Key Capabilities in v1.3.0
+## Key Capabilities in v1.3.1
 
-### 1. Modern Minimalist UI & Movable Floating Panels
+### 1. Ultra-Dense Astrometric Catalogs (Gaia DR3, Tycho-2, OpenNGC & IAU 88)
+* **2,500,000 Gaia DR3 / Tycho-2 Stars:** High-performance binary catalog format (`catalogs/gaia_tycho_dense.bin`, 47.7 MB) with 180 1-degree declination zones and 1 MB batch streaming. Solves wide-angle to narrow-field frames down to visual magnitude 14.0.
+* **13,963 OpenNGC Deep-Sky Objects:** Embedded and compressed in core assembly (`Resources/open_ngc.catalog.gz`). Covers all 110 Messier objects, 7,840 NGC nebulae/clusters/galaxies, and 5,386 IC targets. Dynamically filters and identifies targets located inside any photographed field.
+* **All 88 Official IAU Constellations:** Full 695 stick-figure segment constellation network (`Resources/constellations_88.catalog.gz`) with bilingual English and Turkish nomenclature.
+
+### 2. Modern Minimalist UI & Movable Floating Panels
 * **In-Window Draggable Tool Panels:** All utility drawers—**View & Layers (`🏷️`)**, **Display & Light (`☀️`)**, **Auto-Confidence (`⚡`)**, **Mosaic Tiles Management (`🖼️`)**, **Advanced Export (`🚀`)**, and **User Guide & Help Center (`❓`)**—are movable floating windows that can be dragged anywhere inside the workspace.
 * **Multi-Photo Selection & Clean Borderless Rendering:**
   - Click photo cards in the **Photos** panel, use **All (`☑`)**, or hold `Ctrl`/`Shift` while double-clicking photos on the 2D/3D canvas to select multiple panels simultaneously.
@@ -129,7 +138,7 @@ If Stellarium is installed in its default directory (`C:\Program Files\Stellariu
 ## Installation and Usage
 
 ### Option A: Portable Release (No Installation Required)
-1. Extract the `AstroCounter-v1.3.0-Portable` directory.
+1. Extract the `AstroCounter-v1.3.1-Portable` directory.
 2. Run `AstroCounter.UI.exe` directly on Windows 10/11 x64. No Python, CUDA, or separate .NET runtime installation is required.
 
 ### Option B: Build from Source
@@ -149,7 +158,7 @@ dotnet run --project src/AstroCounter.UI/AstroCounter.UI.csproj -c Release
 
 To build a self-contained portable release:
 ```powershell
-dotnet publish src/AstroCounter.UI/AstroCounter.UI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o ../AstroCounter-v1.3.0-Portable
+dotnet publish src/AstroCounter.UI/AstroCounter.UI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o ../AstroCounter-v1.3.1-Portable
 ```
 
 ---
@@ -172,21 +181,24 @@ AstroCounter/
 ├── Directory.Build.props                # Deterministic build configuration
 ├── AstroCounter.sln                     # Solution file
 ├── assets/                              # UI logos, icons, sample images, and documentation screenshots
-│   └── screenshots/                     # v1.3.0 interface preview screenshots
+│   └── screenshots/                     # Interface preview screenshots
+├── catalogs/
+│   └── gaia_tycho_dense.bin             # 2.5M Gaia DR3 / Tycho-2 binary star catalog (47.7 MB)
 ├── models/
 │   └── astro_yolo11n.onnx               # SDSS DR16 fine-tuned YOLO11n ONNX model
 ├── scripts/
 │   └── train_real_astro_dataset.py      # SDSS DR16 real astronomical dataset builder & YOLO11 trainer
 ├── src/
 │   ├── AstroCounter.Core/               # Core library (Photometry, SAHI, WCS, Mosaic, Stellarium API)
-│   │   ├── Astrometry/                  # RANSAC star-pattern solver, pairwise mosaic solver, WCS, catalog
+│   │   ├── Astrometry/                  # RANSAC solver, Gaia/Tycho 2.5M, OpenNGC, 88 Constellations
 │   │   ├── Export/                      # 2D Mosaic, 360° Equirectangular Panorama, CSV & JSON exporters
 │   │   ├── Inference/                   # DirectML ONNX and photometric detection engines
 │   │   ├── Models/                      # Data contracts and ROI geometry
 │   │   ├── Processing/                  # FITS/TIFF decoders, MTF auto-brightness, SAHI tiler
+│   │   ├── Resources/                   # Embedded OpenNGC & 88 IAU Constellations binary streams
 │   │   └── Stellarium/                  # Stellarium HTTP client and windowed launcher
 │   ├── AstroCounter.UI/                 # WPF desktop interface (MVVM, bilingual EN/TR, 2D & 3D Dome)
-│   └── AstroCounter.Tests/              # xUnit automated test suite (108 tests)
+│   └── AstroCounter.Tests/              # xUnit automated test suite (109 tests)
 ├── README.md                            # English documentation (Default)
 └── README.tr.md                         # Turkish documentation
 ```

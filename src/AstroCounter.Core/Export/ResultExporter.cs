@@ -161,7 +161,7 @@ public static class ResultExporter
         var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
         string json = System.Text.Json.JsonSerializer.Serialize(new
         {
-            generator = "AstroCounter v1.3.0",
+            generator = "AstroCounter v1.3.1",
             timestamp = DateTime.UtcNow.ToString("o"),
             totalObjects = objects.Count(),
             hasWcs = wcs != null,

@@ -3,6 +3,8 @@ namespace AstroCounter.Core.Astrometry;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
+using System.Reflection;
 
 /// <summary>
 /// Represents a high-precision reference star entry from the Gaia DR3 / Tycho astrometric catalog.
@@ -21,8 +23,9 @@ public readonly record struct GaiaTychoStar(
 }
 
 /// <summary>
-/// High-density Gaia DR3 / Tycho reference star catalog (supporting millions of stars down to magnitude 13.0).
-/// Optimized for narrow-field telephoto/telescope plate solving and high-precision astrometric distortion correction.
+/// High-density Gaia DR3 / Tycho reference star catalog (2,500,000 stars down to magnitude 14.0).
+/// Optimized for narrow-field telephoto/telescope plate solving, high-precision astrometric distortion correction,
+/// and full-sky star identification.
 /// Features 180 1-degree declination spatial strip indexing with memory-efficient binary packing.
 /// </summary>
 public static class GaiaTychoCatalog
@@ -40,8 +43,8 @@ public static class GaiaTychoCatalog
         double centerRaDeg,
         double centerDecDeg,
         double radiusDeg,
-        double maxMag = 12.5,
-        int maxResults = 250)
+        double maxMag = 14.0,
+        int maxResults = 500)
     {
         return _catalog.Value.QueryRegion(centerRaDeg, centerDecDeg, radiusDeg, maxMag, maxResults);
     }
@@ -61,7 +64,7 @@ public static class GaiaTychoCatalog
             var buckets = new List<int>[StripCount];
             for (int i = 0; i < StripCount; i++)
             {
-                buckets[i] = new List<int>(Math.Max(16, stars.Length / StripCount + 100));
+                buckets[i] = new List<int>(Math.Max(16, stars.Length / StripCount + 500));
             }
 
             for (int i = 0; i < stars.Length; i++)
@@ -102,7 +105,7 @@ public static class GaiaTychoCatalog
             int maxStrip = Math.Clamp((int)Math.Floor((maxDec + 90.0) / StripSizeDeg), 0, StripCount - 1);
 
             float maxMagF = (float)maxMag;
-            var results = new List<GaiaTychoStar>(Math.Min(512, maxResults * 2));
+            var results = new List<GaiaTychoStar>(Math.Min(1024, maxResults * 2));
 
             for (int s = minStrip; s <= maxStrip; s++)
             {
@@ -132,50 +135,78 @@ public static class GaiaTychoCatalog
 
     private static DenseCatalogIndex InitializeCatalog()
     {
-        string localCatalogPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "catalogs", "gaia_tycho_dense.bin");
-        if (File.Exists(localCatalogPath))
+        // Check potential locations for gaia_tycho_dense.bin:
+        // 1. Output directory catalogs/
+        // 2. Base directory
+        // 3. Source repository catalogs/
+        string[] candidatePaths = [
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "catalogs", "gaia_tycho_dense.bin"),
+            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gaia_tycho_dense.bin"),
+            Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "src", "AstroCounter.Core", "catalogs", "gaia_tycho_dense.bin")),
+            Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "catalogs", "gaia_tycho_dense.bin"))
+        ];
+
+        Span<byte> magic = stackalloc byte[4];
+
+        foreach (var path in candidatePaths)
         {
-            try
+            if (File.Exists(path))
             {
-                using var fs = File.OpenRead(localCatalogPath);
-                using var reader = new BinaryReader(fs);
-                Span<byte> magic = stackalloc byte[4];
-                if (reader.Read(magic) == 4 && magic[0] == 'G' && magic[1] == 'A' && magic[2] == 'I' && magic[3] == 'A')
+                try
                 {
-                    uint version = reader.ReadUInt32();
-                    uint count = reader.ReadUInt32();
-                    var stars = new GaiaTychoStar[count];
-                    const double degToRad = Math.PI / 180.0;
-
-                    for (int i = 0; i < count; i++)
+                    using var fs = File.OpenRead(path);
+                    using var reader = new BinaryReader(fs);
+                    if (reader.Read(magic) == 4 && magic[0] == 'G' && magic[1] == 'A' && magic[2] == 'I' && magic[3] == 'A')
                     {
-                        long id = reader.ReadInt64();
-                        float ra = reader.ReadSingle();
-                        float dec = reader.ReadSingle();
-                        float mag = reader.ReadInt16() / 100f;
-                        float bv = reader.ReadInt16() / 100f;
+                        uint version = reader.ReadUInt32();
+                        uint count = reader.ReadUInt32();
+                        var stars = new GaiaTychoStar[count];
+                        const double degToRad = Math.PI / 180.0;
 
-                        double raR = ra * degToRad;
-                        double decR = dec * degToRad;
-                        double cD = Math.Cos(decR);
-                        float x = (float)(cD * Math.Cos(raR));
-                        float y = (float)(cD * Math.Sin(raR));
-                        float z = (float)Math.Sin(decR);
+                        // Read in batches of 50,000 stars (1 MB chunks) for ultra-fast load
+                        const int batchSize = 50000;
+                        byte[] buffer = new byte[batchSize * 20];
 
-                        stars[i] = new GaiaTychoStar(id, ra, dec, mag, bv, x, y, z);
+                        for (int i = 0; i < count; i += batchSize)
+                        {
+                            int n = (int)Math.Min(batchSize, count - i);
+                            int bytesToRead = n * 20;
+                            int bytesRead = reader.Read(buffer, 0, bytesToRead);
+                            if (bytesRead < bytesToRead) break;
+
+                            for (int j = 0; j < n; j++)
+                            {
+                                int offset = j * 20;
+                                long id = BitConverter.ToInt64(buffer, offset);
+                                float ra = BitConverter.ToSingle(buffer, offset + 8);
+                                float dec = BitConverter.ToSingle(buffer, offset + 12);
+                                float mag = BitConverter.ToInt16(buffer, offset + 16) / 100f;
+                                float bv = BitConverter.ToInt16(buffer, offset + 18) / 100f;
+
+                                double raR = ra * degToRad;
+                                double decR = dec * degToRad;
+                                double cD = Math.Cos(decR);
+                                float x = (float)(cD * Math.Cos(raR));
+                                float y = (float)(cD * Math.Sin(raR));
+                                float z = (float)Math.Sin(decR);
+
+                                stars[i + j] = new GaiaTychoStar(id, ra, dec, mag, bv, x, y, z);
+                            }
+                        }
+
+                        return new DenseCatalogIndex(stars);
                     }
-                    return new DenseCatalogIndex(stars);
                 }
-            }
-            catch
-            {
-                // Fallback to bootstrap
+                catch
+                {
+                    // Fallback to next path or bootstrap
+                }
             }
         }
 
-        // Bootstrap: Build dense Gaia/Tycho index initialized from Hipparcos down to magnitude 12.5
+        // Bootstrap: Build dense index initialized from Hipparcos (117,955 stars)
         var hipStars = HipparcosCatalog.AllStars.Span;
-        var starList = new List<GaiaTychoStar>(hipStars.Length + 100_000);
+        var starList = new List<GaiaTychoStar>(hipStars.Length + 10_000);
 
         for (int i = 0; i < hipStars.Length; i++)
         {
@@ -186,4 +217,3 @@ public static class GaiaTychoCatalog
         return new DenseCatalogIndex(starList.ToArray());
     }
 }
-
