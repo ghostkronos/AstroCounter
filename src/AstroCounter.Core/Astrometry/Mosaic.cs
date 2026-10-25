@@ -614,7 +614,7 @@ public class MosaicProject
         }
 
         double widthDeg = maxRadiusDeg * 2.0;
-        double heightDeg = Math.Max(maxDec - minDec, widthDeg * 0.7);
+        double heightDeg = Math.Max(maxDec - minDec, maxRadiusDeg * 2.0);
 
         double minRa = (center.RaDegrees - maxRadiusDeg + 360.0) % 360.0;
         double maxRa = (center.RaDegrees + maxRadiusDeg) % 360.0;
@@ -677,32 +677,94 @@ public class MosaicProject
         }
         scale = Math.Max(0.01, scale);
 
-        // Total field of view in arcseconds
-        double widthArcsec = Math.Max(360.0, bounds.AngularWidthDegrees * 3600.0);
-        double heightArcsec = Math.Max(360.0, bounds.AngularHeightDegrees * 3600.0);
+        // Project all active panel corners onto an unconstrained tangent projection at bounds.Center
+        // to discover the exact bounding box (minX, maxX, minY, maxY) needed to house all panels.
+        var refProjection = new WcsMatrix(bounds.Center, 0.0, 0.0, scale, 0.0, 1000, 1000);
 
-        const int maxCanvasDim = 12000;
-        double minRequiredScaleW = widthArcsec / Math.Max(100, maxCanvasDim - (marginPx * 2));
-        double minRequiredScaleH = heightArcsec / Math.Max(100, maxCanvasDim - (marginPx * 2));
+        double minX = double.MaxValue, maxX = double.MinValue;
+        double minY = double.MaxValue, maxY = double.MinValue;
+        bool hasProjected = false;
+
+        foreach (var p in activePanels)
+        {
+            if (p.Wcs != null)
+            {
+                var (tl, tr, br, bl) = p.GetFootprintCorners();
+                CelestialCoordinates[] corners = [tl, tr, br, bl, p.Wcs.CenterCoordinates];
+                foreach (var c in corners)
+                {
+                    if (refProjection.EquatorialToPixel(c, out double cx, out double cy))
+                    {
+                        minX = Math.Min(minX, cx);
+                        maxX = Math.Max(maxX, cx);
+                        minY = Math.Min(minY, cy);
+                        maxY = Math.Max(maxY, cy);
+                        hasProjected = true;
+                    }
+                }
+            }
+        }
+
+        double spanX = hasProjected ? (maxX - minX) : (bounds.AngularWidthDegrees * 3600.0 / scale);
+        double spanY = hasProjected ? (maxY - minY) : (bounds.AngularHeightDegrees * 3600.0 / scale);
+
+        // Add generous margin around all panels so mosaic tiles never touch or cross the canvas boundary
+        int effectiveMargin = Math.Max(marginPx, Math.Max(400, (int)(Math.Max(spanX, spanY) * 0.12)));
+
+        const int maxCanvasDim = 16000;
+        double minRequiredScaleW = (spanX * scale) / Math.Max(100, maxCanvasDim - (effectiveMargin * 2));
+        double minRequiredScaleH = (spanY * scale) / Math.Max(100, maxCanvasDim - (effectiveMargin * 2));
         double minRequiredScale = Math.Max(minRequiredScaleW, minRequiredScaleH);
 
-        // Automatically increase master pixel scale if the angular span would exceed maxCanvasDim,
-        // so the entire mosaic always fits inside the 2D canvas without clipping!
         if (!targetPixelScaleArcsec.HasValue && scale < minRequiredScale)
         {
             scale = minRequiredScale;
+            refProjection = new WcsMatrix(bounds.Center, 0.0, 0.0, scale, 0.0, 1000, 1000);
+            minX = double.MaxValue; maxX = double.MinValue;
+            minY = double.MaxValue; maxY = double.MinValue;
+            foreach (var p in activePanels)
+            {
+                if (p.Wcs != null)
+                {
+                    var (tl, tr, br, bl) = p.GetFootprintCorners();
+                    CelestialCoordinates[] corners = [tl, tr, br, bl, p.Wcs.CenterCoordinates];
+                    foreach (var c in corners)
+                    {
+                        if (refProjection.EquatorialToPixel(c, out double cx, out double cy))
+                        {
+                            minX = Math.Min(minX, cx);
+                            maxX = Math.Max(maxX, cx);
+                            minY = Math.Min(minY, cy);
+                            maxY = Math.Max(maxY, cy);
+                        }
+                    }
+                }
+            }
+            spanX = maxX - minX;
+            spanY = maxY - minY;
+            effectiveMargin = Math.Max(marginPx, Math.Max(400, (int)(Math.Max(spanX, spanY) * 0.12)));
         }
 
-        int canvasW = (int)Math.Ceiling(widthArcsec / scale) + (marginPx * 2);
-        int canvasH = (int)Math.Ceiling(heightArcsec / scale) + (marginPx * 2);
+        int canvasW = (int)Math.Ceiling(spanX + (effectiveMargin * 2));
+        int canvasH = (int)Math.Ceiling(spanY + (effectiveMargin * 2));
 
-        canvasW = Math.Clamp(canvasW, 400, 16384);
-        canvasH = Math.Clamp(canvasH, 400, 16384);
+        // Reserve extra room on the right for fallback cards if any panels are genuinely unsolved
+        int unsolvedCount = activePanels.Count(p => !p.IsSolved);
+        if (unsolvedCount > 0)
+        {
+            canvasW += unsolvedCount <= 2 ? 800 : 1600;
+        }
+
+        canvasW = Math.Clamp(canvasW, 1200, 24000);
+        canvasH = Math.Clamp(canvasH, 1200, 24000);
+
+        double refPx = hasProjected ? (-minX + effectiveMargin) : (canvasW * 0.5);
+        double refPy = hasProjected ? (-minY + effectiveMargin) : (canvasH * 0.5);
 
         return new WcsMatrix(
             bounds.Center,
-            canvasW * 0.5,
-            canvasH * 0.5,
+            refPx,
+            refPy,
             scale,
             rotationDegrees: 0.0, // North-Up for master mosaic
             canvasW,

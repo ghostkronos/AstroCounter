@@ -11,12 +11,34 @@ using AstroCounter.Core.Astrometry;
 using AstroCounter.Core.Models;
 
 /// <summary>
+/// A non-clipping container Grid that disables WPF's automatic layout slot clipping,
+/// allowing 2D astrophotography mosaic tiles, constellation lines, and reference stars
+/// to render seamlessly across the entire infinite viewport without being cropped by a bounding box.
+/// </summary>
+public class InfiniteCanvasPanel : System.Windows.Controls.Grid
+{
+    public InfiniteCanvasPanel()
+    {
+        ClipToBounds = false;
+    }
+
+    protected override Geometry? GetLayoutClip(Size layoutSlotSize) => null;
+}
+
+/// <summary>
 /// Lightweight overlay that draws detections, scan regions and the region being drawn directly
 /// through a DrawingContext (instead of tens of thousands of WPF elements).
 /// Marker size and stroke thickness are expressed in screen pixels, so small stars stay visible at any zoom.
 /// </summary>
 public sealed class DetectionOverlay : FrameworkElement
 {
+    public DetectionOverlay()
+    {
+        ClipToBounds = false;
+    }
+
+    protected override Geometry? GetLayoutClip(Size layoutSlotSize) => null;
+
     private const int MaxLabels = 1000;
     private const int HaloLimit = 8000;
     private const double MinMarkerScreenPx = 10.0;
@@ -906,7 +928,8 @@ public sealed class DetectionOverlay : FrameworkElement
         if (wcs == null || width <= 0 || height <= 0) return;
 
         double fovDeg = Math.Max(wcs.FovWidthDegrees, wcs.FovHeightDegrees);
-        double searchRadius = (fovDeg * 0.75) + 0.5;
+        double searchRadius = Math.Max((fovDeg * 0.75) + 0.5, 6.0 / Math.Max(0.01, _zoom));
+        searchRadius = Math.Clamp(searchRadius, 4.0, 85.0);
 
         double maxMag = fovDeg switch
         {
@@ -924,7 +947,7 @@ public sealed class DetectionOverlay : FrameworkElement
                 wcs.CenterCoordinates.DecDegrees,
                 searchRadius,
                 maxMag,
-                maxResults: 350);
+                maxResults: 600);
             _lastHipparcosWcs = wcs;
         }
 
@@ -935,10 +958,13 @@ public sealed class DetectionOverlay : FrameworkElement
         var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
         double labelFontSize = Math.Clamp(10.0 * inv, 9.0, 22.0);
 
+        double extendX = Math.Max(width * 1.5, 4000.0 / Math.Max(0.01, _zoom));
+        double extendY = Math.Max(height * 1.5, 4000.0 / Math.Max(0.01, _zoom));
+
         foreach (var star in stars)
         {
             if (!TryProjectCelestialTo2DCanvas(star.RaDeg, star.DecDeg, out double px, out double py)) continue;
-            if (px < -20 || px > width + 20 || py < -20 || py > height + 20) continue;
+            if (px < -extendX || px > width + extendX || py < -extendY || py > height + extendY) continue;
 
             double radius = Math.Max(1.0, (8.5 - star.Mag) * 0.9) * inv;
             var starBrush = GetStarBrush(star.Bv);
@@ -984,13 +1010,16 @@ public sealed class DetectionOverlay : FrameworkElement
 
         var labeledConstellations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        double extendX = Math.Max(width * 1.5, 4000.0 / Math.Max(0.01, _zoom));
+        double extendY = Math.Max(height * 1.5, 4000.0 / Math.Max(0.01, _zoom));
+
         foreach (var line in ConstellationCatalog.Lines)
         {
             if (!TryProjectCelestialTo2DCanvas(line.Start.RaDegrees, line.Start.DecDegrees, out double x1, out double y1)) continue;
             if (!TryProjectCelestialTo2DCanvas(line.End.RaDegrees, line.End.DecDegrees, out double x2, out double y2)) continue;
 
-            bool anyNear = (x1 >= -width && x1 <= 2 * width && y1 >= -height && y1 <= 2 * height) ||
-                           (x2 >= -width && x2 <= 2 * width && y2 >= -height && y2 <= 2 * height);
+            bool anyNear = (x1 >= -extendX && x1 <= width + extendX && y1 >= -extendY && y1 <= height + extendY) ||
+                           (x2 >= -extendX && x2 <= width + extendX && y2 >= -extendY && y2 <= height + extendY);
             if (!anyNear) continue;
 
             dc.DrawLine(pen, new Point(x1, y1), new Point(x2, y2));
@@ -1000,7 +1029,7 @@ public sealed class DetectionOverlay : FrameworkElement
                 double mx = (x1 + x2) * 0.5;
                 double my = (y1 + y2) * 0.5;
 
-                if (mx >= 25 && mx <= width - 25 && my >= 25 && my <= height - 25)
+                if (mx >= -extendX + 25 && mx <= width + extendX - 25 && my >= -extendY + 25 && my <= height + extendY - 25)
                 {
                     labeledConstellations.Add(line.ConstellationName);
                     string text = line.DisplayName.ToUpperInvariant();
@@ -1034,10 +1063,13 @@ public sealed class DetectionOverlay : FrameworkElement
         double labelFontSize = Math.Clamp(11.0 * inv, 10.0, 24.0);
         double degPerPx = wcs.PixelScaleArcsec / 3600.0;
 
+        double extendX = Math.Max(width * 1.5, 4000.0 / Math.Max(0.01, _zoom));
+        double extendY = Math.Max(height * 1.5, 4000.0 / Math.Max(0.01, _zoom));
+
         foreach (var target in CataloguePlateSolver.KnownCatalogues)
         {
             if (!TryProjectCelestialTo2DCanvas(target.Coordinates.RaDegrees, target.Coordinates.DecDegrees, out double px, out double py)) continue;
-            if (px < -60 || px > width + 60 || py < -60 || py > height + 60) continue;
+            if (px < -extendX || px > width + extendX || py < -extendY || py > height + extendY) continue;
 
             double angularRadiusDeg = target.TypicalFovDegrees * 0.5;
             double pixelRadius = degPerPx > 1e-8 ? (angularRadiusDeg / degPerPx) : (20.0 * inv);

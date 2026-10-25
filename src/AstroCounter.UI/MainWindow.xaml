@@ -733,10 +733,11 @@
                       PreviewMouseMove="ScrollViewer_PreviewMouseMove"
                       PreviewMouseUp="ScrollViewer_PreviewMouseUp">
 
-            <Grid x:Name="CanvasContainer"
-                  Width="{Binding CanvasWidth}"
-                  Height="{Binding CanvasHeight}"
-                  HorizontalAlignment="Center" VerticalAlignment="Center">
+            <local:InfiniteCanvasPanel x:Name="CanvasContainer"
+                                       ClipToBounds="False"
+                                       Width="{Binding CanvasWidth}"
+                                       Height="{Binding CanvasHeight}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid.LayoutTransform>
                     <TransformGroup>
                         <ScaleTransform x:Name="CanvasScale" ScaleX="1.0" ScaleY="1.0"/>
@@ -759,7 +760,7 @@
                     </StackPanel>
                 </Border>
 
-                <Grid x:Name="ImageSurface">
+                <Grid x:Name="ImageSurface" ClipToBounds="False">
                     <Image x:Name="AstroImage"
                            Opacity="{Binding PhotoOpacity}"
                            Source="{Binding ImageBitmap}"
@@ -770,6 +771,7 @@
                            RenderOptions.BitmapScalingMode="HighQuality"/>
 
                     <local:DetectionOverlay x:Name="Overlay"
+                                            ClipToBounds="False"
                                             Width="{Binding CanvasWidth}"
                                             Height="{Binding CanvasHeight}"
                                             Objects="{Binding VisibleObjects}"
@@ -787,7 +789,7 @@
                                             TargetMarkerPixel="{Binding TargetMarkerPixel}"
                                             TargetMarkerLabel="{Binding TargetMarkerLabel}"/>
                 </Grid>
-            </Grid>
+            </local:InfiniteCanvasPanel>
         </ScrollViewer>
 
         <!-- 3D NAVIGABLE CELESTIAL SPHERE PLANETARIUM -->

@@ -443,6 +443,17 @@ public class MosaicTests
             Assert.True(mapped);
             Assert.True(px > 0 && px < masterWcs.ImageWidth, $"Panel {i} px {px} out of canvas width {masterWcs.ImageWidth}");
             Assert.True(py > 0 && py < masterWcs.ImageHeight, $"Panel {i} py {py} out of canvas height {masterWcs.ImageHeight}");
+
+            // Verify all 4 footprint corners map strictly inside the master canvas with no clipping
+            var (tl, tr, br, bl) = panel.GetFootprintCorners();
+            CelestialCoordinates[] corners = [tl, tr, br, bl];
+            foreach (var c in corners)
+            {
+                bool cornerMapped = masterWcs.EquatorialToPixel(c, out double cx, out double cy);
+                Assert.True(cornerMapped);
+                Assert.True(cx >= 0 && cx <= masterWcs.ImageWidth, $"Panel {i} corner X {cx} outside canvas [0, {masterWcs.ImageWidth}]");
+                Assert.True(cy >= 0 && cy <= masterWcs.ImageHeight, $"Panel {i} corner Y {cy} outside canvas [0, {masterWcs.ImageHeight}]");
+            }
         }
     }
 }
