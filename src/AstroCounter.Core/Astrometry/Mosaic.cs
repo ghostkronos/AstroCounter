@@ -40,6 +40,12 @@ public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
     private bool _isSelected = false;
     private EdgeOverlap _overlappingEdges = EdgeOverlap.All;
 
+    public const int PerimeterSampleCount = 256;
+    private readonly bool[] _perimeterOverlapMask = new bool[PerimeterSampleCount];
+    public bool[] PerimeterOverlapMask => _perimeterOverlapMask;
+    public bool HasOverlappingPerimeter { get; set; }
+    public long OverlapMaskHash { get; set; }
+
     /// <summary>
     /// Which borders of this photo tile intersect neighbor panels on the continuous canvas.
     /// Only intersecting edges receive feathered blending.
@@ -523,8 +529,9 @@ public class MosaicProject
     }
 
     /// <summary>
-    /// Updates the OverlappingEdges flags for all visible panels by checking which of their 4 edges
-    /// intersect neighbor panels on the master canvas. Outer perimeter borders are unflagged (crisp 100% opacity).
+    /// Updates the 256-point perimeter overlap mask for all visible panels by sampling 64 points
+    /// per boundary edge in master canvas space. Only sub-segments intersecting neighbor panels
+    /// receive soft feathered blending; outer borders exposed to open sky remain 100% crisp and unfeathered.
     /// </summary>
     public void UpdatePanelEdgeOverlaps(WcsMatrix? masterWcs = null)
     {
@@ -532,7 +539,11 @@ public class MosaicProject
         {
             for (int i = 0; i < _panels.Count; i++)
             {
-                _panels[i].OverlappingEdges = EdgeOverlap.None;
+                var p = _panels[i];
+                Array.Clear(p.PerimeterOverlapMask, 0, MosaicPanel.PerimeterSampleCount);
+                p.HasOverlappingPerimeter = false;
+                p.OverlapMaskHash = 0;
+                p.OverlappingEdges = EdgeOverlap.None;
             }
             return;
         }
@@ -562,23 +573,94 @@ public class MosaicProject
             }
         }
 
-        Span<double> samples = stackalloc double[] { 0.25, 0.50, 0.75 };
+        const int samplesPerSide = MosaicPanel.PerimeterSampleCount / 4; // 64 samples per edge
+        Span<double> interiorSamples = stackalloc double[] { 0.25, 0.50, 0.75 };
 
         for (int i = 0; i < count; i++)
         {
             var p = _panels[i];
             if (!p.IsVisible || p.Width <= 0 || p.Height <= 0)
             {
+                Array.Clear(p.PerimeterOverlapMask, 0, MosaicPanel.PerimeterSampleCount);
+                p.HasOverlappingPerimeter = false;
+                p.OverlapMaskHash = 0;
                 p.OverlappingEdges = EdgeOverlap.None;
                 continue;
             }
 
             var tr = transforms[i];
+            var mask = p.PerimeterOverlapMask;
+            bool anyOverlap = false;
+            long hash = 17;
+
+            // 1. Full 256-point perimeter contour mask generation
+            // Edge 0: Top Edge (y = 0, x from 0 to Width) -> indices 0..63
+            for (int s = 0; s < samplesPerSide; s++)
+            {
+                double t = (s + 0.5) / samplesPerSide;
+                double lx = t * p.Width;
+                double ly = 0;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                bool isInside = IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms);
+                mask[s] = isInside;
+                if (isInside) anyOverlap = true;
+                hash = unchecked((hash * 31) + (isInside ? 1 : 0));
+            }
+
+            // Edge 1: Right Edge (x = Width, y from 0 to Height) -> indices 64..127
+            for (int s = 0; s < samplesPerSide; s++)
+            {
+                int idx = samplesPerSide + s;
+                double t = (s + 0.5) / samplesPerSide;
+                double lx = p.Width;
+                double ly = t * p.Height;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                bool isInside = IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms);
+                mask[idx] = isInside;
+                if (isInside) anyOverlap = true;
+                hash = unchecked((hash * 31) + (isInside ? 1 : 0));
+            }
+
+            // Edge 2: Bottom Edge (y = Height, x from Width down to 0) -> indices 128..191
+            for (int s = 0; s < samplesPerSide; s++)
+            {
+                int idx = (2 * samplesPerSide) + s;
+                double t = 1.0 - ((s + 0.5) / samplesPerSide);
+                double lx = t * p.Width;
+                double ly = p.Height;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                bool isInside = IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms);
+                mask[idx] = isInside;
+                if (isInside) anyOverlap = true;
+                hash = unchecked((hash * 31) + (isInside ? 1 : 0));
+            }
+
+            // Edge 3: Left Edge (x = 0, y from Height down to 0) -> indices 192..255
+            for (int s = 0; s < samplesPerSide; s++)
+            {
+                int idx = (3 * samplesPerSide) + s;
+                double t = 1.0 - ((s + 0.5) / samplesPerSide);
+                double lx = 0;
+                double ly = t * p.Height;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                bool isInside = IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms);
+                mask[idx] = isInside;
+                if (isInside) anyOverlap = true;
+                hash = unchecked((hash * 31) + (isInside ? 1 : 0));
+            }
+
+            p.HasOverlappingPerimeter = anyOverlap;
+            p.OverlapMaskHash = hash;
+
+            // 2. 4-Edge rectilinear bitmask flags for UI status and cards
             EdgeOverlap overlap = EdgeOverlap.None;
 
-            // 1. Test Left Edge (x = 0, y in [0, Height])
-            bool leftOverlaps = false;
-            foreach (double t in samples)
+            // Left Edge (x = 0, y in [0, Height])
+            foreach (double t in interiorSamples)
             {
                 double lx = 0;
                 double ly = t * p.Height;
@@ -586,15 +668,13 @@ public class MosaicProject
                 double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
                 if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
                 {
-                    leftOverlaps = true;
+                    overlap |= EdgeOverlap.Left;
                     break;
                 }
             }
-            if (leftOverlaps) overlap |= EdgeOverlap.Left;
 
-            // 2. Test Right Edge (x = Width, y in [0, Height])
-            bool rightOverlaps = false;
-            foreach (double t in samples)
+            // Right Edge (x = Width, y in [0, Height])
+            foreach (double t in interiorSamples)
             {
                 double lx = p.Width;
                 double ly = t * p.Height;
@@ -602,15 +682,13 @@ public class MosaicProject
                 double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
                 if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
                 {
-                    rightOverlaps = true;
+                    overlap |= EdgeOverlap.Right;
                     break;
                 }
             }
-            if (rightOverlaps) overlap |= EdgeOverlap.Right;
 
-            // 3. Test Top Edge (y = 0, x in [0, Width])
-            bool topOverlaps = false;
-            foreach (double t in samples)
+            // Top Edge (y = 0, x in [0, Width])
+            foreach (double t in interiorSamples)
             {
                 double lx = t * p.Width;
                 double ly = 0;
@@ -618,15 +696,13 @@ public class MosaicProject
                 double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
                 if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
                 {
-                    topOverlaps = true;
+                    overlap |= EdgeOverlap.Top;
                     break;
                 }
             }
-            if (topOverlaps) overlap |= EdgeOverlap.Top;
 
-            // 4. Test Bottom Edge (y = Height, x in [0, Width])
-            bool bottomOverlaps = false;
-            foreach (double t in samples)
+            // Bottom Edge (y = Height, x in [0, Width])
+            foreach (double t in interiorSamples)
             {
                 double lx = t * p.Width;
                 double ly = p.Height;
@@ -634,11 +710,10 @@ public class MosaicProject
                 double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
                 if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
                 {
-                    bottomOverlaps = true;
+                    overlap |= EdgeOverlap.Bottom;
                     break;
                 }
             }
-            if (bottomOverlaps) overlap |= EdgeOverlap.Bottom;
 
             p.OverlappingEdges = overlap;
         }

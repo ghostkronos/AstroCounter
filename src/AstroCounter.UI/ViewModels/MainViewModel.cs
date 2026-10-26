@@ -217,12 +217,12 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     // Localized UI Strings
     public string L_WindowTitle => IsTurkish
-        ? "AstroCounter v1.3.4 - Astrofotoğraf Nesne Tespiti ve 3D Planetaryum"
-        : "AstroCounter v1.3.4 - Astrophotography Object Detection & 3D Celestial Planetarium";
+        ? "AstroCounter v1.3.5 - Astrofotoğraf Nesne Tespiti ve 3D Planetaryum"
+        : "AstroCounter v1.3.5 - Astrophotography Object Detection & 3D Celestial Planetarium";
     public string L_HeaderSubtitle => IsTurkish
-        ? "v1.3.4 • 2.5M Gaia/Tycho, 14K OpenNGC & 88 IAU Takımyıldızı Büyük Katalog Entegrasyonu"
-        : "v1.3.4 • 2.5M Gaia/Tycho, 14K OpenNGC & 88 IAU Constellations High-Density Sky Atlas";
-    public string L_VersionBadge => "v1.3.4";
+        ? "v1.3.5 • Hızlı Yıldız Çıkarımı, 256 Noktalı Kontur Maskesi, Görünüm Kırpma ve Sıfır Gecikmeli Yakınlaştırma"
+        : "v1.3.5 • Fast Star Extraction, 256-Point Contour Alpha Blending, Viewport Culling & Zero-Lag Zoom";
+    public string L_VersionBadge => "v1.3.5";
     public string L_PhotosButtonText => MosaicProject.Count > 0
         ? (IsTurkish ? $"Fotoğraflar ({MosaicProject.Count})" : $"Photos ({MosaicProject.Count})")
         : (IsTurkish ? "Fotoğraflar" : "Photos");
@@ -2656,7 +2656,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                                 ? $"⭐ [Aşama 2/3 - Yıldız Çıkarımı] '{panel.Name}' ({panel.Width}x{panel.Height} px) üzerindeki binlerce yıldız taranıyor..."
                                 : $"⭐ [Stage 2/3 - Star Extraction] Extracting thousands of stars in '{panel.Name}' ({panel.Width}x{panel.Height} px)...";
                             await Task.Yield();
-                            detectedStars = await Task.Run(() => PhotometricStarFinder.DetectStars(
+                            detectedStars = await Task.Run(() => PhotometricStarFinder.DetectStarsFast(
                                 bmp,
                                 new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f)));
                             panel.DetectedStars = detectedStars;
@@ -2849,7 +2849,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                                 ? $"⭐ [Aşama 2/3 - Yıldız Çıkarımı] '{p.Name}' ({p.Width}x{p.Height} px) üzerindeki binlerce yıldız taranıyor..."
                                 : $"⭐ [Stage 2/3 - Star Extraction] Extracting thousands of stars in '{p.Name}' ({p.Width}x{p.Height} px)...";
                             await Task.Yield();
-                            detectedStars = await Task.Run(() => PhotometricStarFinder.DetectStars(
+                            detectedStars = await Task.Run(() => PhotometricStarFinder.DetectStarsFast(
                                 bmp,
                                 new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f)));
                             p.DetectedStars = detectedStars;
@@ -2949,7 +2949,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
                 if (solvedWcs == null && solvedNeighbor != null)
                 {
-                    var detectedStars = PhotometricStarFinder.DetectStars(
+                    var detectedStars = PhotometricStarFinder.DetectStarsFast(
                         skBmp,
                         new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f));
 

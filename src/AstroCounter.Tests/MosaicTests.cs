@@ -522,4 +522,69 @@ public class MosaicTests
         Assert.True(brPanel.OverlappingEdges.HasFlag(EdgeOverlap.Right), "Inner Right seam should be flagged");
         Assert.True(brPanel.OverlappingEdges.HasFlag(EdgeOverlap.Top), "Inner Top seam should be flagged");
     }
+
+    [Fact]
+    public void MosaicProject_PerimeterOverlapMask_Calculates256SamplesAndOnlyFeathersSharedSeam()
+    {
+        var project = new MosaicProject();
+        double baseRa = 180.0;
+        double baseDec = 30.0;
+        double baseScale = 2.5;
+        int w = 1000;
+        int h = 1000;
+        double overlapFraction = 0.15;
+
+        double stepX = w * (1.0 - overlapFraction);
+        double stepY = h * (1.0 - overlapFraction);
+        double angularStepX = (stepX * baseScale) / 3600.0;
+        double angularStepY = (stepY * baseScale) / 3600.0;
+
+        for (int i = 0; i < 9; i++)
+        {
+            int row = i / 3;
+            int col = i % 3;
+            double colOffset = col - 1.0;
+            double rowOffset = 1.0 - row;
+
+            double tileDec = baseDec + (rowOffset * angularStepY);
+            double cosDec = Math.Cos(tileDec * Math.PI / 180.0);
+            double tileRa = baseRa + (colOffset * angularStepX / Math.Max(0.1, Math.Abs(cosDec)));
+
+            var wcs = new WcsMatrix(new CelestialCoordinates(tileRa, tileDec), w / 2.0, h / 2.0, baseScale, 0.0, w, h);
+            var panel = new MosaicPanel($"tile_{i}", $"Tile {i + 1}", w, h, wcs) { TargetName = $"Field {i + 1}" };
+            project.AddPanel(panel);
+        }
+
+        project.UpdatePanelEdgeOverlaps();
+
+        // 1. Center panel (index 4) should have 256 samples, overlapping perimeter true, non-zero hash
+        var centerPanel = project.Panels[4];
+        Assert.Equal(256, centerPanel.PerimeterOverlapMask.Length);
+        Assert.True(centerPanel.HasOverlappingPerimeter, "centerPanel.HasOverlappingPerimeter was false!");
+        Assert.NotEqual(0L, centerPanel.OverlapMaskHash);
+
+        int centerOverlapCount = centerPanel.PerimeterOverlapMask.Count(b => b);
+        Assert.True(centerOverlapCount > 0, $"Center panel overlap was: {centerOverlapCount}");
+
+        // 2. Corner panel (tile 0: top-left)
+        var tlPanel = project.Panels[0];
+        Assert.Equal(256, tlPanel.PerimeterOverlapMask.Length);
+        Assert.True(tlPanel.HasOverlappingPerimeter, "tlPanel.HasOverlappingPerimeter was false!");
+
+        // Top edge (indices 0..63) is outer perimeter to the sky -> should be predominantly false
+        int topOverlapCount = 0;
+        for (int s = 16; s < 56; s++)
+        {
+            if (tlPanel.PerimeterOverlapMask[s]) topOverlapCount++;
+        }
+        Assert.Equal(0, topOverlapCount);
+
+        // Bottom edge (indices 128..191) overlaps neighbor tile 3 -> should be true
+        int bottomOverlapCount = 0;
+        for (int s = 128 + 8; s < 128 + 56; s++)
+        {
+            if (tlPanel.PerimeterOverlapMask[s]) bottomOverlapCount++;
+        }
+        Assert.True(bottomOverlapCount > 0, $"Bottom seam overlap was: {bottomOverlapCount}");
+    }
 }

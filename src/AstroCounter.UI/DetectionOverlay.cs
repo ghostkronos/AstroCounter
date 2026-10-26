@@ -38,6 +38,7 @@ public sealed class DetectionOverlay : FrameworkElement
     public DetectionOverlay()
     {
         ClipToBounds = false;
+        RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.LowQuality);
     }
 
     protected override Geometry? GetLayoutClip(Size layoutSlotSize) => null;
@@ -983,13 +984,13 @@ public sealed class DetectionOverlay : FrameworkElement
         var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
         double labelFontSize = Math.Clamp(10.0 * inv, 9.0, 22.0);
 
-        double extendX = Math.Max(width * 2.5, 8000.0 / Math.Max(0.01, _zoom));
-        double extendY = Math.Max(height * 2.5, 8000.0 / Math.Max(0.01, _zoom));
+        Rect view = _viewport.IsEmpty ? new Rect(0, 0, width, height) : _viewport;
+        view.Inflate(60 * inv, 60 * inv);
 
         foreach (var star in stars)
         {
             if (!TryProjectCelestialTo2DCanvas(star.RaDeg, star.DecDeg, out double px, out double py)) continue;
-            if (px < -extendX || px > width + extendX || py < -extendY || py > height + extendY) continue;
+            if (!view.Contains(px, py)) continue;
 
             double radius = Math.Max(1.0, (8.5 - star.Mag) * 0.9) * inv;
             var starBrush = GetStarBrush(star.Bv);
@@ -1089,13 +1090,13 @@ public sealed class DetectionOverlay : FrameworkElement
         double labelFontSize = Math.Clamp(11.0 * inv, 10.0, 24.0);
         double degPerPx = wcs.PixelScaleArcsec / 3600.0;
 
-        double extendX = Math.Max(width * 2.5, 8000.0 / Math.Max(0.01, _zoom));
-        double extendY = Math.Max(height * 2.5, 8000.0 / Math.Max(0.01, _zoom));
+        Rect view = _viewport.IsEmpty ? new Rect(0, 0, width, height) : _viewport;
+        view.Inflate(80 * inv, 80 * inv);
 
         foreach (var target in CataloguePlateSolver.KnownCatalogues)
         {
             if (!TryProjectCelestialTo2DCanvas(target.Coordinates.RaDegrees, target.Coordinates.DecDegrees, out double px, out double py)) continue;
-            if (px < -extendX || px > width + extendX || py < -extendY || py > height + extendY) continue;
+            if (!view.Contains(px, py)) continue;
 
             double angularRadiusDeg = target.TypicalFovDegrees * 0.5;
             double pixelRadius = degPerPx > 1e-8 ? (angularRadiusDeg / degPerPx) : (20.0 * inv);
@@ -1294,22 +1295,37 @@ public sealed class DetectionOverlay : FrameworkElement
         string? path,
         System.Windows.Media.Imaging.BitmapSource? fallback = null,
         double featherFraction = 0.12,
-        EdgeOverlap edges = EdgeOverlap.All)
+        EdgeOverlap edges = EdgeOverlap.All,
+        bool[]? perimeterMask = null,
+        long maskHash = 0)
     {
         var baseBmp = fallback ?? GetOrLoadPanelBitmap(path);
         if (baseBmp == null) return null;
 
-        if (edges == EdgeOverlap.None) return baseBmp;
+        if (perimeterMask != null)
+        {
+            bool anyTrue = false;
+            for (int i = 0; i < perimeterMask.Length; i++)
+            {
+                if (perimeterMask[i]) { anyTrue = true; break; }
+            }
+            if (!anyTrue) return baseBmp; // 100% solid outer borders
+        }
+        else if (edges == EdgeOverlap.None)
+        {
+            return baseBmp;
+        }
 
         double fraction = Math.Clamp(featherFraction, 0.02, 0.35);
+        long effectiveHash = maskHash != 0 ? maskHash : (long)edges;
         string key = !string.IsNullOrEmpty(path)
-            ? $"{path}_{baseBmp.GetHashCode()}_{fraction:F3}_{(int)edges}"
-            : $"{baseBmp.GetHashCode()}_{fraction:F3}_{(int)edges}";
+            ? $"{path}_{baseBmp.GetHashCode()}_{fraction:F3}_{effectiveHash}"
+            : $"{baseBmp.GetHashCode()}_{fraction:F3}_{effectiveHash}";
 
         if (_featheredBitmapCache.TryGetValue(key, out var cached))
             return cached;
 
-        var feathered = CreateFeatheredBitmap(baseBmp, fraction, edges);
+        var feathered = CreateFeatheredBitmap(baseBmp, fraction, edges, perimeterMask);
         _featheredBitmapCache[key] = feathered;
         return feathered;
     }
@@ -1317,21 +1333,29 @@ public sealed class DetectionOverlay : FrameworkElement
     public static System.Windows.Media.Imaging.BitmapSource CreateFeatheredBitmap(
         System.Windows.Media.Imaging.BitmapSource src,
         double featherFraction = 0.12,
-        EdgeOverlap edges = EdgeOverlap.All)
+        EdgeOverlap edges = EdgeOverlap.All,
+        bool[]? perimeterMask = null)
     {
         if (src == null) return null!;
-        if (edges == EdgeOverlap.None) return src;
+
+        bool hasMask = perimeterMask != null && perimeterMask.Length >= 256;
+        if (hasMask)
+        {
+            bool anyTrue = false;
+            for (int i = 0; i < 256; i++)
+            {
+                if (perimeterMask![i]) { anyTrue = true; break; }
+            }
+            if (!anyTrue) return src; // 100% solid outer borders
+        }
+        else if (edges == EdgeOverlap.None)
+        {
+            return src;
+        }
 
         int width = src.PixelWidth;
         int height = src.PixelHeight;
         if (width <= 0 || height <= 0) return src;
-
-        bool featherLeft = edges.HasFlag(EdgeOverlap.Left);
-        bool featherRight = edges.HasFlag(EdgeOverlap.Right);
-        bool featherTop = edges.HasFlag(EdgeOverlap.Top);
-        bool featherBottom = edges.HasFlag(EdgeOverlap.Bottom);
-
-        if (!featherLeft && !featherRight && !featherTop && !featherBottom) return src;
 
         // Downsample oversized panels before feathering: 2048px is ideal for seamless display and avoids 100MB+ LOH footprint
         System.Windows.Media.Imaging.BitmapSource effectiveSrc = src;
@@ -1359,6 +1383,20 @@ public sealed class DetectionOverlay : FrameworkElement
         float[] fadeX = ArrayPool<float>.Shared.Rent(marginX);
         float[] fadeY = ArrayPool<float>.Shared.Rent(marginY);
 
+        float[]? overlapWeights = null;
+        if (hasMask)
+        {
+            overlapWeights = ArrayPool<float>.Shared.Rent(256);
+            for (int k = 0; k < 256; k++)
+            {
+                int kPrev = (k + 255) % 256;
+                int kNext = (k + 1) % 256;
+                overlapWeights[k] = (perimeterMask![kPrev] ? 0.25f : 0f) +
+                                    (perimeterMask[k] ? 0.50f : 0f) +
+                                    (perimeterMask[kNext] ? 0.25f : 0f);
+            }
+        }
+
         try
         {
             pbgraBmp.CopyPixels(pixels, stride, 0);
@@ -1373,25 +1411,85 @@ public sealed class DetectionOverlay : FrameworkElement
                 fadeY[j] = (float)(0.5 - 0.5 * Math.Cos(Math.PI * j / marginY));
             }
 
+            float invMarginX = 1.0f / marginX;
+            float invMarginY = 1.0f / marginY;
+            float invWidth = 1.0f / width;
+            float invHeight = 1.0f / height;
+
             for (int y = 0; y < height; y++)
             {
-                float alphaY = 1.0f;
-                if (featherTop && y < marginY)
-                    alphaY = fadeY[y];
-                else if (featherBottom && y >= height - marginY)
-                    alphaY = fadeY[height - 1 - y];
-
+                int distTop = y;
+                int distBottom = height - 1 - y;
                 int rowOffset = y * stride;
 
                 for (int x = 0; x < width; x++)
                 {
-                    float alphaX = 1.0f;
-                    if (featherLeft && x < marginX)
-                        alphaX = fadeX[x];
-                    else if (featherRight && x >= width - marginX)
-                        alphaX = fadeX[width - 1 - x];
+                    int distLeft = x;
+                    int distRight = width - 1 - x;
 
-                    float factor = Math.Min(alphaX, alphaY);
+                    if (distTop >= marginY && distBottom >= marginY && distLeft >= marginX && distRight >= marginX)
+                    {
+                        continue; // Center interior core: 100% opaque
+                    }
+
+                    float factor;
+
+                    if (hasMask && overlapWeights != null)
+                    {
+                        // 256-point perimeter contour evaluation
+                        float normDT = distTop * invMarginY;
+                        float normDB = distBottom * invMarginY;
+                        float normDL = distLeft * invMarginX;
+                        float normDR = distRight * invMarginX;
+
+                        float minNorm = Math.Min(Math.Min(normDT, normDB), Math.Min(normDL, normDR));
+                        if (minNorm >= 1.0f) continue;
+
+                        int sampleIdx;
+                        if (minNorm == normDT)
+                        {
+                            sampleIdx = Math.Clamp((int)(x * invWidth * 64.0f), 0, 63);
+                        }
+                        else if (minNorm == normDR)
+                        {
+                            sampleIdx = 64 + Math.Clamp((int)(y * invHeight * 64.0f), 0, 63);
+                        }
+                        else if (minNorm == normDB)
+                        {
+                            sampleIdx = 128 + Math.Clamp((int)((width - 1 - x) * invWidth * 64.0f), 0, 63);
+                        }
+                        else
+                        {
+                            sampleIdx = 192 + Math.Clamp((int)((height - 1 - y) * invHeight * 64.0f), 0, 63);
+                        }
+
+                        float seamWeight = overlapWeights[sampleIdx];
+                        if (seamWeight <= 0.001f)
+                        {
+                            continue; // Border touches open sky -> 100% solid
+                        }
+
+                        float alphaFeather = (float)(0.5 - 0.5 * Math.Cos(Math.PI * minNorm));
+                        factor = 1.0f - (seamWeight * (1.0f - alphaFeather));
+                    }
+                    else
+                    {
+                        // Fallback 4-edge rectilinear feathering
+                        float alphaY = 1.0f;
+                        if (edges.HasFlag(EdgeOverlap.Top) && distTop < marginY)
+                            alphaY = fadeY[distTop];
+                        else if (edges.HasFlag(EdgeOverlap.Bottom) && distBottom < marginY)
+                            alphaY = fadeY[distBottom];
+
+                        float alphaX = 1.0f;
+                        if (edges.HasFlag(EdgeOverlap.Left) && distLeft < marginX)
+                            alphaX = fadeX[distLeft];
+                        else if (edges.HasFlag(EdgeOverlap.Right) && distRight < marginX)
+                            alphaX = fadeX[distRight];
+
+                        factor = Math.Min(alphaX, alphaY);
+                    }
+
                     if (factor < 0.999f)
                     {
                         int idx = rowOffset + (x * 4);
@@ -1413,6 +1511,10 @@ public sealed class DetectionOverlay : FrameworkElement
             ArrayPool<byte>.Shared.Return(pixels);
             ArrayPool<float>.Shared.Return(fadeX);
             ArrayPool<float>.Shared.Return(fadeY);
+            if (overlapWeights != null)
+            {
+                ArrayPool<float>.Shared.Return(overlapWeights);
+            }
         }
     }
 
@@ -1434,6 +1536,9 @@ public sealed class DetectionOverlay : FrameworkElement
         var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
         double labelFontSize = Math.Clamp(11.0 * inv, 10.0, 24.0);
 
+        Rect view = _viewport.IsEmpty ? new Rect(0, 0, width, height) : _viewport;
+        view.Inflate(100 * inv, 100 * inv);
+
         for (int pIndex = 0; pIndex < panels.Count; pIndex++)
         {
             var p = panels[pIndex];
@@ -1451,13 +1556,23 @@ public sealed class DetectionOverlay : FrameworkElement
             var pt3 = matrix.Transform(new Point(p.Width, p.Height));
             var pt4 = matrix.Transform(new Point(0, p.Height));
 
-            // Render photo image if in multi-photo mosaic mode
-            if (!isSingleMode)
+            // Viewport Frustum Culling: Calculate panel AABB
+            double minX = Math.Min(Math.Min(pt1.X, pt2.X), Math.Min(pt3.X, pt4.X));
+            double maxX = Math.Max(Math.Max(pt1.X, pt2.X), Math.Max(pt3.X, pt4.X));
+            double minY = Math.Min(Math.Min(pt1.Y, pt2.Y), Math.Min(pt3.Y, pt4.Y));
+            double maxY = Math.Max(Math.Max(pt1.Y, pt2.Y), Math.Max(pt3.Y, pt4.Y));
+            var panelAabb = new Rect(minX, minY, Math.Max(1, maxX - minX), Math.Max(1, maxY - minY));
+
+            bool isSelectedPanel = p.IsSelected;
+            bool isVisibleInView = view.IntersectsWith(panelAabb);
+
+            // Skip rendering panel image if outside viewport (unless selected)
+            if (!isSingleMode && (isVisibleInView || isSelectedPanel))
             {
                 var panelBmp = GetPanelBitmap(p);
                 double featherFrac = p.FeatherFraction > 0 ? p.FeatherFraction : 0.12;
                 var bmp = UseFeatheredBlending
-                    ? (GetOrLoadFeatheredPanelBitmap(p.FilePath, panelBmp, featherFrac, p.OverlappingEdges) ?? panelBmp)
+                    ? (GetOrLoadFeatheredPanelBitmap(p.FilePath, panelBmp, featherFrac, p.OverlappingEdges, p.PerimeterOverlapMask, p.OverlapMaskHash) ?? panelBmp)
                     : panelBmp;
                 if (bmp != null)
                 {
@@ -1470,8 +1585,7 @@ public sealed class DetectionOverlay : FrameworkElement
             }
 
             // Only draw outline border when the photo is explicitly selected (or unsolved warning in mosaic)
-            bool isSelectedPanel = p.IsSelected;
-            if (isSelectedPanel || (!isSingleMode && !p.IsSolved))
+            if ((isSelectedPanel || (!isSingleMode && !p.IsSolved)) && (isVisibleInView || isSelectedPanel))
             {
                 Pen panelPen = isSelectedPanel ? selectedBorderPen : unsolvedBorderPen;
                 var streamGeom = new StreamGeometry();
@@ -1487,7 +1601,7 @@ public sealed class DetectionOverlay : FrameworkElement
             }
 
             // Show badge when selected or when unsolved in multi-panel mode
-            if (isSelectedPanel || (!isSingleMode && !p.IsSolved))
+            if ((isSelectedPanel || (!isSingleMode && !p.IsSolved)) && (isVisibleInView || isSelectedPanel))
             {
                 bool trLang = CataloguePlateSolver.UseTurkishLanguage;
                 string badge = p.IsSolved

@@ -751,7 +751,7 @@
                       PreviewMouseMove="ScrollViewer_PreviewMouseMove"
                       PreviewMouseUp="ScrollViewer_PreviewMouseUp">
 
-            <local:InfiniteCanvasPanel x:Name="CanvasContainer"
+            <local:InfiniteCanvasPanel x:Name="CanvasContainer" RenderOptions.BitmapScalingMode="LowQuality"
                                        ClipToBounds="False"
                                        Width="{Binding CanvasWidth}"
                                        Height="{Binding CanvasHeight}"
@@ -786,9 +786,9 @@
                            Height="{Binding ImageHeight}"
                            Visibility="{Binding IsSingleImageActive, Converter={StaticResource BoolToVis}}"
                            Stretch="Fill"
-                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                           RenderOptions.BitmapScalingMode="LowQuality"/>
 
-                    <local:DetectionOverlay x:Name="Overlay"
+                    <local:DetectionOverlay x:Name="Overlay" RenderOptions.BitmapScalingMode="LowQuality"
                                             ClipToBounds="False"
                                             Width="{Binding CanvasWidth}"
                                             Height="{Binding CanvasHeight}"
