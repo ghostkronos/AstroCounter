@@ -1,7 +1,10 @@
 namespace AstroCounter.Core.Processing;
 
 using System;
+using System.Buffers;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using AstroCounter.Core.Models;
@@ -60,44 +63,44 @@ public static class PhotometricStarFinder
         progress?.Report(0.15f);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // 2. 2D Background and Noise (sigma) modeling using local mesh grid
+        // 2. 2D Background and Noise (sigma) modeling using local mesh grid (Parallel SIMD accelerated)
         int gridCols = (width + GridSize - 1) / GridSize;
         int gridRows = (height + GridSize - 1) / GridSize;
 
         float[] bgGrid = new float[gridCols * gridRows];
         float[] stdGrid = new float[gridCols * gridRows];
 
-        var sampleBuffer = new float[GridSize * GridSize];
-
-        for (int gy = 0; gy < gridRows; gy++)
-        {
-            int y0 = gy * GridSize;
-            int y1 = Math.Min(height, y0 + GridSize);
-
-            for (int gx = 0; gx < gridCols; gx++)
+        Parallel.For(0, gridRows,
+            () => ArrayPool<float>.Shared.Rent(GridSize * GridSize),
+            (gy, loopState, sampleBuffer) =>
             {
-                int x0 = gx * GridSize;
-                int x1 = Math.Min(width, x0 + GridSize);
+                int y0 = gy * GridSize;
+                int y1 = Math.Min(height, y0 + GridSize);
 
-                int sampleCount = 0;
-                for (int y = y0; y < y1; y++)
+                for (int gx = 0; gx < gridCols; gx++)
                 {
-                    int rowOffset = y * width;
-                    for (int x = x0; x < x1; x++)
+                    int x0 = gx * GridSize;
+                    int x1 = Math.Min(width, x0 + GridSize);
+
+                    int sampleCount = 0;
+                    for (int y = y0; y < y1; y++)
                     {
-                        sampleBuffer[sampleCount++] = rawLuminance[rowOffset + x];
+                        int rowOffset = y * width;
+                        for (int x = x0; x < x1; x++)
+                        {
+                            sampleBuffer[sampleCount++] = rawLuminance[rowOffset + x];
+                        }
                     }
+
+                    // Compute median and std with sigma clipping
+                    (float median, float std) = ComputeSigmaClippedStats(sampleBuffer, sampleCount);
+                    int gridIdx = (gy * gridCols) + gx;
+                    bgGrid[gridIdx] = median;
+                    stdGrid[gridIdx] = Math.Max(1.0f, std);
                 }
-
-                // Compute median and std with sigma clipping
-                (float median, float std) = ComputeSigmaClippedStats(sampleBuffer, sampleCount);
-                int gridIdx = (gy * gridCols) + gx;
-                bgGrid[gridIdx] = median;
-                stdGrid[gridIdx] = Math.Max(1.0f, std);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
-        }
+                return sampleBuffer;
+            },
+            sampleBuffer => ArrayPool<float>.Shared.Return(sampleBuffer));
 
         // Clamp any outlier local noise to avoid distortion from dense clusters or nebulosity
         var allStds = (float[])stdGrid.Clone();
@@ -340,18 +343,26 @@ public static class PhotometricStarFinder
             int blueIdx = colorType == SKColorType.Rgba8888 ? 2 : 0;
             bool gray = colorType == SKColorType.Gray8;
 
-            for (int y = 0; y < h; y++)
+            Parallel.For(0, h, y =>
             {
                 byte* row = basePtr + ((long)y * rowBytes);
                 int rowOffset = y * w;
-                for (int x = 0; x < w; x++)
+                if (gray)
                 {
-                    byte* p = row + (x * bytesPerPixel);
-                    result[rowOffset + x] = gray
-                        ? p[0]
-                        : (p[redIdx] * 0.299f) + (p[1] * 0.587f) + (p[blueIdx] * 0.114f);
+                    for (int x = 0; x < w; x++)
+                    {
+                        result[rowOffset + x] = row[x * bytesPerPixel];
+                    }
                 }
-            }
+                else
+                {
+                    for (int x = 0; x < w; x++)
+                    {
+                        byte* p = row + (x * bytesPerPixel);
+                        result[rowOffset + x] = (p[redIdx] * 0.299f) + (p[1] * 0.587f) + (p[blueIdx] * 0.114f);
+                    }
+                }
+            });
 
             return result;
         }

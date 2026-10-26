@@ -2,7 +2,10 @@ using AstroCounter.Core.Processing;
 namespace AstroCounter.UI;
 
 using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Globalization;
 using System.Numerics;
 using System.Windows;
@@ -184,17 +187,37 @@ public sealed class DetectionOverlay : FrameworkElement
     private readonly Dictionary<(int Pct, int Tier, int SizeKey), FormattedText> _labelTextCache = new(512);
     private static readonly Typeface LabelTypeface = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
+    private long _spatialIndexVersion = 0;
+
     private void RebuildSpatialIndex(IReadOnlyList<AstrophotographyObject>? objects)
     {
-        if (objects != null && objects.Count > 0)
-        {
-            _spatialQuadTree = new SpatialQuadTree(objects);
-        }
-        else
-        {
-            _spatialQuadTree = null;
-        }
+        long currentVersion = Interlocked.Increment(ref _spatialIndexVersion);
         _labelTextCache.Clear();
+
+        if (objects == null || objects.Count == 0)
+        {
+            Volatile.Write(ref _spatialQuadTree, null);
+            return;
+        }
+
+        // Fast synchronous build for small scenes (< 5,000 objects)
+        if (objects.Count < 5000)
+        {
+            var quickTree = new SpatialQuadTree(objects);
+            Volatile.Write(ref _spatialQuadTree, quickTree);
+            return;
+        }
+
+        // Background asynchronous QuadTree build for massive datasets (10,000 to 600,000+ objects)
+        Task.Run(() =>
+        {
+            var newTree = new SpatialQuadTree(objects);
+            if (Interlocked.Read(ref _spatialIndexVersion) == currentVersion)
+            {
+                Volatile.Write(ref _spatialQuadTree, newTree);
+                Dispatcher.InvokeAsync(InvalidateVisual);
+            }
+        });
     }
 
     private IReadOnlyList<Vector2>? _previewPoints;
@@ -417,6 +440,7 @@ public sealed class DetectionOverlay : FrameworkElement
 
         bool isZoomedOut = _zoom < 0.40;
         bool isFarZoomedOut = _zoom < 0.20;
+        bool isLODFarOut = _zoom < 0.35; // LOD threshold: exclude Tier 2 & 3 faint detections (< 35% zoom)
 
         // Bounded marker sizing: when zoomed out, min screen size is 5px; when zoomed in, 8px
         double screenMinPx = isZoomedOut ? 5.0 : 8.0;
@@ -459,6 +483,13 @@ public sealed class DetectionOverlay : FrameworkElement
         {
             var obj = _visibleQueryBuffer[i];
             int tierIdx = Math.Clamp((int)obj.Tier, 0, 3);
+
+            // Phase 2 Density LOD: When zoomed out (< 35%), suppress faint Tier 2, Tier 3, and FilteredNoise
+            // from geometry generation entirely to guarantee 60 FPS and avoid GPU overlay choke.
+            if (isLODFarOut && tierIdx >= 1)
+            {
+                continue;
+            }
 
             double cx = obj.CenterX;
             double cy = obj.CenterY;
@@ -958,8 +989,8 @@ public sealed class DetectionOverlay : FrameworkElement
         var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
         double labelFontSize = Math.Clamp(10.0 * inv, 9.0, 22.0);
 
-        double extendX = Math.Max(width * 1.5, 4000.0 / Math.Max(0.01, _zoom));
-        double extendY = Math.Max(height * 1.5, 4000.0 / Math.Max(0.01, _zoom));
+        double extendX = Math.Max(width * 2.5, 8000.0 / Math.Max(0.01, _zoom));
+        double extendY = Math.Max(height * 2.5, 8000.0 / Math.Max(0.01, _zoom));
 
         foreach (var star in stars)
         {
@@ -1010,16 +1041,17 @@ public sealed class DetectionOverlay : FrameworkElement
 
         var labeledConstellations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        double extendX = Math.Max(width * 1.5, 4000.0 / Math.Max(0.01, _zoom));
-        double extendY = Math.Max(height * 1.5, 4000.0 / Math.Max(0.01, _zoom));
+        Rect view = _viewport.IsEmpty ? new Rect(0, 0, width, height) : _viewport;
+        double margin = Math.Max(width, height) * 2.0;
+        Rect activeBounds = view;
+        activeBounds.Inflate(margin, margin);
 
         foreach (var line in ConstellationCatalog.Lines)
         {
             if (!TryProjectCelestialTo2DCanvas(line.Start.RaDegrees, line.Start.DecDegrees, out double x1, out double y1)) continue;
             if (!TryProjectCelestialTo2DCanvas(line.End.RaDegrees, line.End.DecDegrees, out double x2, out double y2)) continue;
 
-            bool anyNear = (x1 >= -extendX && x1 <= width + extendX && y1 >= -extendY && y1 <= height + extendY) ||
-                           (x2 >= -extendX && x2 <= width + extendX && y2 >= -extendY && y2 <= height + extendY);
+            bool anyNear = activeBounds.Contains(x1, y1) || activeBounds.Contains(x2, y2);
             if (!anyNear) continue;
 
             dc.DrawLine(pen, new Point(x1, y1), new Point(x2, y2));
@@ -1029,7 +1061,7 @@ public sealed class DetectionOverlay : FrameworkElement
                 double mx = (x1 + x2) * 0.5;
                 double my = (y1 + y2) * 0.5;
 
-                if (mx >= -extendX + 25 && mx <= width + extendX - 25 && my >= -extendY + 25 && my <= height + extendY - 25)
+                if (activeBounds.Contains(mx, my))
                 {
                     labeledConstellations.Add(line.ConstellationName);
                     string text = line.DisplayName.ToUpperInvariant();
@@ -1063,8 +1095,8 @@ public sealed class DetectionOverlay : FrameworkElement
         double labelFontSize = Math.Clamp(11.0 * inv, 10.0, 24.0);
         double degPerPx = wcs.PixelScaleArcsec / 3600.0;
 
-        double extendX = Math.Max(width * 1.5, 4000.0 / Math.Max(0.01, _zoom));
-        double extendY = Math.Max(height * 1.5, 4000.0 / Math.Max(0.01, _zoom));
+        double extendX = Math.Max(width * 2.5, 8000.0 / Math.Max(0.01, _zoom));
+        double extendY = Math.Max(height * 2.5, 8000.0 / Math.Max(0.01, _zoom));
 
         foreach (var target in CataloguePlateSolver.KnownCatalogues)
         {
@@ -1264,21 +1296,28 @@ public sealed class DetectionOverlay : FrameworkElement
     /// Returns a panel bitmap with soft feathered alpha borders to eliminate hard seams and Z-buffer artifacts
     /// when blending multiple mosaic panels together on the celestial sphere or 2D mosaic preview.
     /// </summary>
-    public static System.Windows.Media.Imaging.BitmapSource? GetOrLoadFeatheredPanelBitmap(string? path, System.Windows.Media.Imaging.BitmapSource? fallback = null)
+    public static System.Windows.Media.Imaging.BitmapSource? GetOrLoadFeatheredPanelBitmap(
+        string? path,
+        System.Windows.Media.Imaging.BitmapSource? fallback = null,
+        double featherFraction = 0.12)
     {
         var baseBmp = fallback ?? GetOrLoadPanelBitmap(path);
         if (baseBmp == null) return null;
 
-        string key = !string.IsNullOrEmpty(path) ? $"{path}_{baseBmp.GetHashCode()}" : baseBmp.GetHashCode().ToString();
+        double fraction = Math.Clamp(featherFraction, 0.02, 0.35);
+        string key = !string.IsNullOrEmpty(path)
+            ? $"{path}_{baseBmp.GetHashCode()}_{fraction:F3}"
+            : $"{baseBmp.GetHashCode()}_{fraction:F3}";
+
         if (_featheredBitmapCache.TryGetValue(key, out var cached))
             return cached;
 
-        var feathered = CreateFeatheredBitmap(baseBmp, featherFraction: 0.05);
+        var feathered = CreateFeatheredBitmap(baseBmp, fraction);
         _featheredBitmapCache[key] = feathered;
         return feathered;
     }
 
-    public static System.Windows.Media.Imaging.BitmapSource CreateFeatheredBitmap(System.Windows.Media.Imaging.BitmapSource src, double featherFraction = 0.05)
+    public static System.Windows.Media.Imaging.BitmapSource CreateFeatheredBitmap(System.Windows.Media.Imaging.BitmapSource src, double featherFraction = 0.12)
     {
         if (src == null) return null!;
 
@@ -1286,76 +1325,120 @@ public sealed class DetectionOverlay : FrameworkElement
         int height = src.PixelHeight;
         if (width <= 0 || height <= 0) return src;
 
-        var bgraBmp = new System.Windows.Media.Imaging.FormatConvertedBitmap(src, PixelFormats.Bgra32, null, 0);
+        // Downsample oversized panels before feathering: 2048px is ideal for seamless display and avoids 100MB+ LOH footprint
+        System.Windows.Media.Imaging.BitmapSource effectiveSrc = src;
+        if (width > 2048 || height > 2048)
+        {
+            double scale = 2048.0 / Math.Max(width, height);
+            var scaled = new System.Windows.Media.Imaging.TransformedBitmap(src, new ScaleTransform(scale, scale));
+            scaled.Freeze();
+            effectiveSrc = scaled;
+            width = effectiveSrc.PixelWidth;
+            height = effectiveSrc.PixelHeight;
+            if (width <= 0 || height <= 0) return src;
+        }
+
+        var pbgraBmp = new System.Windows.Media.Imaging.FormatConvertedBitmap(effectiveSrc, PixelFormats.Pbgra32, null, 0);
 
         int stride = width * 4;
-        byte[] pixels = new byte[stride * height];
-        bgraBmp.CopyPixels(pixels, stride, 0);
+        int byteCount = stride * height;
+        byte[] pixels = ArrayPool<byte>.Shared.Rent(byteCount);
 
-        int marginX = Math.Max(8, (int)(width * featherFraction));
-        int marginY = Math.Max(8, (int)(height * featherFraction));
+        double fraction = Math.Clamp(featherFraction, 0.02, 0.35);
+        int marginX = Math.Max(12, (int)(width * fraction));
+        int marginY = Math.Max(12, (int)(height * fraction));
 
-        float[] fadeX = new float[marginX];
-        for (int i = 0; i < marginX; i++)
+        float[] fadeX = ArrayPool<float>.Shared.Rent(marginX);
+        float[] fadeY = ArrayPool<float>.Shared.Rent(marginY);
+
+        try
         {
-            // Smooth cosine S-curve: 0.0 at outer edge to 1.0 at inner margin
-            fadeX[i] = (float)(0.5 - 0.5 * Math.Cos(Math.PI * i / marginX));
-        }
+            pbgraBmp.CopyPixels(pixels, stride, 0);
 
-        float[] fadeY = new float[marginY];
-        for (int j = 0; j < marginY; j++)
-        {
-            fadeY[j] = (float)(0.5 - 0.5 * Math.Cos(Math.PI * j / marginY));
-        }
-
-        for (int y = 0; y < height; y++)
-        {
-            float alphaY = 1.0f;
-            if (y < marginY)
-                alphaY = fadeY[y];
-            else if (y >= height - marginY)
-                alphaY = fadeY[height - 1 - y];
-
-            int rowOffset = y * stride;
-
-            if (alphaY < 0.999f)
+            for (int i = 0; i < marginX; i++)
             {
-                // Top or bottom margin rows: scale across columns
-                for (int x = 0; x < width; x++)
-                {
-                    float alphaX = 1.0f;
-                    if (x < marginX)
-                        alphaX = fadeX[x];
-                    else if (x >= width - marginX)
-                        alphaX = fadeX[width - 1 - x];
+                // Smooth cosine S-curve: 0.0 at outer edge to 1.0 at inner margin
+                fadeX[i] = (float)(0.5 - 0.5 * Math.Cos(Math.PI * i / marginX));
+            }
 
-                    float factor = Math.Min(alphaX, alphaY);
-                    int idx = rowOffset + (x * 4);
-                    pixels[idx + 3] = (byte)Math.Clamp((int)(pixels[idx + 3] * factor), 0, 255);
+            for (int j = 0; j < marginY; j++)
+            {
+                fadeY[j] = (float)(0.5 - 0.5 * Math.Cos(Math.PI * j / marginY));
+            }
+
+            for (int y = 0; y < height; y++)
+            {
+                float alphaY = 1.0f;
+                if (y < marginY)
+                    alphaY = fadeY[y];
+                else if (y >= height - marginY)
+                    alphaY = fadeY[height - 1 - y];
+
+                int rowOffset = y * stride;
+
+                if (alphaY < 0.999f)
+                {
+                    // Top or bottom margin rows: scale across columns
+                    for (int x = 0; x < width; x++)
+                    {
+                        float alphaX = 1.0f;
+                        if (x < marginX)
+                            alphaX = fadeX[x];
+                        else if (x >= width - marginX)
+                            alphaX = fadeX[width - 1 - x];
+
+                        float factor = Math.Min(alphaX, alphaY);
+                        if (factor < 0.999f)
+                        {
+                            int idx = rowOffset + (x * 4);
+                            pixels[idx + 0] = (byte)Math.Clamp((int)(pixels[idx + 0] * factor), 0, 255);
+                            pixels[idx + 1] = (byte)Math.Clamp((int)(pixels[idx + 1] * factor), 0, 255);
+                            pixels[idx + 2] = (byte)Math.Clamp((int)(pixels[idx + 2] * factor), 0, 255);
+                            pixels[idx + 3] = (byte)Math.Clamp((int)(pixels[idx + 3] * factor), 0, 255);
+                        }
+                    }
+                }
+                else
+                {
+                    // Middle rows: only feather left and right margin columns
+                    for (int x = 0; x < marginX; x++)
+                    {
+                        float factor = fadeX[x];
+                        if (factor < 0.999f)
+                        {
+                            int idx = rowOffset + (x * 4);
+                            pixels[idx + 0] = (byte)Math.Clamp((int)(pixels[idx + 0] * factor), 0, 255);
+                            pixels[idx + 1] = (byte)Math.Clamp((int)(pixels[idx + 1] * factor), 0, 255);
+                            pixels[idx + 2] = (byte)Math.Clamp((int)(pixels[idx + 2] * factor), 0, 255);
+                            pixels[idx + 3] = (byte)Math.Clamp((int)(pixels[idx + 3] * factor), 0, 255);
+                        }
+                    }
+                    for (int x = width - marginX; x < width; x++)
+                    {
+                        float factor = fadeX[width - 1 - x];
+                        if (factor < 0.999f)
+                        {
+                            int idx = rowOffset + (x * 4);
+                            pixels[idx + 0] = (byte)Math.Clamp((int)(pixels[idx + 0] * factor), 0, 255);
+                            pixels[idx + 1] = (byte)Math.Clamp((int)(pixels[idx + 1] * factor), 0, 255);
+                            pixels[idx + 2] = (byte)Math.Clamp((int)(pixels[idx + 2] * factor), 0, 255);
+                            pixels[idx + 3] = (byte)Math.Clamp((int)(pixels[idx + 3] * factor), 0, 255);
+                        }
+                    }
                 }
             }
-            else
-            {
-                // Middle rows: only feather left and right margin columns
-                for (int x = 0; x < marginX; x++)
-                {
-                    float factor = fadeX[x];
-                    int idx = rowOffset + (x * 4);
-                    pixels[idx + 3] = (byte)Math.Clamp((int)(pixels[idx + 3] * factor), 0, 255);
-                }
-                for (int x = width - marginX; x < width; x++)
-                {
-                    float factor = fadeX[width - 1 - x];
-                    int idx = rowOffset + (x * 4);
-                    pixels[idx + 3] = (byte)Math.Clamp((int)(pixels[idx + 3] * factor), 0, 255);
-                }
-            }
-        }
 
-        var writeable = new System.Windows.Media.Imaging.WriteableBitmap(width, height, 96, 96, PixelFormats.Bgra32, null);
-        writeable.WritePixels(new Int32Rect(0, 0, width, height), pixels, stride, 0);
-        writeable.Freeze();
-        return writeable;
+            var writeable = new System.Windows.Media.Imaging.WriteableBitmap(width, height, 96, 96, PixelFormats.Pbgra32, null);
+            writeable.WritePixels(new Int32Rect(0, 0, width, height), pixels, stride, 0);
+            writeable.Freeze();
+            return writeable;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(pixels);
+            ArrayPool<float>.Shared.Return(fadeX);
+            ArrayPool<float>.Shared.Return(fadeY);
+        }
     }
 
     private void DrawMosaicPanels(DrawingContext dc, double inv, double width, double height)
@@ -1397,8 +1480,9 @@ public sealed class DetectionOverlay : FrameworkElement
             if (!isSingleMode)
             {
                 var panelBmp = GetPanelBitmap(p);
+                double featherFrac = p.FeatherFraction > 0 ? p.FeatherFraction : 0.12;
                 var bmp = UseFeatheredBlending
-                    ? (GetOrLoadFeatheredPanelBitmap(p.FilePath, panelBmp) ?? panelBmp)
+                    ? (GetOrLoadFeatheredPanelBitmap(p.FilePath, panelBmp, featherFrac) ?? panelBmp)
                     : panelBmp;
                 if (bmp != null)
                 {

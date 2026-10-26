@@ -1,6 +1,7 @@
 namespace AstroCounter.Core.Processing;
 
 using System;
+using System.Buffers;
 using System.IO;
 using System.Threading.Tasks;
 using BitMiracle.LibTiff.Classic;
@@ -100,23 +101,31 @@ public static class ImagePreprocessor
             if (width <= 0 || height <= 0) return null;
 
             // 1. Try ReadRGBAImageOriented (supports 8-bit, 16-bit integer, standard compressions, RGB, Gray, Palette)
-            int[] raster = new int[width * height];
-            if (tiff.ReadRGBAImageOriented(width, height, raster, Orientation.TOPLEFT))
+            int totalPixels = width * height;
+            int[] raster = ArrayPool<int>.Shared.Rent(totalPixels);
+            try
             {
-                var info = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
-                var skBitmap = new SKBitmap(info);
-                unsafe
+                if (tiff.ReadRGBAImageOriented(width, height, raster, Orientation.TOPLEFT))
                 {
-                    fixed (int* pRaster = raster)
+                    var info = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
+                    var skBitmap = new SKBitmap(info);
+                    unsafe
                     {
-                        Buffer.MemoryCopy(pRaster, (void*)skBitmap.GetPixels(), (long)raster.Length * sizeof(int), (long)raster.Length * sizeof(int));
+                        fixed (int* pRaster = raster)
+                        {
+                            Buffer.MemoryCopy(pRaster, (void*)skBitmap.GetPixels(), (long)totalPixels * sizeof(int), (long)totalPixels * sizeof(int));
+                        }
                     }
+                    return skBitmap;
                 }
-                return skBitmap;
-            }
 
-            // 2. Fallback: Scanline decoding for 32-bit float / 32-bit integer / unusual TIFF configurations
-            return DecodeTiffScanlines(tiff, width, height);
+                // 2. Fallback: Scanline decoding for 32-bit float / 32-bit integer / unusual TIFF configurations
+                return DecodeTiffScanlines(tiff, width, height);
+            }
+            finally
+            {
+                ArrayPool<int>.Shared.Return(raster);
+            }
         }
         catch
         {
@@ -138,168 +147,198 @@ public static class ImagePreprocessor
         var info = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
         var skBitmap = new SKBitmap(info);
 
-        byte[] scanlineBuf = new byte[scanlineSize];
-
-        if (bps == 32 && sampleFormat == 3) // 32-bit IEEE Float (Astrophotography stack export)
+        byte[] scanlineBuf = ArrayPool<byte>.Shared.Rent(scanlineSize);
+        try
         {
-            float[] allFloats = new float[width * height * spp];
-            for (int y = 0; y < height; y++)
+            if (bps == 32 && sampleFormat == 3) // 32-bit IEEE Float (Astrophotography stack export)
             {
-                if (tiff.ReadScanline(scanlineBuf, y))
+                int totalCount = width * height * spp;
+                float[] allFloats = ArrayPool<float>.Shared.Rent(totalCount);
+                try
                 {
-                    int offset = y * width * spp;
-                    Buffer.BlockCopy(scanlineBuf, 0, allFloats, offset * sizeof(float), Math.Min(scanlineSize, (width * spp) * sizeof(float)));
-                }
-            }
-
-            // Find valid min/max
-            float minVal = float.MaxValue;
-            float maxVal = float.MinValue;
-            for (int i = 0; i < allFloats.Length; i++)
-            {
-                float v = allFloats[i];
-                if (!float.IsNaN(v) && !float.IsInfinity(v))
-                {
-                    if (v < minVal) minVal = v;
-                    if (v > maxVal) maxVal = v;
-                }
-            }
-
-            if (maxVal <= minVal)
-            {
-                minVal = 0f;
-                maxVal = 1f;
-            }
-
-            bool isNormalized01 = minVal >= -0.01f && maxVal <= 1.05f;
-            float scale = isNormalized01 ? 255.0f : (255.0f / (maxVal - minVal));
-            float offsetVal = isNormalized01 ? 0f : minVal;
-
-            unsafe
-            {
-                byte* dstPtr = (byte*)skBitmap.GetPixels();
-                int stride = skBitmap.RowBytes;
-                for (int y = 0; y < height; y++)
-                {
-                    byte* row = dstPtr + y * stride;
-                    int srcRowOffset = y * width * spp;
-                    for (int x = 0; x < width; x++)
+                    for (int y = 0; y < height; y++)
                     {
-                        int srcIdx = srcRowOffset + x * spp;
-                        if (spp == 1)
+                        if (tiff.ReadScanline(scanlineBuf, y))
                         {
-                            byte b = (byte)Math.Clamp((allFloats[srcIdx] - offsetVal) * scale, 0f, 255f);
-                            if (photo == 0) b = (byte)(255 - b);
-                            row[x * 4 + 0] = b;
-                            row[x * 4 + 1] = b;
-                            row[x * 4 + 2] = b;
-                            row[x * 4 + 3] = 255;
-                        }
-                        else
-                        {
-                            byte r = (byte)Math.Clamp((allFloats[srcIdx] - offsetVal) * scale, 0f, 255f);
-                            byte g = (byte)Math.Clamp((allFloats[srcIdx + 1] - offsetVal) * scale, 0f, 255f);
-                            byte b = (byte)Math.Clamp((allFloats[srcIdx + 2] - offsetVal) * scale, 0f, 255f);
-                            row[x * 4 + 0] = r;
-                            row[x * 4 + 1] = g;
-                            row[x * 4 + 2] = b;
-                            row[x * 4 + 3] = 255;
+                            int offset = y * width * spp;
+                            Buffer.BlockCopy(scanlineBuf, 0, allFloats, offset * sizeof(float), Math.Min(scanlineSize, (width * spp) * sizeof(float)));
                         }
                     }
-                }
-            }
-            return skBitmap;
-        }
-        else if (bps == 32) // 32-bit uint
-        {
-            uint[] allUints = new uint[width * height * spp];
-            for (int y = 0; y < height; y++)
-            {
-                if (tiff.ReadScanline(scanlineBuf, y))
-                {
-                    int offset = y * width * spp;
-                    Buffer.BlockCopy(scanlineBuf, 0, allUints, offset * sizeof(uint), Math.Min(scanlineSize, (width * spp) * sizeof(uint)));
-                }
-            }
 
-            unsafe
-            {
-                byte* dstPtr = (byte*)skBitmap.GetPixels();
-                int stride = skBitmap.RowBytes;
-                for (int y = 0; y < height; y++)
-                {
-                    byte* row = dstPtr + y * stride;
-                    int srcRowOffset = y * width * spp;
-                    for (int x = 0; x < width; x++)
+                    // Find valid min/max
+                    float minVal = float.MaxValue;
+                    float maxVal = float.MinValue;
+                    for (int i = 0; i < totalCount; i++)
                     {
-                        int srcIdx = srcRowOffset + x * spp;
-                        if (spp == 1)
+                        float v = allFloats[i];
+                        if (!float.IsNaN(v) && !float.IsInfinity(v))
                         {
-                            byte b = (byte)(allUints[srcIdx] >> 24);
-                            if (photo == 0) b = (byte)(255 - b);
-                            row[x * 4 + 0] = b;
-                            row[x * 4 + 1] = b;
-                            row[x * 4 + 2] = b;
-                            row[x * 4 + 3] = 255;
-                        }
-                        else
-                        {
-                            row[x * 4 + 0] = (byte)(allUints[srcIdx] >> 24);
-                            row[x * 4 + 1] = (byte)(allUints[srcIdx + 1] >> 24);
-                            row[x * 4 + 2] = (byte)(allUints[srcIdx + 2] >> 24);
-                            row[x * 4 + 3] = 255;
+                            if (v < minVal) minVal = v;
+                            if (v > maxVal) maxVal = v;
                         }
                     }
-                }
-            }
-            return skBitmap;
-        }
-        else if (bps == 16) // 16-bit uint fallback
-        {
-            ushort[] allUshorts = new ushort[width * height * spp];
-            for (int y = 0; y < height; y++)
-            {
-                if (tiff.ReadScanline(scanlineBuf, y))
-                {
-                    int offset = y * width * spp;
-                    Buffer.BlockCopy(scanlineBuf, 0, allUshorts, offset * sizeof(ushort), Math.Min(scanlineSize, (width * spp) * sizeof(ushort)));
-                }
-            }
 
-            unsafe
-            {
-                byte* dstPtr = (byte*)skBitmap.GetPixels();
-                int stride = skBitmap.RowBytes;
-                for (int y = 0; y < height; y++)
-                {
-                    byte* row = dstPtr + y * stride;
-                    int srcRowOffset = y * width * spp;
-                    for (int x = 0; x < width; x++)
+                    if (maxVal <= minVal)
                     {
-                        int srcIdx = srcRowOffset + x * spp;
-                        if (spp == 1)
+                        minVal = 0f;
+                        maxVal = 1f;
+                    }
+
+                    bool isNormalized01 = minVal >= -0.01f && maxVal <= 1.05f;
+                    float scale = isNormalized01 ? 255.0f : (255.0f / (maxVal - minVal));
+                    float offsetVal = isNormalized01 ? 0f : minVal;
+
+                    unsafe
+                    {
+                        byte* dstPtr = (byte*)skBitmap.GetPixels();
+                        int stride = skBitmap.RowBytes;
+                        for (int y = 0; y < height; y++)
                         {
-                            byte b = (byte)(allUshorts[srcIdx] >> 8);
-                            if (photo == 0) b = (byte)(255 - b);
-                            row[x * 4 + 0] = b;
-                            row[x * 4 + 1] = b;
-                            row[x * 4 + 2] = b;
-                            row[x * 4 + 3] = 255;
-                        }
-                        else
-                        {
-                            row[x * 4 + 0] = (byte)(allUshorts[srcIdx] >> 8);
-                            row[x * 4 + 1] = (byte)(allUshorts[srcIdx + 1] >> 8);
-                            row[x * 4 + 2] = (byte)(allUshorts[srcIdx + 2] >> 8);
-                            row[x * 4 + 3] = 255;
+                            byte* row = dstPtr + y * stride;
+                            int srcRowOffset = y * width * spp;
+                            for (int x = 0; x < width; x++)
+                            {
+                                int srcIdx = srcRowOffset + x * spp;
+                                if (spp == 1)
+                                {
+                                    byte b = (byte)Math.Clamp((allFloats[srcIdx] - offsetVal) * scale, 0f, 255f);
+                                    if (photo == 0) b = (byte)(255 - b);
+                                    row[x * 4 + 0] = b;
+                                    row[x * 4 + 1] = b;
+                                    row[x * 4 + 2] = b;
+                                    row[x * 4 + 3] = 255;
+                                }
+                                else
+                                {
+                                    byte r = (byte)Math.Clamp((allFloats[srcIdx] - offsetVal) * scale, 0f, 255f);
+                                    byte g = (byte)Math.Clamp((allFloats[srcIdx + 1] - offsetVal) * scale, 0f, 255f);
+                                    byte b = (byte)Math.Clamp((allFloats[srcIdx + 2] - offsetVal) * scale, 0f, 255f);
+                                    row[x * 4 + 0] = r;
+                                    row[x * 4 + 1] = g;
+                                    row[x * 4 + 2] = b;
+                                    row[x * 4 + 3] = 255;
+                                }
+                            }
                         }
                     }
+                    return skBitmap;
+                }
+                finally
+                {
+                    ArrayPool<float>.Shared.Return(allFloats);
                 }
             }
-            return skBitmap;
-        }
+            else if (bps == 32) // 32-bit uint
+            {
+                int totalCount = width * height * spp;
+                uint[] allUints = ArrayPool<uint>.Shared.Rent(totalCount);
+                try
+                {
+                    for (int y = 0; y < height; y++)
+                    {
+                        if (tiff.ReadScanline(scanlineBuf, y))
+                        {
+                            int offset = y * width * spp;
+                            Buffer.BlockCopy(scanlineBuf, 0, allUints, offset * sizeof(uint), Math.Min(scanlineSize, (width * spp) * sizeof(uint)));
+                        }
+                    }
 
-        return null;
+                    unsafe
+                    {
+                        byte* dstPtr = (byte*)skBitmap.GetPixels();
+                        int stride = skBitmap.RowBytes;
+                        for (int y = 0; y < height; y++)
+                        {
+                            byte* row = dstPtr + y * stride;
+                            int srcRowOffset = y * width * spp;
+                            for (int x = 0; x < width; x++)
+                            {
+                                int srcIdx = srcRowOffset + x * spp;
+                                if (spp == 1)
+                                {
+                                    byte b = (byte)(allUints[srcIdx] >> 24);
+                                    if (photo == 0) b = (byte)(255 - b);
+                                    row[x * 4 + 0] = b;
+                                    row[x * 4 + 1] = b;
+                                    row[x * 4 + 2] = b;
+                                    row[x * 4 + 3] = 255;
+                                }
+                                else
+                                {
+                                    row[x * 4 + 0] = (byte)(allUints[srcIdx] >> 24);
+                                    row[x * 4 + 1] = (byte)(allUints[srcIdx + 1] >> 24);
+                                    row[x * 4 + 2] = (byte)(allUints[srcIdx + 2] >> 24);
+                                    row[x * 4 + 3] = 255;
+                                }
+                            }
+                        }
+                    }
+                    return skBitmap;
+                }
+                finally
+                {
+                    ArrayPool<uint>.Shared.Return(allUints);
+                }
+            }
+            else if (bps == 16) // 16-bit uint fallback
+            {
+                int totalCount = width * height * spp;
+                ushort[] allUshorts = ArrayPool<ushort>.Shared.Rent(totalCount);
+                try
+                {
+                    for (int y = 0; y < height; y++)
+                    {
+                        if (tiff.ReadScanline(scanlineBuf, y))
+                        {
+                            int offset = y * width * spp;
+                            Buffer.BlockCopy(scanlineBuf, 0, allUshorts, offset * sizeof(ushort), Math.Min(scanlineSize, (width * spp) * sizeof(ushort)));
+                        }
+                    }
+
+                    unsafe
+                    {
+                        byte* dstPtr = (byte*)skBitmap.GetPixels();
+                        int stride = skBitmap.RowBytes;
+                        for (int y = 0; y < height; y++)
+                        {
+                            byte* row = dstPtr + y * stride;
+                            int srcRowOffset = y * width * spp;
+                            for (int x = 0; x < width; x++)
+                            {
+                                int srcIdx = srcRowOffset + x * spp;
+                                if (spp == 1)
+                                {
+                                    byte b = (byte)(allUshorts[srcIdx] >> 8);
+                                    if (photo == 0) b = (byte)(255 - b);
+                                    row[x * 4 + 0] = b;
+                                    row[x * 4 + 1] = b;
+                                    row[x * 4 + 2] = b;
+                                    row[x * 4 + 3] = 255;
+                                }
+                                else
+                                {
+                                    row[x * 4 + 0] = (byte)(allUshorts[srcIdx] >> 8);
+                                    row[x * 4 + 1] = (byte)(allUshorts[srcIdx + 1] >> 8);
+                                    row[x * 4 + 2] = (byte)(allUshorts[srcIdx + 2] >> 8);
+                                    row[x * 4 + 3] = 255;
+                                }
+                            }
+                        }
+                    }
+                    return skBitmap;
+                }
+                finally
+                {
+                    ArrayPool<ushort>.Shared.Return(allUshorts);
+                }
+            }
+
+            return null;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(scanlineBuf);
+        }
     }
 
     /// <summary>

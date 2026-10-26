@@ -283,6 +283,7 @@ public class CelestialSphereControl : Grid
 
     private double _currentNudgeStep = 0.05;
     private bool _suppressCameraAutoCenter;
+    private bool _isUserCameraActive;
     private double _cumulativeNudgeRa;
     private double _cumulativeNudgeDec;
     private double _cumulativeNudgeRot;
@@ -307,9 +308,8 @@ public class CelestialSphereControl : Grid
         _sceneGroup = new Model3DGroup();
         _panelsGroup = new Model3DGroup();
 
-        // Add celestial ambient lighting
-        _sceneGroup.Children.Add(new AmbientLight(Color.FromRgb(80, 95, 125)));
-        _sceneGroup.Children.Add(new DirectionalLight(Color.FromRgb(220, 230, 245), new Vector3D(0, 1, 0)));
+        // Add celestial ambient white lighting for true color fidelity and non-additive linear alpha crossfading (v1.3.2)
+        _sceneGroup.Children.Add(new AmbientLight(Colors.White));
 
         // Build celestial sphere globe / dome
         BuildCelestialSkyDome(IsGlobeView ? 97.0 : 150.0);
@@ -470,7 +470,11 @@ public class CelestialSphereControl : Grid
             Cursor = Cursors.Hand,
             ToolTip = CataloguePlateSolver.UseTurkishLanguage ? "Kamerayı seçili fotoğrafın gökyüzündeki merkezine odaklar" : "Focuses the camera on the celestial center of the active photo"
         };
-        _centerPhotoBtn.Click += (s, e) => CenterOnActivePhoto();
+        _centerPhotoBtn.Click += (s, e) =>
+        {
+            _isUserCameraActive = false;
+            CenterOnActivePhoto();
+        };
         rightStack.Children.Add(_centerPhotoBtn);
 
         Grid.SetRow(rightStack, 0);
@@ -715,7 +719,8 @@ public class CelestialSphereControl : Grid
         if (d is CelestialSphereControl csc)
         {
             csc.RebuildPhotoMeshes();
-            if (!csc._suppressCameraAutoCenter)
+            // Preserve user camera state on panel selection or property updates (v1.3.2 / Target 4)
+            if (!csc._suppressCameraAutoCenter && !csc._isUserCameraActive)
             {
                 csc.CenterOnActivePhoto();
             }
@@ -938,6 +943,19 @@ public class CelestialSphereControl : Grid
         }
     }
 
+    private static BitmapSource GetOrCreate3DProxyBitmap(BitmapSource src)
+    {
+        if (src.PixelWidth <= 2048 && src.PixelHeight <= 2048)
+        {
+            return src;
+        }
+
+        double scale = 2048.0 / Math.Max(src.PixelWidth, src.PixelHeight);
+        var transformed = new TransformedBitmap(src, new ScaleTransform(scale, scale));
+        transformed.Freeze();
+        return transformed;
+    }
+
     private void BuildCelestialSkyDome(double radius)
     {
         if (_skyDomeModel != null)
@@ -988,13 +1006,16 @@ public class CelestialSphereControl : Grid
             }
         }
 
-        var darkMat = new MaterialGroup();
-        darkMat.Children.Add(new EmissiveMaterial(new SolidColorBrush(Color.FromRgb(6, 10, 20))));
-        darkMat.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromRgb(10, 16, 30))));
+        var darkBrush = new SolidColorBrush(Color.FromRgb(6, 10, 20));
+        darkBrush.Freeze();
+        var darkMat = new EmissiveMaterial(darkBrush);
+        darkMat.Freeze();
 
-        _skyDomeModel = new GeometryModel3D(mesh, darkMat);
-        _skyDomeModel.Material = darkMat;
-        _skyDomeModel.BackMaterial = darkMat;
+        _skyDomeModel = new GeometryModel3D(mesh, darkMat)
+        {
+            Material = darkMat,
+            BackMaterial = darkMat
+        };
         _sceneGroup.Children.Insert(0, _skyDomeModel);
     }
 
@@ -1051,26 +1072,32 @@ public class CelestialSphereControl : Grid
                 ? (baseRadius + (pIndex * layerStep))
                 : (baseRadius - (pIndex * layerStep));
 
-            // 64x64 ultra-fine spherical mesh curves each photo accurately onto the celestial dome
-            // and faithfully samples non-linear Thin Plate Spline and optical radial lens distortion.
-            int divX = 64;
-            int divY = 64;
-            var mesh = new MeshGeometry3D();
+            // 32x32 spherical mesh warp (v1.3.2 / Target 2): Curves each photo accurately onto the celestial dome
+            // and faithfully snaps overlapping stars using non-linear Thin Plate Spline and optical radial lens distortion.
+            int divX = 32;
+            int divY = 32;
+            int vertexCount = (divX + 1) * (divY + 1);
+            var positions = new Point3D[vertexCount];
+            var texCoords = new Point[vertexCount];
 
-            for (int j = 0; j <= divY; j++)
+            var panelWcs = p.Wcs;
+            double pWidth = p.Width;
+            double pHeight = p.Height;
+
+            Parallel.For(0, divY + 1, j =>
             {
                 double v = (double)j / divY;
+                int rowOffset = j * (divX + 1);
 
                 for (int i = 0; i <= divX; i++)
                 {
                     double u = (double)i / divX;
-                    double px = u * p.Width;
-                    double py = v * p.Height;
+                    double px = u * pWidth;
+                    double py = v * pHeight;
 
-                    // Direct 1:1 astrometric mapping: Pixel (px, py) corresponding to texture coordinate (u, v)
-                    // maps via WcsMatrix (which includes non-linear Thin Plate Spline and radial lens distortion)
-                    // directly to the true celestial coordinate (RA, Dec) where that star belongs!
-                    var coord = p.Wcs.PixelToEquatorial(px, py);
+                    // Direct 1:1 astrometric mapping with non-linear TPS & distortion correction:
+                    // Snaps overlapping stars across adjacent panels to identical 3D celestial sphere coordinates!
+                    var coord = panelWcs.PixelToEquatorial(px, py);
                     double raRad = coord.RaRadians;
                     double decRad = coord.DecRadians;
 
@@ -1079,15 +1106,18 @@ public class CelestialSphereControl : Grid
                     double cosR = Math.Cos(raRad);
                     double sinR = Math.Sin(raRad);
 
-                    double currentRadius = panelRadius;
-
-                    mesh.Positions.Add(new Point3D(
-                        currentRadius * cosD * sinR,
-                        currentRadius * sinD,
-                        -currentRadius * cosD * cosR));
-                    mesh.TextureCoordinates.Add(new Point(u, v));
+                    int idx = rowOffset + i;
+                    positions[idx] = new Point3D(
+                        panelRadius * cosD * sinR,
+                        panelRadius * sinD,
+                        -panelRadius * cosD * cosR);
+                    texCoords[idx] = new Point(u, v);
                 }
-            }
+            });
+
+            var mesh = new MeshGeometry3D();
+            mesh.Positions = new Point3DCollection(positions);
+            mesh.TextureCoordinates = new PointCollection(texCoords);
 
             for (int j = 0; j < divY; j++)
             {
@@ -1109,6 +1139,11 @@ public class CelestialSphereControl : Grid
                 }
             }
 
+            mesh.Freeze();
+
+            // Mipmap Proxy Texture - ensure 3D spherical mesh texture is bounded to 2048px
+            bmp = GetOrCreate3DProxyBitmap(bmp);
+
             var imageBrush = new ImageBrush(bmp)
             {
                 Stretch = Stretch.Fill,
@@ -1116,14 +1151,15 @@ public class CelestialSphereControl : Grid
             };
             imageBrush.Freeze();
 
-            var matGroup = new MaterialGroup();
-            matGroup.Children.Add(new EmissiveMaterial(imageBrush));
-            matGroup.Children.Add(new DiffuseMaterial(imageBrush));
+            // v1.3.2 Fix 1: Use DiffuseMaterial with white ambient light for linear alpha crossfade blending without additive blowout
+            var diffMat = new DiffuseMaterial(imageBrush);
+            diffMat.Freeze();
 
-            var geomModel = new GeometryModel3D(mesh, matGroup);
-            // Double-sided rendering: visible both when inside the dome and outside looking at the globe
-            geomModel.Material = matGroup;
-            geomModel.BackMaterial = matGroup;
+            var geomModel = new GeometryModel3D(mesh, diffMat)
+            {
+                Material = diffMat,
+                BackMaterial = diffMat
+            };
 
             _panelsGroup.Children.Add(geomModel);
         }
@@ -1216,6 +1252,7 @@ public class CelestialSphereControl : Grid
         base.OnMouseMove(e);
         if (_isDragging && e.LeftButton == MouseButtonState.Pressed)
         {
+            _isUserCameraActive = true;
             var curPos = e.GetPosition(this);
             double dx = curPos.X - _lastMousePos.X;
             double dy = curPos.Y - _lastMousePos.Y;
@@ -1263,6 +1300,7 @@ public class CelestialSphereControl : Grid
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
         base.OnMouseWheel(e);
+        _isUserCameraActive = true;
         double factor = e.Delta > 0 ? 0.85 : 1.18;
 
         if (IsGlobeView)

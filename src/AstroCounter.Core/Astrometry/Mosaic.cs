@@ -18,7 +18,7 @@ public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
     private double _contrast = 1.0;
     private bool _isAutoBrightnessEnabled = false;
     private bool _useFeatheredBlending = true;
-    private double _featherFraction = 0.05;
+    private double _featherFraction = 0.12;
     private float _confidenceThreshold = 0.25f;
     private float _autoConfidenceThreshold = 0.25f;
     private bool _isAutoConfidenceEnabled = true;
@@ -709,7 +709,7 @@ public class MosaicProject
         double spanY = hasProjected ? (maxY - minY) : (bounds.AngularHeightDegrees * 3600.0 / scale);
 
         // Add generous margin around all panels so mosaic tiles never touch or cross the canvas boundary
-        int effectiveMargin = Math.Max(marginPx, Math.Max(400, (int)(Math.Max(spanX, spanY) * 0.12)));
+        int effectiveMargin = Math.Max(marginPx, Math.Max(600, (int)(Math.Max(spanX, spanY) * 0.20)));
 
         const int maxCanvasDim = 16000;
         double minRequiredScaleW = (spanX * scale) / Math.Max(100, maxCanvasDim - (effectiveMargin * 2));

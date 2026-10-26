@@ -38,3 +38,28 @@ dataset/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# ==========================================
+# Security & Secret Protections
+# ==========================================
+.env
+*.env
+.env.*
+*.key
+*.pem
+*.token
+*.secret
+
+# Antigravity Local Workspaces & MCP Configurations
+.antigravity/
+.vscode/mcp.json
+.vscode/*.local.json
+tools/secrets/
+AGENT_REPORT.md
+ARCHITECT_TASK.md
+tools/astro_architect_mcp.py
+call_consult_architect.py
+
+update_mcp.py
+
+architect_response.txt

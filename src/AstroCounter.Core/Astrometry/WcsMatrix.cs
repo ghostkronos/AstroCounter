@@ -287,28 +287,56 @@ public class WcsMatrix
         double dx = ((_cd22 * xiDeg) - (_cd12 * etaDeg)) / _detCd;
         double dy = ((-_cd21 * xiDeg) + (_cd11 * etaDeg)) / _detCd;
 
+        double linearDx = dx;
+        double linearDy = dy;
         double ruSq = (dx * dx) + (dy * dy);
         if ((Math.Abs(RadialDistortionK1) > 1e-7 || Math.Abs(RadialDistortionK2) > 1e-7) && ruSq > 1e-6)
         {
-            // Invert ru = rd * (1 + k1*rd^2 + k2*rd^4) using high-precision 4-step Newton-Raphson
+            // Robust Bounded Inversion (Sprint 2 / Architect Directive 1):
+            // Inverts ru = rd * (1 + k1*rd^2 + k2*rd^4) with max 10 iterations, 1e-7 normalized tol (~1e-4 px),
+            // and immediate fallback to Linear TAN WCS if derivative vanishes or divergence occurs.
             double ruNorm = Math.Sqrt(ruSq) / _normRadius;
             if (ruNorm > 1e-8)
             {
                 double rd = ruNorm;
-                for (int iter = 0; iter < 4; iter++)
+                bool converged = false;
+                const double tol = 1e-7;
+
+                for (int iter = 0; iter < 10; iter++)
                 {
                     double rd2 = rd * rd;
                     double rd4 = rd2 * rd2;
-                    double f = rd * (1.0 + (RadialDistortionK1 * rd2) + (RadialDistortionK2 * rd4)) - ruNorm;
-                    double fPrime = 1.0 + (3.0 * RadialDistortionK1 * rd2) + (5.0 * RadialDistortionK2 * rd4);
-                    if (Math.Abs(fPrime) > 1e-9)
+                    double f = (rd * (1.0 + (RadialDistortionK1 * rd2) + (RadialDistortionK2 * rd4))) - ruNorm;
+                    if (Math.Abs(f) < tol)
                     {
-                        rd -= f / fPrime;
+                        converged = true;
+                        break;
+                    }
+                    double fPrime = 1.0 + (3.0 * RadialDistortionK1 * rd2) + (5.0 * RadialDistortionK2 * rd4);
+                    if (Math.Abs(fPrime) <= 1e-9 || double.IsNaN(fPrime))
+                    {
+                        break;
+                    }
+                    double step = f / fPrime;
+                    rd -= step;
+                    if (double.IsNaN(rd) || double.IsInfinity(rd) || rd < 0.0)
+                    {
+                        break;
                     }
                 }
-                double factor = rd / ruNorm;
-                dx *= factor;
-                dy *= factor;
+
+                if (converged || (rd > 0.0 && !double.IsNaN(rd) && !double.IsInfinity(rd) && rd < ruNorm * 3.0))
+                {
+                    double factor = rd / ruNorm;
+                    dx *= factor;
+                    dy *= factor;
+                }
+                else
+                {
+                    // Linear TAN Fallback on divergence (Architect Directive Risk A)
+                    dx = linearDx;
+                    dy = linearDy;
+                }
             }
         }
 
@@ -440,7 +468,7 @@ public class WcsMatrix
 
     private bool AnyInBounds(List<System.Numerics.Vector2> pts)
     {
-        double margin = Math.Max(ImageWidth, ImageHeight) * 0.2;
+        double margin = Math.Max(ImageWidth, ImageHeight) * 1.5;
         foreach (var p in pts)
         {
             if (p.X >= -margin && p.X <= ImageWidth + margin &&
