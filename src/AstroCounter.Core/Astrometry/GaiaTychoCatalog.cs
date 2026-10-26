@@ -52,31 +52,17 @@ public static class GaiaTychoCatalog
     private sealed class DenseCatalogIndex
     {
         private readonly GaiaTychoStar[] _stars;
-        private readonly int[][] _declinationStrips;
-        private const double StripSizeDeg = 1.0;
-        private const int StripCount = 180; // 180 1-degree strips from -90 to +90
+        private readonly SpatialHashIndex<int> _spatialIndex;
 
         public int TotalStars => _stars.Length;
 
         public DenseCatalogIndex(GaiaTychoStar[] stars)
         {
             _stars = stars;
-            var buckets = new List<int>[StripCount];
-            for (int i = 0; i < StripCount; i++)
-            {
-                buckets[i] = new List<int>(Math.Max(16, stars.Length / StripCount + 500));
-            }
-
+            _spatialIndex = new SpatialHashIndex<int>(Math.Max(1024, stars.Length / 25));
             for (int i = 0; i < stars.Length; i++)
             {
-                int sIdx = Math.Clamp((int)Math.Floor((stars[i].DecDeg + 90.0) / StripSizeDeg), 0, StripCount - 1);
-                buckets[sIdx].Add(i);
-            }
-
-            _declinationStrips = new int[StripCount][];
-            for (int i = 0; i < StripCount; i++)
-            {
-                _declinationStrips[i] = buckets[i].ToArray();
+                _spatialIndex.Insert(stars[i].RaDeg, stars[i].DecDeg, i);
             }
         }
 
@@ -98,28 +84,21 @@ public static class GaiaTychoCatalog
             float cy = (float)(cosDec * Math.Sin(raRad));
             float cz = (float)Math.Sin(decRad);
 
-            double minDec = Math.Clamp(centerDecDeg - radiusDeg, -90.0, 90.0);
-            double maxDec = Math.Clamp(centerDecDeg + radiusDeg, -90.0, 90.0);
-
-            int minStrip = Math.Clamp((int)Math.Floor((minDec + 90.0) / StripSizeDeg), 0, StripCount - 1);
-            int maxStrip = Math.Clamp((int)Math.Floor((maxDec + 90.0) / StripSizeDeg), 0, StripCount - 1);
-
             float maxMagF = (float)maxMag;
             var results = new List<GaiaTychoStar>(Math.Min(1024, maxResults * 2));
 
-            for (int s = minStrip; s <= maxStrip; s++)
-            {
-                var indices = _declinationStrips[s];
-                for (int i = 0; i < indices.Length; i++)
-                {
-                    ref readonly var star = ref _stars[indices[i]];
-                    if (star.Mag > maxMagF) continue;
+            var candidateIndices = new List<int>(Math.Min(4096, maxResults * 4));
+            _spatialIndex.QueryCone(centerRaDeg, centerDecDeg, radiusDeg, candidateIndices);
 
-                    float dot = (star.X * cx) + (star.Y * cy) + (star.Z * cz);
-                    if (dot >= cosRadius)
-                    {
-                        results.Add(star);
-                    }
+            for (int i = 0; i < candidateIndices.Count; i++)
+            {
+                ref readonly var star = ref _stars[candidateIndices[i]];
+                if (star.Mag > maxMagF) continue;
+
+                float dot = (star.X * cx) + (star.Y * cy) + (star.Z * cz);
+                if (dot >= cosRadius)
+                {
+                    results.Add(star);
                 }
             }
 

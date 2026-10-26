@@ -172,6 +172,24 @@
                     <DropShadowEffect Color="#000000" BlurRadius="26" ShadowDepth="6" Opacity="0.72"/>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="Visibility" Value="Visible">
+                    <Trigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard Timeline.DesiredFrameRate="60">
+                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                 From="0.0" To="1.0"
+                                                 Duration="0:0:0.20"
+                                                 DecelerationRatio="0.3"/>
+                                <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)"
+                                                 From="8.0" To="0.0"
+                                                 Duration="0:0:0.20"
+                                                 DecelerationRatio="0.3"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.EnterActions>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <!-- Custom Confidence Slider with Dynamic Color Binding -->
