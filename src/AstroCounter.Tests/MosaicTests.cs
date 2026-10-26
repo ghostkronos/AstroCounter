@@ -377,7 +377,7 @@ public class MosaicTests
             double tileRa = baseRa + (colOffset * angularStepX / Math.Max(0.1, Math.Abs(cosDec)));
 
             var wcs = new WcsMatrix(new CelestialCoordinates(tileRa, tileDec), w / 2.0, h / 2.0, baseScale, 0.0, w, h);
-            var panel = new MosaicPanel($"tile_{i}", $"Tile {i + 1}", w, h, wcs);
+            var panel = new MosaicPanel($"tile_{i}", $"Tile {i + 1}", w, h, wcs) { TargetName = $"Field {i + 1}" };
             project.AddPanel(panel);
         }
 
@@ -426,7 +426,7 @@ public class MosaicTests
             double tileRa = baseRa + (colOffset * angularStepX / Math.Max(0.1, Math.Abs(cosDec)));
 
             var wcs = new WcsMatrix(new CelestialCoordinates(tileRa, tileDec), w / 2.0, h / 2.0, baseScale, 0.0, w, h);
-            var panel = new MosaicPanel($"tile_{i}", $"Tile {i + 1}", w, h, wcs);
+            var panel = new MosaicPanel($"tile_{i}", $"Tile {i + 1}", w, h, wcs) { TargetName = $"Field {i + 1}" };
             project.AddPanel(panel);
         }
 
@@ -455,5 +455,71 @@ public class MosaicTests
                 Assert.True(cy >= 0 && cy <= masterWcs.ImageHeight, $"Panel {i} corner Y {cy} outside canvas [0, {masterWcs.ImageHeight}]");
             }
         }
+    }
+
+    [Fact]
+    public void MosaicProject_UpdatePanelEdgeOverlaps_DetectsIntersectionsAndLeavesOuterBordersUnflagged()
+    {
+        var project = new MosaicProject();
+        double baseRa = 180.0;
+        double baseDec = 30.0;
+        double baseScale = 2.5;
+        int w = 1000;
+        int h = 1000;
+        int cols = 3;
+        int rows = 3;
+        double overlapFraction = 0.15; // 15% overlap between adjacent panels
+
+        double stepX = w * (1.0 - overlapFraction);
+        double stepY = h * (1.0 - overlapFraction);
+        double angularStepX = (stepX * baseScale) / 3600.0;
+        double angularStepY = (stepY * baseScale) / 3600.0;
+
+        for (int i = 0; i < 9; i++)
+        {
+            int row = i / cols;
+            int col = i % cols;
+            double colOffset = col - ((cols - 1) / 2.0);
+            double rowOffset = ((rows - 1) / 2.0) - row;
+
+            double tileDec = baseDec + (rowOffset * angularStepY);
+            double cosDec = Math.Cos(tileDec * Math.PI / 180.0);
+            double tileRa = baseRa + (colOffset * angularStepX / Math.Max(0.1, Math.Abs(cosDec)));
+
+            var wcs = new WcsMatrix(new CelestialCoordinates(tileRa, tileDec), w / 2.0, h / 2.0, baseScale, 0.0, w, h);
+            var panel = new MosaicPanel($"tile_{i}", $"Tile {i + 1}", w, h, wcs) { TargetName = $"Field {i + 1}" };
+            project.AddPanel(panel);
+        }
+
+        project.UpdatePanelEdgeOverlaps();
+
+        // Single panel project: no overlap
+        var singleProj = new MosaicProject();
+        var p0 = new MosaicPanel("single", "Single", w, h, project.Panels[0].Wcs);
+        singleProj.AddPanel(p0);
+        singleProj.UpdatePanelEdgeOverlaps();
+        Assert.Equal(EdgeOverlap.None, p0.OverlappingEdges);
+
+        // Center panel (row 1, col 1 = index 4) is surrounded on all sides
+        var centerPanel = project.Panels[4];
+        Assert.True(centerPanel.OverlappingEdges.HasFlag(EdgeOverlap.Left), $"Actual center edges: {centerPanel.OverlappingEdges}");
+        Assert.True(centerPanel.OverlappingEdges.HasFlag(EdgeOverlap.Right), $"Actual center edges: {centerPanel.OverlappingEdges}");
+        Assert.True(centerPanel.OverlappingEdges.HasFlag(EdgeOverlap.Top), $"Actual center edges: {centerPanel.OverlappingEdges}");
+        Assert.True(centerPanel.OverlappingEdges.HasFlag(EdgeOverlap.Bottom), $"Actual center edges: {centerPanel.OverlappingEdges}");
+
+        // Corner panel: Top-East (row 0, col 0 = index 0)
+        // Outer boundaries should NOT have overlap (Top and Right in astronomical RA/Dec projection)
+        var tlPanel = project.Panels[0];
+        Assert.False(tlPanel.OverlappingEdges.HasFlag(EdgeOverlap.Right), "Outer Right boundary should not be flagged");
+        Assert.False(tlPanel.OverlappingEdges.HasFlag(EdgeOverlap.Top), "Outer Top boundary should not be flagged");
+        Assert.True(tlPanel.OverlappingEdges.HasFlag(EdgeOverlap.Left), "Inner Left seam should be flagged");
+        Assert.True(tlPanel.OverlappingEdges.HasFlag(EdgeOverlap.Bottom), "Inner Bottom seam should be flagged");
+
+        // Corner panel: Bottom-West (row 2, col 2 = index 8)
+        var brPanel = project.Panels[8];
+        Assert.False(brPanel.OverlappingEdges.HasFlag(EdgeOverlap.Left), "Outer Left boundary should not be flagged");
+        Assert.False(brPanel.OverlappingEdges.HasFlag(EdgeOverlap.Bottom), "Outer Bottom boundary should not be flagged");
+        Assert.True(brPanel.OverlappingEdges.HasFlag(EdgeOverlap.Right), "Inner Right seam should be flagged");
+        Assert.True(brPanel.OverlappingEdges.HasFlag(EdgeOverlap.Top), "Inner Top seam should be flagged");
     }
 }

@@ -1055,7 +1055,7 @@ public class CelestialSphereControl : Grid
             if (!p.IsVisible || p.Width <= 0 || p.Height <= 0) continue;
 
             var bmp = UseFeatheredBlending
-                ? (DetectionOverlay.GetOrLoadFeatheredPanelBitmap(p.FilePath, DetectionOverlay.GetPanelBitmap(p)) ?? DetectionOverlay.GetPanelBitmap(p))
+                ? (DetectionOverlay.GetOrLoadFeatheredPanelBitmap(p.FilePath, DetectionOverlay.GetPanelBitmap(p), p.FeatherFraction, p.OverlappingEdges) ?? DetectionOverlay.GetPanelBitmap(p))
                 : DetectionOverlay.GetPanelBitmap(p);
             if (bmp == null && (p.Id == "active" || (!string.IsNullOrEmpty(ActiveFilePath) && string.Equals(p.FilePath, ActiveFilePath, StringComparison.OrdinalIgnoreCase))))
             {

@@ -58,3 +58,4 @@ public class MultiPanelBackgroundEqualizerTests
         Assert.Equal(80, pixel.Blue);
     }
 }
+

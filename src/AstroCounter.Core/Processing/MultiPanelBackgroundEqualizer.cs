@@ -150,3 +150,4 @@ public static class MultiPanelBackgroundEqualizer
         return result;
     }
 }
+

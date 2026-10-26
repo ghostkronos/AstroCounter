@@ -217,12 +217,12 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     // Localized UI Strings
     public string L_WindowTitle => IsTurkish
-        ? "AstroCounter v1.3.3 - Astrofotoğraf Nesne Tespiti ve 3D Planetaryum"
-        : "AstroCounter v1.3.3 - Astrophotography Object Detection & 3D Celestial Planetarium";
+        ? "AstroCounter v1.3.4 - Astrofotoğraf Nesne Tespiti ve 3D Planetaryum"
+        : "AstroCounter v1.3.4 - Astrophotography Object Detection & 3D Celestial Planetarium";
     public string L_HeaderSubtitle => IsTurkish
-        ? "v1.3.3 • 2.5M Gaia/Tycho, 14K OpenNGC & 88 IAU Takımyıldızı Büyük Katalog Entegrasyonu"
-        : "v1.3.3 • 2.5M Gaia/Tycho, 14K OpenNGC & 88 IAU Constellations High-Density Sky Atlas";
-    public string L_VersionBadge => "v1.3.3";
+        ? "v1.3.4 • 2.5M Gaia/Tycho, 14K OpenNGC & 88 IAU Takımyıldızı Büyük Katalog Entegrasyonu"
+        : "v1.3.4 • 2.5M Gaia/Tycho, 14K OpenNGC & 88 IAU Constellations High-Density Sky Atlas";
+    public string L_VersionBadge => "v1.3.4";
     public string L_PhotosButtonText => MosaicProject.Count > 0
         ? (IsTurkish ? $"Fotoğraflar ({MosaicProject.Count})" : $"Photos ({MosaicProject.Count})")
         : (IsTurkish ? "Fotoğraflar" : "Photos");
@@ -1662,6 +1662,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public void RefreshMosaicProperties()
     {
+        MosaicProject.UpdatePanelEdgeOverlaps(CurrentWcs);
         OnPropertyChanged(nameof(MosaicPanels));
         OnPropertyChanged(nameof(MosaicPanelCount));
         OnPropertyChanged(nameof(HasPanels));
@@ -2234,6 +2235,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                     matchToleranceArcsec: 3.0,
                     progress: mosaicProgress,
                     targetWcs: masterWcs ?? _currentWcs,
+                    engine: _engine,
                     cancellationToken: token);
 
                 if (token.IsCancellationRequested) return;
@@ -2447,31 +2449,45 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         int existingCount = MosaicProject.Count;
         var newlyAdded = new List<MosaicPanel>();
 
-        for (int i = 0; i < valid.Count; i++)
+        // Architectural Directive: Decode images in parallel on background worker threads
+        int maxDecoders = Math.Clamp(Environment.ProcessorCount / 2, 2, 4);
+        var decodedItems = await Task.Run(() =>
         {
-            string path = valid[i];
-            int w = (int)Math.Max(1, ImageWidth);
-            int h = (int)Math.Max(1, ImageHeight);
-
-            SKBitmap? skBmp = null;
-            try
+            var items = new (string Path, int Width, int Height, SKBitmap? SkBmp)[valid.Count];
+            Parallel.For(0, valid.Count, new ParallelOptions { MaxDegreeOfParallelism = maxDecoders }, idx =>
             {
-                skBmp = ImagePreprocessor.LoadImage(path);
-                if (skBmp != null)
+                string p = valid[idx];
+                try
                 {
-                    w = skBmp.Width;
-                    h = skBmp.Height;
-                    var wpfBmp = ConvertToWpfBitmap(skBmp);
-                    DetectionOverlay.CachePanelBitmap(path, wpfBmp);
+                    var sk = ImagePreprocessor.LoadImage(p);
+                    if (sk != null)
+                    {
+                        items[idx] = (p, sk.Width, sk.Height, sk);
+                    }
                 }
+                catch { }
+            });
+            return items;
+        });
+
+        for (int i = 0; i < decodedItems.Length; i++)
+        {
+            var item = decodedItems[i];
+            string path = item.Path;
+            var skBmp = item.SkBmp;
+            int w = item.Width > 0 ? item.Width : (int)Math.Max(1, ImageWidth);
+            int h = item.Height > 0 ? item.Height : (int)Math.Max(1, ImageHeight);
+
+            if (skBmp != null)
+            {
+                var wpfBmp = ConvertToWpfBitmap(skBmp);
+                DetectionOverlay.CachePanelBitmap(path, wpfBmp);
             }
-            catch { }
 
             string panelName = !string.IsNullOrWhiteSpace(path)
                 ? Path.GetFileNameWithoutExtension(path)
                 : $"Panel {existingCount + i + 1}";
 
-            // Temporary identity WCS until plate-solving finishes
             var initialWcs = new WcsMatrix(
                 new CelestialCoordinates(180.0, 30.0),
                 w / 2.0,
@@ -2510,24 +2526,23 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
         RefreshMosaicProperties();
 
-        // Pass 1: Direct catalogue & star-pattern plate solving for every newly added panel
-        for (int i = 0; i < newlyAdded.Count; i++)
+        // Architectural Directive: Concurrently plate solve newly added panels (max 4 parallel workers)
+        int solveWorkers = Math.Clamp(Environment.ProcessorCount / 2, 2, 4);
+        using var solveSemaphore = new SemaphoreSlim(solveWorkers);
+        int solvedCount = 0;
+
+        var solveTasks = newlyAdded.Select(async panel =>
         {
-            var panel = newlyAdded[i];
-            if (string.IsNullOrEmpty(panel.FilePath)) continue;
-
-            ProgressValue = 5.0 + ((double)(i + 1) / newlyAdded.Count) * 35.0;
-            StatusMessage = IsTurkish
-                ? $"🔭 [Aşama 1/3 - Astrometri {i + 1}/{newlyAdded.Count}] '{panel.Name}' yıldız üçgenleri Hipparcos & Gaia kataloğuyla eşleştiriliyor..."
-                : $"🔭 [Stage 1/3 - Astrometry {i + 1}/{newlyAdded.Count}] Matching '{panel.Name}' star triangles against Hipparcos & Gaia catalog...";
-            await Task.Yield();
-
+            await solveSemaphore.WaitAsync();
             try
             {
-                var solvedNeighbors = MosaicProject.Panels.Where(other => other != panel && other.IsSolved && other.Wcs != null).ToList();
+                if (string.IsNullOrEmpty(panel.FilePath)) return;
+
+                var solvedNeighbors = MosaicProject.Panels
+                    .Where(other => other != panel && other.IsSolved && other.Wcs != null)
+                    .ToList();
                 PlateSolvingResult? bestCatRes = null;
 
-                // Try with hints from already-solved neighbors first
                 foreach (var neighbor in solvedNeighbors)
                 {
                     var catRes = await _plateSolver.SolveAsync(
@@ -2545,7 +2560,6 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                     }
                 }
 
-                // If no neighbor hint succeeded (or no neighbors solved yet), run full blind all-sky plate solve
                 if (bestCatRes == null || !bestCatRes.IsSuccess)
                 {
                     bestCatRes = await _plateSolver.SolveAsync(
@@ -2562,9 +2576,21 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                     panel.Wcs = bestCatRes.Wcs;
                     panel.TargetName = bestCatRes.TargetName;
                 }
+
+                int done = Interlocked.Increment(ref solvedCount);
+                ProgressValue = 5.0 + ((double)done / newlyAdded.Count) * 35.0;
+                StatusMessage = IsTurkish
+                    ? $"🔭 [Aşama 1/3 - Astrometri {done}/{newlyAdded.Count}] '{panel.Name}' çözüldü"
+                    : $"🔭 [Stage 1/3 - Astrometry {done}/{newlyAdded.Count}] Solved '{panel.Name}'";
             }
             catch { }
-        }
+            finally
+            {
+                solveSemaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(solveTasks);
 
         // Pass 2: Multi-pass relative star-pattern alignment & neighbor-hint retry for any remaining unsolved panels
         // (Handles chains where Panel 1 was solved AFTER Panel 0, or Panel 3 overlaps with Panel 2 instead of Panel 0)

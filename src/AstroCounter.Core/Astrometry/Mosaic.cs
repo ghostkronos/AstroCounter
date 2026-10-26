@@ -9,6 +9,21 @@ using AstroCounter.Core.Models;
 /// Represents a single astrophotography photo tile within a celestial sky mosaic.
 /// Encapsulates its image dimensions, WCS celestial astrometry solution, footprint, and rendering properties.
 /// </summary>
+/// <summary>
+/// Bitmask flags identifying which rectangular edges of a mosaic panel intersect adjacent photo tiles.
+/// Used for seam-only alpha blending so outer mosaic perimeters remain 100% solid and unfeathered.
+/// </summary>
+[Flags]
+public enum EdgeOverlap
+{
+    None = 0,
+    Left = 1,
+    Top = 2,
+    Right = 4,
+    Bottom = 8,
+    All = Left | Top | Right | Bottom
+}
+
 public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
 {
     private double _opacity = 1.0;
@@ -23,6 +38,24 @@ public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
     private float _autoConfidenceThreshold = 0.25f;
     private bool _isAutoConfidenceEnabled = true;
     private bool _isSelected = false;
+    private EdgeOverlap _overlappingEdges = EdgeOverlap.All;
+
+    /// <summary>
+    /// Which borders of this photo tile intersect neighbor panels on the continuous canvas.
+    /// Only intersecting edges receive feathered blending.
+    /// </summary>
+    public EdgeOverlap OverlappingEdges
+    {
+        get => _overlappingEdges;
+        set
+        {
+            if (_overlappingEdges != value)
+            {
+                _overlappingEdges = value;
+                OnPropertyChanged(nameof(OverlappingEdges));
+            }
+        }
+    }
 
     public string Id { get; }
     public string Name { get; set; }
@@ -490,8 +523,157 @@ public class MosaicProject
     }
 
     /// <summary>
-    /// Brings the specified mosaic panel to the very front (drawn last on top).
+    /// Updates the OverlappingEdges flags for all visible panels by checking which of their 4 edges
+    /// intersect neighbor panels on the master canvas. Outer perimeter borders are unflagged (crisp 100% opacity).
     /// </summary>
+    public void UpdatePanelEdgeOverlaps(WcsMatrix? masterWcs = null)
+    {
+        if (_panels.Count <= 1)
+        {
+            for (int i = 0; i < _panels.Count; i++)
+            {
+                _panels[i].OverlappingEdges = EdgeOverlap.None;
+            }
+            return;
+        }
+
+        var effectiveMasterWcs = masterWcs ?? ComputeMasterWcs() ?? _panels.FirstOrDefault(p => p.Wcs != null)?.Wcs;
+
+        int count = _panels.Count;
+        var transforms = new (double M11, double M12, double M21, double M22, double OffsetX, double OffsetY)[count];
+        var invTransforms = new (double InvM11, double InvM12, double InvM21, double InvM22, double OffsetX, double OffsetY, bool Valid)[count];
+
+        for (int i = 0; i < count; i++)
+        {
+            var tr = GetPanelCanvasTransform(_panels[i], effectiveMasterWcs, i);
+            transforms[i] = tr;
+
+            double det = (tr.M11 * tr.M22) - (tr.M12 * tr.M21);
+            if (Math.Abs(det) > 1e-9)
+            {
+                invTransforms[i] = (
+                    tr.M22 / det,
+                    -tr.M12 / det,
+                    -tr.M21 / det,
+                    tr.M11 / det,
+                    tr.OffsetX,
+                    tr.OffsetY,
+                    true);
+            }
+        }
+
+        Span<double> samples = stackalloc double[] { 0.25, 0.50, 0.75 };
+
+        for (int i = 0; i < count; i++)
+        {
+            var p = _panels[i];
+            if (!p.IsVisible || p.Width <= 0 || p.Height <= 0)
+            {
+                p.OverlappingEdges = EdgeOverlap.None;
+                continue;
+            }
+
+            var tr = transforms[i];
+            EdgeOverlap overlap = EdgeOverlap.None;
+
+            // 1. Test Left Edge (x = 0, y in [0, Height])
+            bool leftOverlaps = false;
+            foreach (double t in samples)
+            {
+                double lx = 0;
+                double ly = t * p.Height;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
+                {
+                    leftOverlaps = true;
+                    break;
+                }
+            }
+            if (leftOverlaps) overlap |= EdgeOverlap.Left;
+
+            // 2. Test Right Edge (x = Width, y in [0, Height])
+            bool rightOverlaps = false;
+            foreach (double t in samples)
+            {
+                double lx = p.Width;
+                double ly = t * p.Height;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
+                {
+                    rightOverlaps = true;
+                    break;
+                }
+            }
+            if (rightOverlaps) overlap |= EdgeOverlap.Right;
+
+            // 3. Test Top Edge (y = 0, x in [0, Width])
+            bool topOverlaps = false;
+            foreach (double t in samples)
+            {
+                double lx = t * p.Width;
+                double ly = 0;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
+                {
+                    topOverlaps = true;
+                    break;
+                }
+            }
+            if (topOverlaps) overlap |= EdgeOverlap.Top;
+
+            // 4. Test Bottom Edge (y = Height, x in [0, Width])
+            bool bottomOverlaps = false;
+            foreach (double t in samples)
+            {
+                double lx = t * p.Width;
+                double ly = p.Height;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
+                {
+                    bottomOverlaps = true;
+                    break;
+                }
+            }
+            if (bottomOverlaps) overlap |= EdgeOverlap.Bottom;
+
+            p.OverlappingEdges = overlap;
+        }
+    }
+
+    private bool IsPointInsideAnyOtherPanel(
+        double cx, double cy, int currentPanelIndex,
+        (double InvM11, double InvM12, double InvM21, double InvM22, double OffsetX, double OffsetY, bool Valid)[] invTransforms)
+    {
+        for (int j = 0; j < _panels.Count; j++)
+        {
+            if (j == currentPanelIndex) continue;
+            var other = _panels[j];
+            if (!other.IsVisible || other.Width <= 0 || other.Height <= 0) continue;
+
+            var inv = invTransforms[j];
+            if (!inv.Valid) continue;
+
+            double dx = cx - inv.OffsetX;
+            double dy = cy - inv.OffsetY;
+            double lx = (inv.InvM11 * dx) + (inv.InvM21 * dy);
+            double ly = (inv.InvM12 * dx) + (inv.InvM22 * dy);
+
+            // 2% margin tolerance for edge alignment
+            double tolX = other.Width * 0.02;
+            double tolY = other.Height * 0.02;
+            if (lx >= -tolX && lx <= other.Width + tolX &&
+                ly >= -tolY && ly <= other.Height + tolY)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public bool BringToFront(MosaicPanel panel)
     {
         if (panel == null) return false;

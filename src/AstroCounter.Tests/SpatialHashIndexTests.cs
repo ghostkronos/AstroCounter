@@ -95,3 +95,4 @@ public class SpatialHashIndexTests
         Assert.Equal(49, buffer[49].Id);
     }
 }
+

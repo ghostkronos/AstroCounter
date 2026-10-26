@@ -362,22 +362,19 @@ public partial class MainWindow : Window
         try
         {
             SetZoom(newZoom, updateViewport: false);
-            ViewerScrollViewer.UpdateLayout();
 
-            Point newMouseInViewer = Overlay.TranslatePoint(pixelUnderMouse, ViewerScrollViewer);
-            double deltaX = newMouseInViewer.X - mouseInViewer.X;
-            double deltaY = newMouseInViewer.Y - mouseInViewer.Y;
+            double targetHOffset = (pixelUnderMouse.X * newZoom) - mouseInViewer.X;
+            double targetVOffset = (pixelUnderMouse.Y * newZoom) - mouseInViewer.Y;
 
-            ViewerScrollViewer.ScrollToHorizontalOffset(ViewerScrollViewer.HorizontalOffset + deltaX);
-            ViewerScrollViewer.ScrollToVerticalOffset(ViewerScrollViewer.VerticalOffset + deltaY);
-            ViewerScrollViewer.UpdateLayout();
+            ViewerScrollViewer.ScrollToHorizontalOffset(Math.Max(0, targetHOffset));
+            ViewerScrollViewer.ScrollToVerticalOffset(Math.Max(0, targetVOffset));
         }
         finally
         {
             _isUpdatingZoomOrRotation = false;
         }
 
-        UpdateViewport(notifyStellarium: true);
+        UpdateViewport(notifyStellarium: false);
         e.Handled = true;
     }
 
