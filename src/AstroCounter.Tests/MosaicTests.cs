@@ -566,25 +566,36 @@ public class MosaicTests
         int centerOverlapCount = centerPanel.PerimeterOverlapMask.Count(b => b);
         Assert.True(centerOverlapCount > 0, $"Center panel overlap was: {centerOverlapCount}");
 
-        // 2. Corner panel (tile 0: top-left)
+        // 2. Base layer panel (tile 0: top-left, index 0) stays 100% opaque to prevent background bleed-through
         var tlPanel = project.Panels[0];
         Assert.Equal(256, tlPanel.PerimeterOverlapMask.Length);
-        Assert.True(tlPanel.HasOverlappingPerimeter, "tlPanel.HasOverlappingPerimeter was false!");
+        Assert.False(tlPanel.HasOverlappingPerimeter, "Base layer panel[0] must remain 100% opaque!");
 
-        // Top edge (indices 0..63) is outer perimeter to the sky -> should be predominantly false
-        int topOverlapCount = 0;
-        for (int s = 16; s < 56; s++)
-        {
-            if (tlPanel.PerimeterOverlapMask[s]) topOverlapCount++;
-        }
-        Assert.Equal(0, topOverlapCount);
+        // 3. Top-most corner panel (tile 8: bottom-right, index 8) feathers ONLY its shared top/left seams over underlying panels
+        var brPanel = project.Panels[8];
+        Assert.Equal(256, brPanel.PerimeterOverlapMask.Length);
+        Assert.True(brPanel.HasOverlappingPerimeter, "brPanel.HasOverlappingPerimeter was false!");
 
-        // Bottom edge (indices 128..191) overlaps neighbor tile 3 -> should be true
-        int bottomOverlapCount = 0;
-        for (int s = 128 + 8; s < 128 + 56; s++)
+        // Bottom edge (indices 128..191) is outer perimeter to the sky -> should be 0 overlap
+        int bottomOuterOverlapCount = 0;
+        for (int s = 128 + 16; s < 128 + 56; s++)
         {
-            if (tlPanel.PerimeterOverlapMask[s]) bottomOverlapCount++;
+            if (brPanel.PerimeterOverlapMask[s]) bottomOuterOverlapCount++;
         }
-        Assert.True(bottomOverlapCount > 0, $"Bottom seam overlap was: {bottomOverlapCount}");
+        Assert.Equal(0, bottomOuterOverlapCount);
+
+        // Top edge (indices 0..63) overlaps underlying tile 5 -> should be true with positive overlap depth
+        int topSeamOverlapCount = 0;
+        float maxDepth = 0f;
+        for (int s = 8; s < 56; s++)
+        {
+            if (brPanel.PerimeterOverlapMask[s])
+            {
+                topSeamOverlapCount++;
+                maxDepth = Math.Max(maxDepth, brPanel.PerimeterOverlapDepth[s]);
+            }
+        }
+        Assert.True(topSeamOverlapCount > 0, $"Top seam overlap was: {topSeamOverlapCount}");
+        Assert.True(maxDepth > 0.05f && maxDepth <= 0.35f, $"Unexpected overlap depth: {maxDepth}");
     }
 }

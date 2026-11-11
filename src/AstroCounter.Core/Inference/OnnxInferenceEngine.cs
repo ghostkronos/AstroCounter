@@ -121,10 +121,14 @@ public class OnnxInferenceEngine : IInferenceEngine
             var candidates = new List<AstrophotographyObject>();
             int tileCount = 1;
 
+            bool isCompressed = Path.GetExtension(imagePath).Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                Path.GetExtension(imagePath).Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                                Path.GetExtension(imagePath).Equals(".webp", StringComparison.OrdinalIgnoreCase);
+
             if (Mode == DetectionEngineMode.HybridFusion)
             {
                 // Unified Fusion: DAOStarFinder Photometry + Deep Learning / Morphology AI
-                var photoStars = PhotometricStarFinder.DetectStars(rawBitmap, config, progress, cancellationToken);
+                var photoStars = PhotometricStarFinder.DetectStars(rawBitmap, config, progress, cancellationToken, isCompressedFormat: isCompressed);
                 List<AstrophotographyObject>? yoloCandidates = null;
 
                 if (_session != null)
@@ -144,10 +148,10 @@ public class OnnxInferenceEngine : IInferenceEngine
                     }
 
                     tileList = NmsFilter.ApplyNms(tileList, config.NmsIouThreshold);
-                    yoloCandidates = CalibrateYoloConfidenceForBrightStars(yoloBitmap, tileList);
+                    yoloCandidates = VerifyAndCalibrateYoloDetections(rawBitmap, tileList, isCompressed);
                 }
 
-                candidates = FusionDetectionEngine.FuseDetections(photoStars, yoloCandidates);
+                candidates = FusionDetectionEngine.FuseDetections(photoStars, yoloCandidates, isCompressedFormat: isCompressed);
             }
             else if (Mode == DetectionEngineMode.DeepLearningYolo && _session != null)
             {
@@ -169,21 +173,17 @@ public class OnnxInferenceEngine : IInferenceEngine
                 }
 
                 candidates = NmsFilter.ApplyNms(candidates, config.NmsIouThreshold);
-                candidates = CalibrateYoloConfidenceForBrightStars(yoloBitmap, candidates);
+                candidates = VerifyAndCalibrateYoloDetections(rawBitmap, candidates, isCompressed);
             }
             else
             {
                 // Built-in high-precision astronomical photometric detection (DAOStarFinder / SNR standard)
                 // Operates directly on raw linear astronomical data with internal background estimation
-                candidates = PhotometricStarFinder.DetectStars(rawBitmap, config, progress, cancellationToken);
+                candidates = PhotometricStarFinder.DetectStars(rawBitmap, config, progress, cancellationToken, isCompressedFormat: isCompressed);
                 tileCount = 1;
             }
 
             stopwatch.Stop();
-
-            bool isCompressed = Path.GetExtension(imagePath).Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                                Path.GetExtension(imagePath).Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-                                Path.GetExtension(imagePath).Equals(".webp", StringComparison.OrdinalIgnoreCase);
 
             float recommendedConfidence = AutoConfidenceCalculator.ComputeOptimalThreshold(candidates, isCompressed);
 
@@ -275,22 +275,35 @@ public class OnnxInferenceEngine : IInferenceEngine
         return resultsList;
     }
 
-    private static unsafe List<AstrophotographyObject> CalibrateYoloConfidenceForBrightStars(
-        SKBitmap bitmap,
-        List<AstrophotographyObject> candidates)
+    private static unsafe List<AstrophotographyObject> VerifyAndCalibrateYoloDetections(
+        SKBitmap rawBitmap,
+        List<AstrophotographyObject> candidates,
+        bool isCompressed)
     {
-        if (candidates.Count == 0 || bitmap.Width <= 0 || bitmap.Height <= 0) return candidates;
+        if (candidates.Count == 0 || rawBitmap.Width <= 0 || rawBitmap.Height <= 0) return candidates;
 
-        int w = bitmap.Width;
-        int h = bitmap.Height;
-        byte* basePtr = (byte*)bitmap.GetPixels().ToPointer();
-        int bpp = bitmap.BytesPerPixel;
-        int rowBytes = bitmap.RowBytes;
-        bool isBgra = bitmap.ColorType == SKColorType.Bgra8888;
-        int redIdx = isBgra ? 2 : 0;
-        int blueIdx = isBgra ? 0 : 2;
+        int w = rawBitmap.Width;
+        int h = rawBitmap.Height;
+        byte* basePtr = (byte*)rawBitmap.GetPixels().ToPointer();
+        int bpp = rawBitmap.BytesPerPixel;
+        int rowBytes = rawBitmap.RowBytes;
+        bool isGray = rawBitmap.ColorType == SKColorType.Gray8;
+        bool isRgba = rawBitmap.ColorType == SKColorType.Rgba8888;
+        int redIdx = isRgba ? 0 : 2;
+        int blueIdx = isRgba ? 2 : 0;
+
+        float SampleLum(int x, int y)
+        {
+            int px = Math.Clamp(x, 0, w - 1);
+            int py = Math.Clamp(y, 0, h - 1);
+            byte* p = basePtr + ((long)py * rowBytes) + (px * bpp);
+            if (isGray) return p[0];
+            return (p[redIdx] * 0.299f) + (p[1] * 0.587f) + (p[blueIdx] * 0.114f);
+        }
 
         var result = new List<AstrophotographyObject>(candidates.Count);
+        Span<float> ring = stackalloc float[16];
+        Span<float> devs = stackalloc float[16];
 
         foreach (var obj in candidates)
         {
@@ -298,34 +311,67 @@ public class OnnxInferenceEngine : IInferenceEngine
             int cy = Math.Clamp((int)Math.Round(obj.CenterY), 0, h - 1);
 
             float peakLum = 0f;
-            for (int dy = -2; dy <= 2; dy++)
+            float coreSum = 0f;
+            for (int dy = -1; dy <= 1; dy++)
             {
-                int py = Math.Clamp(cy + dy, 0, h - 1);
-                byte* row = basePtr + ((long)py * rowBytes);
-                for (int dx = -2; dx <= 2; dx++)
+                for (int dx = -1; dx <= 1; dx++)
                 {
-                    int px = Math.Clamp(cx + dx, 0, w - 1);
-                    byte* p = row + (px * bpp);
-                    float lum = (p[redIdx] * 0.299f) + (p[1] * 0.587f) + (p[blueIdx] * 0.114f);
+                    float lum = SampleLum(cx + dx, cy + dy);
+                    coreSum += lum;
                     if (lum > peakLum) peakLum = lum;
                 }
             }
+            float coreMean = coreSum / 9f;
+
+            // Sample 16 points on an outer annulus (radius ~6px) for local sky & noise estimation
+            int rIdx = 0;
+            for (int k = 0; k < 16; k++)
+            {
+                double ang = k * (Math.PI * 2.0 / 16.0);
+                int rx = cx + (int)Math.Round(Math.Cos(ang) * 6.0);
+                int ry = cy + (int)Math.Round(Math.Sin(ang) * 6.0);
+                ring[rIdx++] = SampleLum(rx, ry);
+            }
+            ring.Sort();
+            float localBg = (ring[7] + ring[8]) * 0.5f;
+
+            for (int k = 0; k < 16; k++)
+            {
+                devs[k] = Math.Abs(ring[k] - localBg);
+            }
+            devs.Sort();
+            float madStd = ((devs[7] + devs[8]) * 0.5f) * 1.4826f;
+            float effectiveStd = Math.Max(isCompressed ? 2.2f : 1.0f, madStd);
+
+            float netPeak = peakLum - localBg;
+            float netMean = coreMean - localBg;
+            float localSnr = netMean / Math.Max(0.8f, effectiveStd / 2.2f);
+
+            // Reject phantom YOLO detections on compressed images that lack physical photometric excess
+            if (isCompressed && (netPeak < 7.0f || localSnr < 2.8f))
+            {
+                continue;
+            }
 
             float conf = obj.Confidence;
-            if (peakLum >= 245f)
+            if (peakLum >= 245f && netPeak >= 30f)
             {
                 conf = Math.Max(conf, 0.96f);
             }
-            else if (peakLum >= 210f)
+            else if (peakLum >= 210f && netPeak >= 22f)
             {
                 conf = Math.Max(conf, 0.88f);
             }
-            else if (peakLum >= 160f && conf < 0.80f)
+            else if (peakLum >= 160f && netPeak >= 16f && conf < 0.80f)
             {
                 conf = Math.Max(conf, 0.82f);
             }
 
-            result.Add(conf != obj.Confidence ? obj with { Confidence = conf } : obj);
+            result.Add(obj with
+            {
+                Confidence = conf,
+                Snr = Math.Max(obj.Snr, Math.Max(0.1f, localSnr))
+            });
         }
 
         return result;

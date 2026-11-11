@@ -74,7 +74,8 @@ public static class PhotometricStarFinder
         SKBitmap bitmap,
         TilingConfig config,
         IProgress<float>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool isCompressedFormat = false)
     {
         // Smart downscaling for ultra-high-resolution images (> 4096 px, e.g. 108 Megapixels).
         // Simulates sensor pixel binning to avoid allocating gigabytes of RAM while preserving SNR.
@@ -86,7 +87,7 @@ public static class PhotometricStarFinder
             using var scaledBmp = bitmap.Resize(new SKImageInfo(newW, newH, bitmap.ColorType, bitmap.AlphaType), SKSamplingOptions.Default);
             if (scaledBmp != null)
             {
-                var scaledStars = DetectStars(scaledBmp, config, progress, cancellationToken);
+                var scaledStars = DetectStars(scaledBmp, config, progress, cancellationToken, isCompressedFormat);
                 float invScale = 1.0f / scale;
                 var rescaledList = new List<AstrophotographyObject>(scaledStars.Count);
                 foreach (var s in scaledStars)
@@ -120,6 +121,8 @@ public static class PhotometricStarFinder
         float[] bgGrid = new float[gridCols * gridRows];
         float[] stdGrid = new float[gridCols * gridRows];
 
+        float minStdFloor = isCompressedFormat ? 2.2f : 1.0f;
+
         Parallel.For(0, gridRows,
             () => ArrayPool<float>.Shared.Rent(GridSize * GridSize),
             (gy, loopState, sampleBuffer) =>
@@ -146,7 +149,7 @@ public static class PhotometricStarFinder
                     (float median, float std) = ComputeSigmaClippedStats(sampleBuffer, sampleCount);
                     int gridIdx = (gy * gridCols) + gx;
                     bgGrid[gridIdx] = median;
-                    stdGrid[gridIdx] = Math.Max(1.0f, std);
+                    stdGrid[gridIdx] = Math.Max(minStdFloor, std);
                 }
                 return sampleBuffer;
             },
@@ -159,7 +162,7 @@ public static class PhotometricStarFinder
         float maxAllowedStd = Math.Max(4.0f, globalMedianStd * 2.8f);
         for (int i = 0; i < stdGrid.Length; i++)
         {
-            stdGrid[i] = Math.Clamp(stdGrid[i], 1.0f, maxAllowedStd);
+            stdGrid[i] = Math.Clamp(stdGrid[i], minStdFloor, maxAllowedStd);
         }
 
         progress?.Report(0.35f);
@@ -197,7 +200,8 @@ public static class PhotometricStarFinder
         int id = 1;
         int border = 4;
         float minConfidence = config?.MinConfidence ?? 0.02f;
-        float scanSigma = minConfidence < 0.25f ? 1.8f : 3.5f;
+        float scanSigma = minConfidence < 0.25f ? (isCompressedFormat ? 3.4f : 1.8f) : 3.5f;
+        float minNetDelta = isCompressedFormat ? 9.0f : 2.5f;
 
         for (int y = border; y < height - border; y++)
         {
@@ -213,8 +217,8 @@ public static class PhotometricStarFinder
             {
                 var (localBg, localStd) = GetLocalBackgroundAndNoise(x, y);
                 // Effective standard deviation of Gaussian noise in 3x3 smoothed domain
-                float smStd = localStd / 2.67f;
-                float threshold = localBg + Math.Max(2.5f, scanSigma * smStd);
+                float smStd = Math.Max(isCompressedFormat ? 1.2f : 0.37f, localStd / 2.67f);
+                float threshold = localBg + Math.Max(minNetDelta, scanSigma * smStd);
 
                 float smoothCenter = smoothedLuminance[rowOffset + x];
                 if (smoothCenter <= threshold) continue;
@@ -253,6 +257,26 @@ public static class PhotometricStarFinder
 
                 // Astronomical Confidence & Tier classification
                 float sigRatio = netSmooth / smStd;
+                if (isCompressedFormat)
+                {
+                    if (netPeak < 18.0f && sigRatio < 3.8f)
+                    {
+                        continue; // Suppress lossy JPEG/WebP 8x8 DCT quantization ripples
+                    }
+
+                    // Require isotropic 2D PSF support on cardinal neighbors (rejects 1D block edges / ringing)
+                    float nThreshold = localBg + (0.20f * netPeak);
+                    int supported = 0;
+                    if (rawLuminance[rowOffset + x - 1] > nThreshold) supported++;
+                    if (rawLuminance[rowOffset + x + 1] > nThreshold) supported++;
+                    if (rawLuminance[rowOffset - width + x] > nThreshold) supported++;
+                    if (rawLuminance[rowOffset + width + x] > nThreshold) supported++;
+                    if (supported < 3 && netPeak < 24.0f)
+                    {
+                        continue;
+                    }
+                }
+
                 float confidence;
 
                 if ((netPeak >= 50.0f && sigRatio >= 10.0f) || netPeak >= 100.0f)
@@ -358,8 +382,61 @@ public static class PhotometricStarFinder
         // 4. Apply Non-Maximum Suppression to merge any close peak artifacts
         var finalStars = NmsFilter.ApplyNms(candidates, iouThreshold: 0.35f);
 
+        // 5. Suppress secondary sub-peaks / diffraction spike knots / JPEG ringing lobes inside a brighter star's PSF halo
+        finalStars = SuppressHaloSubPeaks(finalStars);
+
         progress?.Report(1.0f);
         return finalStars;
+    }
+
+    private static List<AstrophotographyObject> SuppressHaloSubPeaks(List<AstrophotographyObject> stars)
+    {
+        if (stars.Count <= 1) return stars;
+
+        // Sort brightest/largest first so parent stars claim their Airy disc & diffraction halo
+        var ordered = new List<AstrophotographyObject>(stars);
+        ordered.Sort((a, b) =>
+        {
+            int cmp = b.Confidence.CompareTo(a.Confidence);
+            if (cmp != 0) return cmp;
+            cmp = b.Box.Width.CompareTo(a.Box.Width);
+            if (cmp != 0) return cmp;
+            return b.Snr.CompareTo(a.Snr);
+        });
+
+        var kept = new List<AstrophotographyObject>(ordered.Count);
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            var cand = ordered[i];
+            float cx = cand.CenterX;
+            float cy = cand.CenterY;
+            bool insideParentHalo = false;
+
+            for (int j = 0; j < kept.Count; j++)
+            {
+                var parent = kept[j];
+                float dx = cx - parent.CenterX;
+                float dy = cy - parent.CenterY;
+                float haloRadius = Math.Max(parent.Box.Width * 0.55f, 5.0f) + 2.0f;
+                if ((dx * dx) + (dy * dy) <= haloRadius * haloRadius)
+                {
+                    insideParentHalo = true;
+                    break;
+                }
+            }
+
+            if (!insideParentHalo)
+            {
+                kept.Add(cand);
+            }
+        }
+
+        // Re-assign sequential IDs
+        for (int i = 0; i < kept.Count; i++)
+        {
+            kept[i] = kept[i] with { Id = i + 1 };
+        }
+        return kept;
     }
 
     /// <summary>

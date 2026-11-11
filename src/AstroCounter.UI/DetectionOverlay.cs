@@ -1297,7 +1297,8 @@ public sealed class DetectionOverlay : FrameworkElement
         double featherFraction = 0.12,
         EdgeOverlap edges = EdgeOverlap.All,
         bool[]? perimeterMask = null,
-        long maskHash = 0)
+        long maskHash = 0,
+        float[]? perimeterDepth = null)
     {
         var baseBmp = fallback ?? GetOrLoadPanelBitmap(path);
         if (baseBmp == null) return null;
@@ -1325,7 +1326,7 @@ public sealed class DetectionOverlay : FrameworkElement
         if (_featheredBitmapCache.TryGetValue(key, out var cached))
             return cached;
 
-        var feathered = CreateFeatheredBitmap(baseBmp, fraction, edges, perimeterMask);
+        var feathered = CreateFeatheredBitmap(baseBmp, fraction, edges, perimeterMask, perimeterDepth);
         _featheredBitmapCache[key] = feathered;
         return feathered;
     }
@@ -1334,7 +1335,8 @@ public sealed class DetectionOverlay : FrameworkElement
         System.Windows.Media.Imaging.BitmapSource src,
         double featherFraction = 0.12,
         EdgeOverlap edges = EdgeOverlap.All,
-        bool[]? perimeterMask = null)
+        bool[]? perimeterMask = null,
+        float[]? perimeterDepth = null)
     {
         if (src == null) return null!;
 
@@ -1384,16 +1386,44 @@ public sealed class DetectionOverlay : FrameworkElement
         float[] fadeY = ArrayPool<float>.Shared.Rent(marginY);
 
         float[]? overlapWeights = null;
+        float[]? overlapDepths = null;
         if (hasMask)
         {
             overlapWeights = ArrayPool<float>.Shared.Rent(256);
+            overlapDepths = ArrayPool<float>.Shared.Rent(256);
+            bool hasDepth = perimeterDepth != null && perimeterDepth.Length >= 256;
+
             for (int k = 0; k < 256; k++)
             {
-                int kPrev = (k + 255) % 256;
-                int kNext = (k + 1) % 256;
-                overlapWeights[k] = (perimeterMask![kPrev] ? 0.25f : 0f) +
-                                    (perimeterMask[k] ? 0.50f : 0f) +
-                                    (perimeterMask[kNext] ? 0.25f : 0f);
+                int kM2 = (k + 254) % 256;
+                int kM1 = (k + 255) % 256;
+                int kP1 = (k + 1) % 256;
+                int kP2 = (k + 2) % 256;
+
+                overlapWeights[k] = (perimeterMask![kM2] ? 0.10f : 0f) +
+                                    (perimeterMask[kM1] ? 0.20f : 0f) +
+                                    (perimeterMask[k] ? 0.40f : 0f) +
+                                    (perimeterMask[kP1] ? 0.20f : 0f) +
+                                    (perimeterMask[kP2] ? 0.10f : 0f);
+
+                if (hasDepth)
+                {
+                    float dMax = 0f;
+                    int[] neighbors = { kM1, k, kP1 };
+                    foreach (int nk in neighbors)
+                    {
+                        if (perimeterMask[nk] && perimeterDepth![nk] > 0f)
+                        {
+                            float clamped = Math.Clamp(perimeterDepth[nk] * 0.85f, 0.02f, (float)fraction);
+                            if (dMax == 0f || clamped < dMax) dMax = clamped;
+                        }
+                    }
+                    overlapDepths[k] = dMax > 0f ? dMax : (float)fraction;
+                }
+                else
+                {
+                    overlapDepths[k] = (float)fraction;
+                }
             }
         }
 
@@ -1411,16 +1441,35 @@ public sealed class DetectionOverlay : FrameworkElement
                 fadeY[j] = (float)(0.5 - 0.5 * Math.Cos(Math.PI * j / marginY));
             }
 
-            float invMarginX = 1.0f / marginX;
-            float invMarginY = 1.0f / marginY;
-            float invWidth = 1.0f / width;
-            float invHeight = 1.0f / height;
+            static float SampleEdgeFactor(int distPx, int edgeStartIdx, float edgeCoordNorm, int maxDimPx, float[] weights, float[] depths)
+            {
+                float pos = Math.Clamp(edgeCoordNorm * 63.0f, 0f, 63.0f);
+                int k0 = (int)pos;
+                int k1 = Math.Min(63, k0 + 1);
+                float t = pos - k0;
+
+                float w = weights[edgeStartIdx + k0] * (1f - t) + weights[edgeStartIdx + k1] * t;
+                if (w <= 0.001f) return 1.0f;
+
+                float d = depths[edgeStartIdx + k0] * (1f - t) + depths[edgeStartIdx + k1] * t;
+                float effMargin = Math.Max(8.0f, maxDimPx * d);
+                if (distPx >= effMargin) return 1.0f;
+
+                float norm = distPx / effMargin;
+                float alphaFeather = (float)(0.5 - 0.5 * Math.Cos(Math.PI * norm));
+                return 1.0f - (w * (1.0f - alphaFeather));
+            }
+
+            float invWidth = 1.0f / Math.Max(1, width - 1);
+            float invHeight = 1.0f / Math.Max(1, height - 1);
 
             for (int y = 0; y < height; y++)
             {
                 int distTop = y;
                 int distBottom = height - 1 - y;
                 int rowOffset = y * stride;
+                float vTop = y * invHeight;
+                float vBot = (height - 1 - y) * invHeight;
 
                 for (int x = 0; x < width; x++)
                 {
@@ -1434,43 +1483,23 @@ public sealed class DetectionOverlay : FrameworkElement
 
                     float factor;
 
-                    if (hasMask && overlapWeights != null)
+                    if (hasMask && overlapWeights != null && overlapDepths != null)
                     {
-                        // 256-point perimeter contour evaluation
-                        float normDT = distTop * invMarginY;
-                        float normDB = distBottom * invMarginY;
-                        float normDL = distLeft * invMarginX;
-                        float normDR = distRight * invMarginX;
+                        // Smooth C1-continuous separable 256-point perimeter blending (zero diagonal corner cuts or banding)
+                        float fTop = distTop < marginY
+                            ? SampleEdgeFactor(distTop, 0, x * invWidth, height, overlapWeights, overlapDepths)
+                            : 1.0f;
+                        float fRight = distRight < marginX
+                            ? SampleEdgeFactor(distRight, 64, vTop, width, overlapWeights, overlapDepths)
+                            : 1.0f;
+                        float fBottom = distBottom < marginY
+                            ? SampleEdgeFactor(distBottom, 128, (width - 1 - x) * invWidth, height, overlapWeights, overlapDepths)
+                            : 1.0f;
+                        float fLeft = distLeft < marginX
+                            ? SampleEdgeFactor(distLeft, 192, vBot, width, overlapWeights, overlapDepths)
+                            : 1.0f;
 
-                        float minNorm = Math.Min(Math.Min(normDT, normDB), Math.Min(normDL, normDR));
-                        if (minNorm >= 1.0f) continue;
-
-                        int sampleIdx;
-                        if (minNorm == normDT)
-                        {
-                            sampleIdx = Math.Clamp((int)(x * invWidth * 64.0f), 0, 63);
-                        }
-                        else if (minNorm == normDR)
-                        {
-                            sampleIdx = 64 + Math.Clamp((int)(y * invHeight * 64.0f), 0, 63);
-                        }
-                        else if (minNorm == normDB)
-                        {
-                            sampleIdx = 128 + Math.Clamp((int)((width - 1 - x) * invWidth * 64.0f), 0, 63);
-                        }
-                        else
-                        {
-                            sampleIdx = 192 + Math.Clamp((int)((height - 1 - y) * invHeight * 64.0f), 0, 63);
-                        }
-
-                        float seamWeight = overlapWeights[sampleIdx];
-                        if (seamWeight <= 0.001f)
-                        {
-                            continue; // Border touches open sky -> 100% solid
-                        }
-
-                        float alphaFeather = (float)(0.5 - 0.5 * Math.Cos(Math.PI * minNorm));
-                        factor = 1.0f - (seamWeight * (1.0f - alphaFeather));
+                        factor = fTop * fRight * fBottom * fLeft;
                     }
                     else
                     {
@@ -1487,7 +1516,7 @@ public sealed class DetectionOverlay : FrameworkElement
                         else if (edges.HasFlag(EdgeOverlap.Right) && distRight < marginX)
                             alphaX = fadeX[distRight];
 
-                        factor = Math.Min(alphaX, alphaY);
+                        factor = alphaX * alphaY;
                     }
 
                     if (factor < 0.999f)
@@ -1514,6 +1543,10 @@ public sealed class DetectionOverlay : FrameworkElement
             if (overlapWeights != null)
             {
                 ArrayPool<float>.Shared.Return(overlapWeights);
+            }
+            if (overlapDepths != null)
+            {
+                ArrayPool<float>.Shared.Return(overlapDepths);
             }
         }
     }
@@ -1572,7 +1605,7 @@ public sealed class DetectionOverlay : FrameworkElement
                 var panelBmp = GetPanelBitmap(p);
                 double featherFrac = p.FeatherFraction > 0 ? p.FeatherFraction : 0.12;
                 var bmp = UseFeatheredBlending
-                    ? (GetOrLoadFeatheredPanelBitmap(p.FilePath, panelBmp, featherFrac, p.OverlappingEdges, p.PerimeterOverlapMask, p.OverlapMaskHash) ?? panelBmp)
+                    ? (GetOrLoadFeatheredPanelBitmap(p.FilePath, panelBmp, featherFrac, p.OverlappingEdges, p.PerimeterOverlapMask, p.OverlapMaskHash, p.PerimeterOverlapDepth) ?? panelBmp)
                     : panelBmp;
                 if (bmp != null)
                 {

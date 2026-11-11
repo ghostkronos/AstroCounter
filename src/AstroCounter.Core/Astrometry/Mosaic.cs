@@ -42,7 +42,9 @@ public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
 
     public const int PerimeterSampleCount = 256;
     private readonly bool[] _perimeterOverlapMask = new bool[PerimeterSampleCount];
+    private readonly float[] _perimeterOverlapDepth = new float[PerimeterSampleCount];
     public bool[] PerimeterOverlapMask => _perimeterOverlapMask;
+    public float[] PerimeterOverlapDepth => _perimeterOverlapDepth;
     public bool HasOverlappingPerimeter { get; set; }
     public long OverlapMaskHash { get; set; }
 
@@ -541,6 +543,7 @@ public class MosaicProject
             {
                 var p = _panels[i];
                 Array.Clear(p.PerimeterOverlapMask, 0, MosaicPanel.PerimeterSampleCount);
+                Array.Clear(p.PerimeterOverlapDepth, 0, MosaicPanel.PerimeterSampleCount);
                 p.HasOverlappingPerimeter = false;
                 p.OverlapMaskHash = 0;
                 p.OverlappingEdges = EdgeOverlap.None;
@@ -582,6 +585,7 @@ public class MosaicProject
             if (!p.IsVisible || p.Width <= 0 || p.Height <= 0)
             {
                 Array.Clear(p.PerimeterOverlapMask, 0, MosaicPanel.PerimeterSampleCount);
+                Array.Clear(p.PerimeterOverlapDepth, 0, MosaicPanel.PerimeterSampleCount);
                 p.HasOverlappingPerimeter = false;
                 p.OverlapMaskHash = 0;
                 p.OverlappingEdges = EdgeOverlap.None;
@@ -590,67 +594,69 @@ public class MosaicProject
 
             var tr = transforms[i];
             var mask = p.PerimeterOverlapMask;
+            var depths = p.PerimeterOverlapDepth;
             bool anyOverlap = false;
             long hash = 17;
 
-            // 1. Full 256-point perimeter contour mask generation
-            // Edge 0: Top Edge (y = 0, x from 0 to Width) -> indices 0..63
+            // 1. Full 256-point perimeter contour mask generation against UNDERLYING panels (j < i)
+            // Bottom-most panel (i == 0) remains 100% opaque so combined alpha never drops below 1.0 (zero dark seams).
+            // Edge 0: Top Edge (y = 0, x from 0 to Width, inward normal = +Y) -> indices 0..63
             for (int s = 0; s < samplesPerSide; s++)
             {
                 double t = (s + 0.5) / samplesPerSide;
                 double lx = t * p.Width;
                 double ly = 0;
-                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
-                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
-                bool isInside = IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms);
+                float depth = MeasureUnderlyingOverlapDepth(lx, ly, 0.0, p.Height, tr, i, invTransforms);
+                bool isInside = depth > 0f;
                 mask[s] = isInside;
+                depths[s] = depth;
                 if (isInside) anyOverlap = true;
-                hash = unchecked((hash * 31) + (isInside ? 1 : 0));
+                hash = unchecked((hash * 31) + (isInside ? (1 + (int)(depth * 100f)) : 0));
             }
 
-            // Edge 1: Right Edge (x = Width, y from 0 to Height) -> indices 64..127
+            // Edge 1: Right Edge (x = Width, y from 0 to Height, inward normal = -X) -> indices 64..127
             for (int s = 0; s < samplesPerSide; s++)
             {
                 int idx = samplesPerSide + s;
                 double t = (s + 0.5) / samplesPerSide;
                 double lx = p.Width;
                 double ly = t * p.Height;
-                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
-                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
-                bool isInside = IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms);
+                float depth = MeasureUnderlyingOverlapDepth(lx, ly, -p.Width, 0.0, tr, i, invTransforms);
+                bool isInside = depth > 0f;
                 mask[idx] = isInside;
+                depths[idx] = depth;
                 if (isInside) anyOverlap = true;
-                hash = unchecked((hash * 31) + (isInside ? 1 : 0));
+                hash = unchecked((hash * 31) + (isInside ? (1 + (int)(depth * 100f)) : 0));
             }
 
-            // Edge 2: Bottom Edge (y = Height, x from Width down to 0) -> indices 128..191
+            // Edge 2: Bottom Edge (y = Height, x from Width down to 0, inward normal = -Y) -> indices 128..191
             for (int s = 0; s < samplesPerSide; s++)
             {
                 int idx = (2 * samplesPerSide) + s;
                 double t = 1.0 - ((s + 0.5) / samplesPerSide);
                 double lx = t * p.Width;
                 double ly = p.Height;
-                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
-                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
-                bool isInside = IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms);
+                float depth = MeasureUnderlyingOverlapDepth(lx, ly, 0.0, -p.Height, tr, i, invTransforms);
+                bool isInside = depth > 0f;
                 mask[idx] = isInside;
+                depths[idx] = depth;
                 if (isInside) anyOverlap = true;
-                hash = unchecked((hash * 31) + (isInside ? 1 : 0));
+                hash = unchecked((hash * 31) + (isInside ? (1 + (int)(depth * 100f)) : 0));
             }
 
-            // Edge 3: Left Edge (x = 0, y from Height down to 0) -> indices 192..255
+            // Edge 3: Left Edge (x = 0, y from Height down to 0, inward normal = +X) -> indices 192..255
             for (int s = 0; s < samplesPerSide; s++)
             {
                 int idx = (3 * samplesPerSide) + s;
                 double t = 1.0 - ((s + 0.5) / samplesPerSide);
                 double lx = 0;
                 double ly = t * p.Height;
-                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
-                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
-                bool isInside = IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms);
+                float depth = MeasureUnderlyingOverlapDepth(lx, ly, p.Width, 0.0, tr, i, invTransforms);
+                bool isInside = depth > 0f;
                 mask[idx] = isInside;
+                depths[idx] = depth;
                 if (isInside) anyOverlap = true;
-                hash = unchecked((hash * 31) + (isInside ? 1 : 0));
+                hash = unchecked((hash * 31) + (isInside ? (1 + (int)(depth * 100f)) : 0));
             }
 
             p.HasOverlappingPerimeter = anyOverlap;
@@ -719,6 +725,72 @@ public class MosaicProject
         }
     }
 
+    private float MeasureUnderlyingOverlapDepth(
+        double edgeLx, double edgeLy,
+        double inwardVecX, double inwardVecY,
+        (double M11, double M12, double M21, double M22, double OffsetX, double OffsetY) tr,
+        int currentPanelIndex,
+        (double InvM11, double InvM12, double InvM21, double InvM22, double OffsetX, double OffsetY, bool Valid)[] invTransforms)
+    {
+        double edgeCx = (tr.M11 * edgeLx) + (tr.M21 * edgeLy) + tr.OffsetX;
+        double edgeCy = (tr.M12 * edgeLx) + (tr.M22 * edgeLy) + tr.OffsetY;
+
+        if (!IsPointInsideAnyUnderlyingPanel(edgeCx, edgeCy, currentPanelIndex, invTransforms))
+        {
+            return 0f;
+        }
+
+        // Probe inward along the panel normal to find how deep the underlying panel extends
+        float maxDepth = 0.02f;
+        ReadOnlySpan<float> stepFractions = stackalloc float[] { 0.04f, 0.06f, 0.09f, 0.12f, 0.16f, 0.22f, 0.30f, 0.35f };
+        foreach (float f in stepFractions)
+        {
+            double px = edgeLx + (inwardVecX * f);
+            double py = edgeLy + (inwardVecY * f);
+            double cx = (tr.M11 * px) + (tr.M21 * py) + tr.OffsetX;
+            double cy = (tr.M12 * px) + (tr.M22 * py) + tr.OffsetY;
+            if (IsPointInsideAnyUnderlyingPanel(cx, cy, currentPanelIndex, invTransforms))
+            {
+                maxDepth = f;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return maxDepth;
+    }
+
+    private bool IsPointInsideAnyUnderlyingPanel(
+        double cx, double cy, int currentPanelIndex,
+        (double InvM11, double InvM12, double InvM21, double InvM22, double OffsetX, double OffsetY, bool Valid)[] invTransforms)
+    {
+        for (int j = 0; j < currentPanelIndex; j++)
+        {
+            var other = _panels[j];
+            if (!other.IsVisible || other.Width <= 0 || other.Height <= 0) continue;
+
+            var inv = invTransforms[j];
+            if (!inv.Valid) continue;
+
+            double dx = cx - inv.OffsetX;
+            double dy = cy - inv.OffsetY;
+            double lx = (inv.InvM11 * dx) + (inv.InvM21 * dy);
+            double ly = (inv.InvM12 * dx) + (inv.InvM22 * dy);
+
+            // Require the point to be strictly inside the underlying panel's interior (1% inset)
+            // so flush outer sky borders (e.g. top/bottom edges of side-by-side tiles) are never feathered.
+            double insetX = other.Width * 0.01;
+            double insetY = other.Height * 0.01;
+            if (lx >= insetX && lx <= other.Width - insetX &&
+                ly >= insetY && ly <= other.Height - insetY)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private bool IsPointInsideAnyOtherPanel(
         double cx, double cy, int currentPanelIndex,
         (double InvM11, double InvM12, double InvM21, double InvM22, double OffsetX, double OffsetY, bool Valid)[] invTransforms)
@@ -737,11 +809,12 @@ public class MosaicProject
             double lx = (inv.InvM11 * dx) + (inv.InvM21 * dy);
             double ly = (inv.InvM12 * dx) + (inv.InvM22 * dy);
 
-            // 2% margin tolerance for edge alignment
-            double tolX = other.Width * 0.02;
-            double tolY = other.Height * 0.02;
-            if (lx >= -tolX && lx <= other.Width + tolX &&
-                ly >= -tolY && ly <= other.Height + tolY)
+            // Require the point to be strictly inside the underlying panel's interior (1% inset)
+            // so flush outer sky borders (e.g. top/bottom edges of side-by-side tiles) are never feathered.
+            double insetX = other.Width * 0.01;
+            double insetY = other.Height * 0.01;
+            if (lx >= insetX && lx <= other.Width - insetX &&
+                ly >= insetY && ly <= other.Height - insetY)
             {
                 return true;
             }
