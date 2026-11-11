@@ -15,6 +15,7 @@ using SkiaSharp;
 public class OnnxInferenceEngine : IInferenceEngine
 {
     private readonly InferenceSession? _session;
+    private readonly object _sessionLock = new();
     private readonly string _inputName = "images";
     private readonly string _onnxProviderName;
     private readonly List<string> _classNames = new() { "star", "galaxy", "nebula", "satellite_trail" };
@@ -59,6 +60,8 @@ public class OnnxInferenceEngine : IInferenceEngine
 
             try
             {
+                sessionOptions.EnableMemoryPattern = false;
+                sessionOptions.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
                 sessionOptions.AppendExecutionProvider_DML(gpuDeviceId);
                 gpuActive = true;
                 provider = $"DirectML (GPU Device {gpuDeviceId})";
@@ -208,60 +211,63 @@ public class OnnxInferenceEngine : IInferenceEngine
             NamedOnnxValue.CreateFromTensor(_inputName, inputTensor)
         };
 
-        using var outputSession = _session.Run(inputs);
-        var firstOutput = outputSession.FirstOrDefault();
-        if (firstOutput == null) return resultsList;
-
-        var outTensor = firstOutput.AsTensor<float>();
-        var shape = outTensor.Dimensions;
-
-        if (shape.Length == 3 && shape[1] < shape[2])
+        lock (_sessionLock)
         {
-            int numChannels = shape[1];
-            int numAnchors = shape[2];
-            int numClasses = numChannels - 4;
+            using var outputSession = _session.Run(inputs);
+            var firstOutput = outputSession.FirstOrDefault();
+            if (firstOutput == null) return resultsList;
 
-            for (int a = 0; a < numAnchors; a++)
+            var outTensor = firstOutput.AsTensor<float>();
+            var shape = outTensor.Dimensions;
+
+            if (shape.Length == 3 && shape[1] < shape[2])
             {
-                float cx = outTensor[0, 0, a];
-                float cy = outTensor[0, 1, a];
-                float w = outTensor[0, 2, a];
-                float h = outTensor[0, 3, a];
+                int numChannels = shape[1];
+                int numAnchors = shape[2];
+                int numClasses = numChannels - 4;
 
-                float maxScore = 0f;
-                int bestClassId = 0;
-
-                for (int c = 0; c < numClasses; c++)
+                for (int a = 0; a < numAnchors; a++)
                 {
-                    float score = outTensor[0, 4 + c, a];
-                    if (score > maxScore)
+                    float cx = outTensor[0, 0, a];
+                    float cy = outTensor[0, 1, a];
+                    float w = outTensor[0, 2, a];
+                    float h = outTensor[0, 3, a];
+
+                    float maxScore = 0f;
+                    int bestClassId = 0;
+
+                    for (int c = 0; c < numClasses; c++)
                     {
-                        maxScore = score;
-                        bestClassId = c;
+                        float score = outTensor[0, 4 + c, a];
+                        if (score > maxScore)
+                        {
+                            maxScore = score;
+                            bestClassId = c;
+                        }
                     }
-                }
 
-                if (maxScore >= minConfidenceThreshold && w > 1f && h > 1f)
-                {
-                    float localX = cx - (w / 2f);
-                    float localY = cy - (h / 2f);
+                    if (maxScore >= minConfidenceThreshold && w > 1f && h > 1f)
+                    {
+                        float localX = cx - (w / 2f);
+                        float localY = cy - (h / 2f);
 
-                    if (localX < 0 || localY < 0 || localX > slice.Width || localY > slice.Height)
-                        continue;
+                        if (localX < 0 || localY < 0 || localX > slice.Width || localY > slice.Height)
+                            continue;
 
-                    float globalX = localX + slice.X;
-                    float globalY = localY + slice.Y;
+                        float globalX = localX + slice.X;
+                        float globalY = localY + slice.Y;
 
-                    string className = bestClassId < _classNames.Count ? _classNames[bestClassId] : "star";
+                        string className = bestClassId < _classNames.Count ? _classNames[bestClassId] : "star";
 
-                    resultsList.Add(new AstrophotographyObject(
-                        Id: 0,
-                        Box: new BoundingBox(globalX, globalY, w, h),
-                        Confidence: Math.Clamp(maxScore, 0f, 1f),
-                        ClassName: className,
-                        TileOffsetX: slice.X,
-                        TileOffsetY: slice.Y
-                    ));
+                        resultsList.Add(new AstrophotographyObject(
+                            Id: 0,
+                            Box: new BoundingBox(globalX, globalY, w, h),
+                            Confidence: Math.Clamp(maxScore, 0f, 1f),
+                            ClassName: className,
+                            TileOffsetX: slice.X,
+                            TileOffsetY: slice.Y
+                        ));
+                    }
                 }
             }
         }

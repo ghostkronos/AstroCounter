@@ -217,12 +217,12 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     // Localized UI Strings
     public string L_WindowTitle => IsTurkish
-        ? "AstroCounter v1.3.5 - Astrofotoğraf Nesne Tespiti ve 3D Planetaryum"
-        : "AstroCounter v1.3.5 - Astrophotography Object Detection & 3D Celestial Planetarium";
+        ? "AstroCounter v1.3.6 - Astrofotoğraf Nesne Tespiti ve 3D Planetaryum"
+        : "AstroCounter v1.3.6 - Astrophotography Object Detection & 3D Celestial Planetarium";
     public string L_HeaderSubtitle => IsTurkish
-        ? "v1.3.5 • Hızlı Yıldız Çıkarımı, 256 Noktalı Kontur Maskesi, Görünüm Kırpma ve Sıfır Gecikmeli Yakınlaştırma"
-        : "v1.3.5 • Fast Star Extraction, 256-Point Contour Alpha Blending, Viewport Culling & Zero-Lag Zoom";
-    public string L_VersionBadge => "v1.3.5";
+        ? "v1.3.6 • Güvenli Toplu İçe Aktarma, DirectML İş Parçacığı Koruması ve Düşük Bellek Modu"
+        : "v1.3.6 • Resilient Batch Import, Thread-Safe DirectML & Low-Memory Preview Pipeline";
+    public string L_VersionBadge => "v1.3.6";
     public string L_PhotosButtonText => MosaicProject.Count > 0
         ? (IsTurkish ? $"Fotoğraflar ({MosaicProject.Count})" : $"Photos ({MosaicProject.Count})")
         : (IsTurkish ? "Fotoğraflar" : "Photos");
@@ -2152,6 +2152,21 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         return wb;
     }
 
+    private static BitmapSource ConvertToPreviewWpfBitmap(SKBitmap skBitmap, int maxDimension = 2048)
+    {
+        if (skBitmap.Width <= maxDimension && skBitmap.Height <= maxDimension)
+        {
+            return ConvertToWpfBitmap(skBitmap);
+        }
+
+        float scale = (float)maxDimension / Math.Max(skBitmap.Width, skBitmap.Height);
+        int newW = Math.Max(64, (int)Math.Round(skBitmap.Width * scale));
+        int newH = Math.Max(64, (int)Math.Round(skBitmap.Height * scale));
+
+        using var resized = skBitmap.Resize(new SKImageInfo(newW, newH, skBitmap.ColorType, skBitmap.AlphaType), SKSamplingOptions.Default);
+        return resized != null ? ConvertToWpfBitmap(resized) : ConvertToWpfBitmap(skBitmap);
+    }
+
     public async Task ExecuteAnalyzeAsync()
     {
         if (string.IsNullOrEmpty(SelectedImagePath) || !File.Exists(SelectedImagePath))
@@ -2412,108 +2427,206 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         CommandManager.InvalidateRequerySuggested();
     }
 
+    private bool _isBatchImporting;
+
     public async Task LoadImagesAsync(IReadOnlyList<string> filePaths, bool append = false)
     {
         if (filePaths == null || filePaths.Count == 0) return;
+        if (_isBatchImporting) return;
 
-        var valid = filePaths.Where(f => !string.IsNullOrEmpty(f) && File.Exists(f)).ToList();
+        var valid = filePaths
+            .Where(f => !string.IsNullOrWhiteSpace(f) && File.Exists(f))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         if (valid.Count == 0) return;
 
+        _isBatchImporting = true;
         IsLoading = true;
+        ProgressValue = 2.0;
         StatusMessage = IsTurkish
             ? $"🌌 {valid.Count} fotoğraf yükleniyor ve hazırlanıyor..."
             : $"🌌 Loading {valid.Count} photos...";
 
-        if (!append)
+        try
         {
-            MosaicProject.Clear();
-            _lastDetectionResult = null;
-            VisibleObjects = Array.Empty<AstrophotographyObject>();
-            TotalCount = 0;
-            Tier1Count = 0;
-            Tier2Count = 0;
-            Tier3Count = 0;
-            SpeculativeCount = 0;
-            AnomalyCount = 0;
-        }
-
-        // Set active image as primary preview
-        string firstPath = valid[0];
-        LoadBitmapPreview(firstPath);
-        _selectedImagePath = firstPath;
-        OnPropertyChanged(nameof(SelectedImagePath));
-        OnPropertyChanged(nameof(ImageFileName));
-        OnPropertyChanged(nameof(HasLoadedImage));
-        OnPropertyChanged(nameof(ImageDimensionText));
-
-        int existingCount = MosaicProject.Count;
-        var newlyAdded = new List<MosaicPanel>();
-
-        // Architectural Directive: Decode images in parallel on background worker threads
-        int maxDecoders = Math.Clamp(Environment.ProcessorCount / 2, 2, 4);
-        var decodedItems = await Task.Run(() =>
-        {
-            var items = new (string Path, int Width, int Height, SKBitmap? SkBmp)[valid.Count];
-            Parallel.For(0, valid.Count, new ParallelOptions { MaxDegreeOfParallelism = maxDecoders }, idx =>
+            if (!append)
             {
-                string p = valid[idx];
-                try
+                foreach (var oldPanel in MosaicProject.Panels)
                 {
-                    var sk = ImagePreprocessor.LoadImage(p);
-                    if (sk != null)
+                    if (oldPanel.CachedSkiaBitmap is SKBitmap oldSk && !ReferenceEquals(oldSk, _originalSkBitmap))
                     {
-                        items[idx] = (p, sk.Width, sk.Height, sk);
+                        oldSk.Dispose();
                     }
+                    oldPanel.CachedSkiaBitmap = null;
                 }
-                catch { }
-            });
-            return items;
-        });
-
-        for (int i = 0; i < decodedItems.Length; i++)
-        {
-            var item = decodedItems[i];
-            string path = item.Path;
-            var skBmp = item.SkBmp;
-            int w = item.Width > 0 ? item.Width : (int)Math.Max(1, ImageWidth);
-            int h = item.Height > 0 ? item.Height : (int)Math.Max(1, ImageHeight);
-
-            if (skBmp != null)
+                MosaicProject.Clear();
+                _lastDetectionResult = null;
+                VisibleObjects = Array.Empty<AstrophotographyObject>();
+                TotalCount = 0;
+                Tier1Count = 0;
+                Tier2Count = 0;
+                Tier3Count = 0;
+                SpeculativeCount = 0;
+                AnomalyCount = 0;
+            }
+            else
             {
-                var wpfBmp = ConvertToWpfBitmap(skBmp);
-                DetectionOverlay.CachePanelBitmap(path, wpfBmp);
+                // Skip files already present in the mosaic when appending
+                var existingPaths = MosaicProject.Panels
+                    .Where(p => !string.IsNullOrEmpty(p.FilePath))
+                    .Select(p => Path.GetFullPath(p.FilePath!))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                valid = valid
+                    .Where(f => !existingPaths.Contains(Path.GetFullPath(f)))
+                    .ToList();
+
+                if (valid.Count == 0)
+                {
+                    StatusMessage = IsTurkish
+                        ? "Seçilen fotoğraflar zaten projede mevcut."
+                        : "Selected photos are already loaded in the project.";
+                    return;
+                }
             }
 
-            string panelName = !string.IsNullOrWhiteSpace(path)
-                ? Path.GetFileNameWithoutExtension(path)
-                : $"Panel {existingCount + i + 1}";
+            int existingCount = MosaicProject.Count;
+            var newlyAdded = new List<MosaicPanel>();
+            bool isBatchMode = valid.Count > 1 || existingCount > 0;
 
-            var initialWcs = new WcsMatrix(
-                new CelestialCoordinates(180.0, 30.0),
-                w / 2.0,
-                h / 2.0,
-                2.5,
-                0.0,
-                w,
-                h);
-
-            var panel = new MosaicPanel(
-                Guid.NewGuid().ToString("N"),
-                panelName,
-                w,
-                h,
-                initialWcs,
-                path)
+            // Decode images in parallel on background worker threads (bounded concurrency to avoid OOM on 8-16GB devices)
+            int maxDecoders = Math.Clamp(Environment.ProcessorCount / 2, 1, 3);
+            var decodedItems = await Task.Run(() =>
             {
-                CachedBitmap = skBmp,
-                CachedSkiaBitmap = skBmp
-            };
+                var items = new (string Path, int Width, int Height, BitmapSource? WpfPreview, SKBitmap? KeptSkBmp, IReadOnlyList<AstrophotographyObject>? Stars, string? Error)[valid.Count];
+                Parallel.For(0, valid.Count, new ParallelOptions { MaxDegreeOfParallelism = maxDecoders }, idx =>
+                {
+                    string p = valid[idx];
+                    try
+                    {
+                        var sk = ImagePreprocessor.LoadImage(p);
+                        if (sk == null || sk.Width <= 0 || sk.Height <= 0)
+                        {
+                            sk?.Dispose();
+                            items[idx] = (p, 0, 0, null, null, null, "Boş veya geçersiz görsel");
+                            return;
+                        }
 
-            panel.PropertyChanged -= OnMosaicPanelPropertyChanged;
-            panel.PropertyChanged += OnMosaicPanelPropertyChanged;
-            MosaicProject.AddPanel(panel);
-            newlyAdded.Add(panel);
-        }
+                        var wpfPreview = ConvertToPreviewWpfBitmap(sk, 2048);
+                        var stars = PhotometricStarFinder.DetectStarsFast(
+                            sk,
+                            new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f));
+
+                        // Keep full SKBitmap only for single-image mode or very small sets (<= 2) to prevent OOM on new devices
+                        if (!isBatchMode || valid.Count <= 2)
+                        {
+                            items[idx] = (p, sk.Width, sk.Height, wpfPreview, sk, stars, null);
+                        }
+                        else
+                        {
+                            int w = sk.Width;
+                            int h = sk.Height;
+                            sk.Dispose();
+                            items[idx] = (p, w, h, wpfPreview, null, stars, null);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        items[idx] = (p, 0, 0, null, null, null, ex.Message);
+                    }
+                });
+                return items;
+            });
+
+            var successItems = decodedItems.Where(x => x.WpfPreview != null && x.Width > 0 && x.Height > 0).ToList();
+            int failedCount = decodedItems.Length - successItems.Count;
+
+            if (successItems.Count == 0)
+            {
+                string firstErr = decodedItems.FirstOrDefault(x => !string.IsNullOrEmpty(x.Error)).Error ?? "Bilinmeyen hata";
+                StatusMessage = IsTurkish
+                    ? $"⚠️ Fotoğraflar içe aktarılamadı ({firstErr})."
+                    : $"⚠️ Failed to import photos ({firstErr}).";
+                return;
+            }
+
+            // Set active preview from first successfully decoded image (no double disk decode!)
+            var firstItem = successItems[0];
+            _selectedImagePath = firstItem.Path;
+            if (firstItem.KeptSkBmp != null)
+            {
+                if (_originalSkBitmap != null && !ReferenceEquals(_originalSkBitmap, firstItem.KeptSkBmp))
+                {
+                    _originalSkBitmap.Dispose();
+                }
+                _originalSkBitmap = firstItem.KeptSkBmp;
+                UpdateFormatAccuracyBadge(firstItem.Path);
+                ApplyDisplayAdjustments();
+            }
+            else
+            {
+                _originalSkBitmap?.Dispose();
+                _originalSkBitmap = null;
+                ImageWidth = firstItem.Width;
+                ImageHeight = firstItem.Height;
+                ImageBitmap = firstItem.WpfPreview;
+                UpdateFormatAccuracyBadge(firstItem.Path);
+            }
+            OnPropertyChanged(nameof(SelectedImagePath));
+            OnPropertyChanged(nameof(ImageFileName));
+            OnPropertyChanged(nameof(HasLoadedImage));
+            OnPropertyChanged(nameof(ImageDimensionText));
+
+            for (int i = 0; i < successItems.Count; i++)
+            {
+                var item = successItems[i];
+                string path = item.Path;
+                int w = item.Width;
+                int h = item.Height;
+
+                if (item.WpfPreview != null)
+                {
+                    DetectionOverlay.CachePanelBitmap(path, item.WpfPreview);
+                }
+
+                string panelName = !string.IsNullOrWhiteSpace(path)
+                    ? Path.GetFileNameWithoutExtension(path)
+                    : $"Panel {existingCount + i + 1}";
+
+                var initialWcs = new WcsMatrix(
+                    new CelestialCoordinates(180.0, 30.0),
+                    w / 2.0,
+                    h / 2.0,
+                    2.5,
+                    0.0,
+                    w,
+                    h);
+
+                var panel = new MosaicPanel(
+                    Guid.NewGuid().ToString("N"),
+                    panelName,
+                    w,
+                    h,
+                    initialWcs,
+                    path)
+                {
+                    CachedBitmap = item.WpfPreview,
+                    CachedSkiaBitmap = item.KeptSkBmp,
+                    DetectedStars = item.Stars
+                };
+
+                panel.PropertyChanged -= OnMosaicPanelPropertyChanged;
+                panel.PropertyChanged += OnMosaicPanelPropertyChanged;
+                MosaicProject.AddPanel(panel);
+                newlyAdded.Add(panel);
+            }
+
+            if (failedCount > 0)
+            {
+                StatusMessage = IsTurkish
+                    ? $"⚠️ {successItems.Count} fotoğraf yüklendi, {failedCount} dosya okunamadığı için atlandı."
+                    : $"⚠️ Loaded {successItems.Count} photos; skipped {failedCount} unreadable files.";
+            }
 
         if (newlyAdded.Count > 0)
         {
@@ -2720,6 +2833,18 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
         // Scan all loaded mosaic panels in parallel at 100% full sensor resolution
         await ExecuteAnalyzeAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = IsTurkish
+                ? $"⚠️ Toplu içe aktarma hatası: {ex.Message}"
+                : $"⚠️ Batch import error: {ex.Message}";
+        }
+        finally
+        {
+            _isBatchImporting = false;
+            IsLoading = false;
+        }
     }
 
     private void ExecuteSelectImage()

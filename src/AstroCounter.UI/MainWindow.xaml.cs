@@ -245,10 +245,32 @@ public partial class MainWindow : Window
             var files = (string[]?)e.Data.GetData(DataFormats.FileDrop);
             if (files != null && files.Length > 0)
             {
-                var validFiles = files.Where(f => {
-                    string x = Path.GetExtension(f).ToLowerInvariant();
-                    return x is ".png" or ".jpg" or ".jpeg" or ".tif" or ".tiff" or ".bmp" or ".fits" or ".fit";
-                }).ToList();
+                static bool IsSupportedImage(string path)
+                {
+                    string x = Path.GetExtension(path).ToLowerInvariant();
+                    return x is ".png" or ".jpg" or ".jpeg" or ".tif" or ".tiff" or ".bmp" or ".fits" or ".fit" or ".fts" or ".xisf";
+                }
+
+                var validFiles = new List<string>();
+                foreach (var entry in files)
+                {
+                    if (Directory.Exists(entry))
+                    {
+                        try
+                        {
+                            validFiles.AddRange(Directory.EnumerateFiles(entry, "*.*", SearchOption.TopDirectoryOnly)
+                                .Where(IsSupportedImage)
+                                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
+                        }
+                        catch { }
+                    }
+                    else if (File.Exists(entry) && IsSupportedImage(entry))
+                    {
+                        validFiles.Add(entry);
+                    }
+                }
+
+                validFiles = validFiles.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
                 if (validFiles.Count > 0)
                 {
