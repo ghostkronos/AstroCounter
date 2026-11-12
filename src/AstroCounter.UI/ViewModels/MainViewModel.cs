@@ -113,55 +113,55 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         set => SetProperty(ref _optimalConfidenceThreshold, value);
     }
 
-    public string L_ConfidencePanelTitle => IsTurkish ? "Algoritma & Güven Eşiği" : "Algorithm & Confidence Threshold";
+    public string L_ConfidencePanelTitle => IsTurkish ? "Hassasiyet & Güven Eşiği" : "Sensitivity & Threshold";
     public string L_ConfidencePanelToolTip => IsTurkish
-        ? "Yıldız tespit hassasiyeti ve fotoğraf bazlı güven eşiği ayarlarını açar"
-        : "Opens detection sensitivity and per-photo confidence settings";
-    public string L_AutoConfidenceToggle => IsTurkish ? "Otomatik Güven Eşiği (Format Duyarlı)" : "Automatic Confidence Threshold (Format-Aware)";
+        ? "Kaç yıldızın işaretleneceğini (sönüklerden en parlaklara kadar) ve fotoğraf bazlı hassasiyeti ayarlar"
+        : "Adjusts how faint stars are detected and sets per-photo confidence sensitivity";
+    public string L_AutoConfidenceToggle => IsTurkish ? "Otomatik Hassasiyet (Format Duyarlı)" : "Auto Sensitivity (Format-Aware)";
     public string L_AutoConfidenceDesc => IsTurkish
-        ? "Fotoğrafın gürültü tabanı (knee-point) ve dosya formatına (kayıplı JPG vs kayıpsız TIFF/FITS) göre fotoğraf başına ideal eşiği arka planda hesaplar."
-        : "Automatically calculates optimal threshold per photo based on background noise knee-point and file format (lossy JPG vs lossless TIFF/FITS).";
-    public string L_RecalculateAuto => IsTurkish ? "⚡ Otomatik Eşiği Yeniden Kilitle" : "⚡ Recalculate Auto";
-    public string L_QuickPresets => IsTurkish ? "HIZLI ÖN AYARLAR:" : "QUICK PRESETS:";
-    public string L_PerPhotoConfidenceHeader => IsTurkish ? "FOTOĞRAF BAZLI GÜVEN EŞİĞİ:" : "PER-PHOTO CONFIDENCE THRESHOLD:";
+        ? "Fotoğrafın gürültü seviyesine ve dosya türüne (sıkıştırılmış JPG vs kayıpsız TIFF/RAW/FITS) göre en temiz eşiği otomatik belirler."
+        : "Automatically selects the cleanest detection threshold per photo based on sky noise and file format (compressed JPG vs lossless TIFF/RAW/FITS).";
+    public string L_RecalculateAuto => IsTurkish ? "⚡ Otomatik Eşiği Yeniden Hesapla" : "⚡ Recalculate Optimal Threshold";
+    public string L_QuickPresets => IsTurkish ? "HIZLI HAZIR AYARLAR:" : "QUICK PRESETS:";
+    public string L_PerPhotoConfidenceHeader => IsTurkish ? "FOTOĞRAF BAZLI HASSASİYET:" : "PER-PHOTO SENSITIVITY:";
     public string L_ActivePhotoLabel => IsTurkish ? "Hedef Fotoğraflar:" : "Target Photos:";
-    public string L_DragReorderHint => IsTurkish ? "💡 Katman sırasını değiştirmek için sürükleyin · Çoklu seçim için kartlara tıklayın" : "💡 Drag cards to reorder layers · Click cards to multi-select";
-    public string L_AnomaliesBadgeLabel => IsTurkish ? "Anomali:" : "Anomalies:";
+    public string L_DragReorderHint => IsTurkish ? "💡 Katman sırasını değiştirmek için kartları sürükleyin · Çoklu seçim için tıklayın" : "💡 Drag cards to reorder layers · Click cards to multi-select";
+    public string L_AnomaliesBadgeLabel => IsTurkish ? "Sıradışı / Anomali:" : "Anomalies:";
     public string L_SelectAllPhotosButton => IsTurkish ? "☑ Tümü" : "☑ All";
-    public string L_ClearSelectionButton => IsTurkish ? "☐ Seçimi Sıfırla" : "☐ Clear Selection";
-    public string L_AiModelBadge => IsTurkish ? "🧠 Yapay Zekâ Modeli: YOLO11n ONNX" : "🧠 AI Model: YOLO11n ONNX";
+    public string L_ClearSelectionButton => IsTurkish ? "☐ Seçimi Temizle" : "☐ Clear Selection";
+    public string L_AiModelBadge => IsTurkish ? "🧠 YOLO11n Yapay Zekâ" : "🧠 YOLO11n AI";
     public string L_AiModelBadgeToolTip => IsTurkish
-        ? "SDSS DR16 derin uzay gözlem verileriyle eğitilmiş YOLO11n ONNX modeli (DirectML GPU hızlandırmalı)"
-        : "YOLO11n ONNX neural network trained on SDSS DR16 astronomical survey cutouts (DirectML GPU accelerated)";
+        ? "SDSS DR16 derin uzay görüntüleriyle eğitilmiş YOLO11n ONNX modeli (DirectML GPU destekli)"
+        : "YOLO11n ONNX neural network trained on SDSS DR16 deep-sky imagery (DirectML GPU accelerated)";
 
-    // Help Panel Localized Strings
-    public string L_HelpButton => IsTurkish ? "❓ Yardım" : "❓ Help";
-    public string L_HelpToolTip => IsTurkish ? "Kullanım kılavuzu, kontroller ve kısayollar panelini açar (F1)" : "Opens interactive user guide, controls, and shortcuts panel (F1)";
-    public string L_HelpPanelTitle => IsTurkish ? "Kullanım Kılavuzu & Yardım Merkezi" : "User Guide & Help Center";
-    public string L_HelpSec1Title => IsTurkish ? "🖱️ 1. 2D & 3D Gezinme ve Sınırsız Kaydırma" : "🖱️ 1. 2D & 3D Navigation & Infinite Panning";
+    // Help Panel Localized Strings (Beginner-Friendly & v1.4.0 Updated)
+    public string L_HelpButton => IsTurkish ? "❓ Rehber" : "❓ Guide";
+    public string L_HelpToolTip => IsTurkish ? "Adım adım başlangıç rehberi ve kısayollar (F1)" : "Open beginner-friendly user guide and shortcuts (F1)";
+    public string L_HelpPanelTitle => IsTurkish ? "AstroCounter v1.4.0 • Hızlı Başlangıç Rehberi" : "AstroCounter v1.4.0 • Quick Start Guide";
+    public string L_HelpSec1Title => IsTurkish ? "🖱️ 1. Fotoğrafında Gezinme (2D & 3D Gök Kubbe)" : "🖱️ 1. Navigating Your Sky (2D & 3D Dome)";
     public string L_HelpSec1Body => IsTurkish
-        ? "• 2D Görünüm: Sol tık veya orta tekerleğe basılı tutarak sınırsız gökyüzü kanvasında istediğiniz yöne kaydırın. Fare tekerleği ile yakınlaştırın.\n• 3D Gök Kubbe: Sol tık + sürükleyerek 360° planetaryum kubbesinde dolaşın, tekerlek ile görüş açısını (FOV) değiştirin."
-        : "• 2D View: Left-drag or middle-drag to pan infinitely across the sky canvas in any direction. Use mouse wheel to zoom.\n• 3D Celestial Dome: Left-drag to look around the 360° planetarium dome; scroll wheel to adjust Field of View (FOV).";
-    public string L_HelpSec2Title => IsTurkish ? "🎯 2. Çoklu Fotoğraf Seçimi & Katman Yönetimi" : "🎯 2. Multi-Photo Selection & Layer Management";
+        ? "• 2D Görünüm: Sol tuşa basılı tutup sürükleyerek fotoğrafı kaydırın, fare tekerleğiyle yıldızlara istediğiniz kadar yakınlaşın.\n• 3D Gök Kubbe: Fotoğrafınızı gerçek gökyüzü küresi üzerine yerleştirir; sürükleyerek 360° etrafınıza bakabilirsiniz."
+        : "• 2D View: Left-drag to pan freely across your sky canvas and use the scroll wheel to zoom smoothly.\n• 3D Celestial Dome: Projects your photos onto an interactive 360° sky sphere—drag to look around, scroll to adjust Field of View.";
+    public string L_HelpSec2Title => IsTurkish ? "🧩 2. Çoklu Fotoğraf & Otomatik Mozaik Birleştirme" : "🧩 2. Multi-Photo Import & Seamless Mosaics";
     public string L_HelpSec2Body => IsTurkish
-        ? "• Çift Tıklama: 2D veya 3D ekranda bir fotoğrafa çift tıklayarak seçin (Ctrl veya Shift ile tıklayarak birden çok fotoğrafı aynı anda seçebilirsiniz).\n• Seçimi Sıfırlama: Boşluğa çift tıkladığınızda tüm seçimler ve kenar çizgileri kaldırılır. Hiçbir fotoğraf seçili değilken kenar çizgisi gösterilmez.\n• Katman Sıralama: 'Fotoğraflar' çekmecesinde kartları sürükleyip bırakarak (Drag & Drop) üst/alt katman sırasını değiştirin."
-        : "• Double-Click: Double-click any photo in 2D or 3D to select it (hold Ctrl/Shift or click cards in the Photos panel to select multiple photos at once).\n• Clear Selection: Double-click empty space to clear all selections and outlines. Unselected photos have no outline border.\n• Layer Reordering: Drag and drop photo cards inside the 'Photos' drawer to change layer order.";
-    public string L_HelpSec3Title => IsTurkish ? "☀️ 3. Işık Ayarları & Fotoğraf Bazlı Güven Eşiği" : "☀️ 3. Display Light & Per-Photo Confidence";
+        ? "• Tek tıkla klasör veya birden çok fotoğraf sürükleyip bırakın; AstroCounter hepsini tek gökyüzü atlasında birleştirir.\n• Fotoğrafa çift tıklayarak seçebilirsiniz (Ctrl/Shift ile çoklu seçim). 'Fotoğraflar' panelinde kartları sürükleyerek üst/alt sırasını değiştirin."
+        : "• Drag & drop multiple photos or an entire folder to automatically stitch them into one seamless sky atlas.\n• Double-click any photo to select it (hold Ctrl/Shift for multi-select), or drag cards inside 'Photos' to reorder layers.";
+    public string L_HelpSec3Title => IsTurkish ? "☀ 3. Görüntü Işığı & Hassasiyet (Sönük Yıldız Ayarı)" : "☀ 3. Light Tuning & Sensitivity Controls";
     public string L_HelpSec3Body => IsTurkish
-        ? "• Işık Ayarları (☀️): Parlaklık, Pozlama (Gama), Kontrast ve Otomatik MTF Dengeleme ayarları, o anda seçili olan tüm fotoğraflara (seçim yoksa tüm fotoğraflara) hem 2D hem 3D ekranda anında uygulanır.\n• Otomatik Güven (⚡): Her fotoğrafın sıkıştırma formatına (Kayıplı JPEG vs Kayıpsız TIFF/FITS) göre arka planda ideal eşik hesaplanır; isterseniz fotoğraf başına ayrı ayrı değiştirebilirsiniz."
-        : "• Display & Light (☀️): Brightness, Exposure (Gamma), Contrast, and Auto MTF Balance apply simultaneously in real time to all currently selected photos (or all photos if none selected) in both 2D and 3D.\n• Auto Confidence (⚡): Computes a format-aware noise threshold in the background per photo (stricter on lossy JPEG, sensitive on lossless TIFF/FITS) with individual per-photo sliders.";
-    public string L_HelpSec4Title => IsTurkish ? "🔬 4. Motorlar: Hibrit Füzyon, Fotometri & DirectML (YOLO)" : "🔬 4. Engines: Hybrid Fusion, Photometry & DirectML (YOLO)";
+        ? "• Işık (☀): Yıldızları daha belirgin görmek için Parlaklık, Pozlama ve Otomatik MTF Dengeleme uygulayın (orijinal dosyanız bozulmaz).\n• Hassasiyet (⚡): Fazla gürültü varsa eşiği yükseltin; çok sönük yıldızları yakalamak istiyorsanız düşürün. Sıkıştırılmış JPEG ve kayıpsız TIFF/RAW için akıllı koruma aktiftir."
+        : "• Light (☀): Boost faint nebulosity and stars safely with Brightness, Exposure, and Auto MTF Stretch without altering your original files.\n• Sensitivity (⚡): Raise the threshold to filter camera noise, or lower it to reveal fainter stars. Smart compressed JPEG & lossless TIFF/RAW calibration runs automatically.";
+    public string L_HelpSec4Title => IsTurkish ? "✨ 4. Sayım Motorları & Odak Alanı (ROI)" : "✨ 4. Counting Engines & Focus Area (ROI)";
     public string L_HelpSec4Body => IsTurkish
-        ? "• Hibrit Füzyon: DAOStarFinder PSF/SNR fotometrisi ile DirectML hızlandırmalı YOLO11n yapay zekâ modelini birleştirir.\n• Tarama Alanı (ROI): Dikdörtgen veya Çokgen araçlarıyla sadece belirli bölgeleri tarayabilir veya hariç tutabilirsiniz."
-        : "• Hybrid Fusion: Combines DAOStarFinder PSF/SNR photometry with DirectML-accelerated YOLO11n deep learning.\n• Scan Area (ROI): Use Rectangle or Polygon tools to include or exclude custom regions.";
-    public string L_HelpSec5Title => IsTurkish ? "🔭 5. Astrometri, Stellarium & 360° Panoramik Çıktı" : "🔭 5. Astrometry, Stellarium & 360° Panoramic Export";
+        ? "• Hibrit Füzyon (Önerilen): Keskin yıldızlar ile yumuşak odaklı/geniş açılı gök cisimlerini DirectML yapay zekâ desteğiyle birlikte sayar.\n• Odak Alanı: Ağaç, ufuk çizgisi veya parlak şehir ışıklarını tarama dışında bırakmak için Kutu/Çokgen aracını kullanın."
+        : "• Hybrid Fusion (Recommended): Combines multi-scale astronomical photometry with DirectML AI to count both pinpoint and soft stars.\n• Focus Area: Use Box or Polygon tools to include only your target region or exclude horizon silhouettes.";
+    public string L_HelpSec5Title => IsTurkish ? "🔭 5. Gökyüzünde Eşle, Stellarium & Dışa Aktarma" : "🔭 5. Sky Matching, Stellarium & Export";
     public string L_HelpSec5Body => IsTurkish
-        ? "• Yıldızlardan Eşle: 117.955 Hipparcos ve yoğun Gaia/Tycho kataloğu ile kör üçgen eşleme ve ikili mozaik yıldız kenetleme yapar.\n• Stellarium 1:1: Hem 2D hem 3D kubbe ekranında çift yönlü canlı senkronizasyon sağlar.\n• Dışa Aktar (🚀): 2D Mozaik Kanvası veya 360°×180° Panoramik (Equirectangular) gök haritası olarak PNG, kayıpsız TIFF, JPG, CSV ve JSON çıktısı alır."
-        : "• Plate Solving: Blind triangle matching against 117,955 Hipparcos + dense Gaia/Tycho catalogs and pairwise star alignment.\n• Stellarium 1:1: Real-time bidirectional sync in both 2D and 3D views.\n• Export (🚀): Export as 2D Mosaic Canvas or 360°×180° Equirectangular Panorama in PNG, lossless TIFF, JPG, CSV, and JSON.";
-    public string L_HelpSec6Title => IsTurkish ? "⌨️ 6. Klavye Kısayolları" : "⌨️ 6. Keyboard Shortcuts";
+        ? "• Gökyüzünde Bul: Fotoğrafınızdaki yıldız desenlerini 117k Hipparcos + Gaia/Tycho kataloğu ile eşleyerek takımyıldızları ve galaksileri işaretler.\n• Dışa Aktar (🚀): Tüm yıldız listesini CSV/JSON olarak kaydedin ya da 2D/360° yüksek çözünürlüklü gök haritası çıkarın."
+        : "• Find in Sky: Plate-solves your star pattern against 117k Hipparcos + dense Gaia/Tycho catalogs to overlay constellations and deep-sky targets.\n• Export (🚀): Export star catalogs as CSV/JSON or render high-resolution 2D mosaics and 360° panoramas.";
+    public string L_HelpSec6Title => IsTurkish ? "⌨️ 6. Pratik Kısayollar" : "⌨️ 6. Handy Shortcuts";
     public string L_HelpSec6Body => IsTurkish
-        ? "• Ctrl + O : Görsel Seç   |   Ctrl + E : Gelişmiş Dışa Aktar\n• F1 : Yardım Ekranı   |   F11 : Tam Ekran   |   Esc : Çizimi / Paneli Kapat"
-        : "• Ctrl + O : Select Image   |   Ctrl + E : Advanced Export\n• F1 : Help Panel   |   F11 : Fullscreen   |   Esc : Cancel Drawing / Close Panel";
+        ? "• Ctrl + O : Fotoğraf Seç   |   Ctrl + E : Dışa Aktar\n• F1 : Rehberi Aç / Kapat   |   F11 : Tam Ekran   |   Esc : Paneli / Çizimi Kapat"
+        : "• Ctrl + O : Open Photo   |   Ctrl + E : Export\n• F1 : Toggle Guide   |   F11 : Fullscreen   |   Esc : Cancel / Close Panel";
 
     public string L_AutoConfidenceToolTip => IsTurkish
         ? "Görselin fiziksel gürültü tabanı (knee-point) ve yapay zekâ analizine göre dinamik güven eşiğini kilitler"
@@ -215,21 +215,50 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string LanguageButtonText => IsTurkish ? "TR | EN" : "EN | TR";
     public string L_LanguageToolTip => IsTurkish ? "Uygulama dilini değiştir (Türkçe / İngilizce)" : "Switch application language (English / Turkish)";
 
-    // Localized UI Strings
+    // Localized UI Strings (v1.4.0 — Beginner-Friendly TR & EN)
     public string L_WindowTitle => IsTurkish
-        ? "AstroCounter v1.3.6 - Astrofotoğraf Nesne Tespiti ve 3D Planetaryum"
-        : "AstroCounter v1.3.6 - Astrophotography Object Detection & 3D Celestial Planetarium";
+        ? "AstroCounter v1.4.0 — Astrofotoğraf Yıldız Sayacı ve 3D Gök Kubbe"
+        : "AstroCounter v1.4.0 — Astrophotography Star Counter & 3D Sky Dome";
     public string L_HeaderSubtitle => IsTurkish
-        ? "v1.3.6 • Güvenli Toplu İçe Aktarma, DirectML İş Parçacığı Koruması ve Düşük Bellek Modu"
-        : "v1.3.6 • Resilient Batch Import, Thread-Safe DirectML & Low-Memory Preview Pipeline";
-    public string L_VersionBadge => "v1.3.6";
+        ? "v1.4.0 • Akıllı Yıldız Sayımı, Mozaik Atlası ve 3D Planetaryum"
+        : "v1.4.0 • Smart Star Counting, Mosaic Atlas & 3D Planetarium";
+    public string L_VersionBadge => "v1.4.0";
+    public string L_SplashTitle => "AstroCounter";
+    public string L_SplashSubtitle => IsTurkish
+        ? "Yıldızları Keşfet • Akıllı Sayım & 3D Gök Kubbe"
+        : "Explore the Night Sky • Smart Counting & 3D Dome";
+
     public string L_PhotosButtonText => MosaicProject.Count > 0
         ? (IsTurkish ? $"Fotoğraflar ({MosaicProject.Count})" : $"Photos ({MosaicProject.Count})")
         : (IsTurkish ? "Fotoğraflar" : "Photos");
-    public string L_AddPhotosButton => IsTurkish ? "➕ Foto Ekle" : "➕ Add Photos";
+    public string L_PhotosButtonToolTip => IsTurkish
+        ? "Yüklü fotoğrafları yönetin, kartları sürükleyerek sırayı değiştirin veya otomatik mozaik hizalaması yapın"
+        : "Manage imported photos, drag cards to reorder layers, or align a multi-panel sky mosaic";
+    public string L_AddPhotosButton => IsTurkish ? "＋ Foto Ekle" : "＋ Add Photos";
+    public string L_AddPhotosToolTip => IsTurkish
+        ? "Tek veya birden çok astrofotoğraf ekleyin"
+        : "Import single or multiple astrophotographs";
     public string L_AlignAllButton => IsTurkish ? "🔭 Tümünü Hizala" : "🔭 Align All";
+    public string L_AlignAllToolTip => IsTurkish
+        ? "Tüm fotoğrafları yıldız desenlerinden gökyüzüne yerleştirip tek mozaik atlasında birleştirir"
+        : "Plate-solves and aligns all loaded photos into one unified sky mosaic";
     public string L_ClearAllButton => IsTurkish ? "🗑 Temizle" : "🗑 Clear";
-    public string L_SelectImage => IsTurkish ? "Görsel Seç" : "Select Image";
+    public string L_ClearAllToolTip => IsTurkish
+        ? "Yüklü tüm fotoğrafları ve mozaik katmanlarını kaldırır"
+        : "Clear all loaded photos and reset the current mosaic session";
+    public string L_SelectImage => IsTurkish ? "Fotoğraf Aç" : "Open Photo";
+    public string L_SelectImageToolTip => IsTurkish
+        ? "Bilgisayarınızdan bir veya daha fazla astrofotoğraf seçin (Ctrl+O)"
+        : "Browse and open one or more astrophotographs from your computer (Ctrl+O)";
+    public string L_ExportButtonToolTip => IsTurkish
+        ? "Yıldız sayım verilerini (CSV/JSON) veya yüksek çözünürlüklü 2D/360° gök haritasını kaydedin (Ctrl+E)"
+        : "Export star catalog tables (CSV/JSON) or high-res 2D & 360° sky maps (Ctrl+E)";
+    public string L_ZoomFitToolTip => IsTurkish
+        ? "Fotoğrafı ekrana sığdır"
+        : "Fit full image into viewport";
+    public string L_Zoom100ToolTip => IsTurkish
+        ? "Fotoğrafı %100 gerçek piksel boyutunda göster"
+        : "View image at 100% native pixel scale";
     public string L_Reanalyze => IsTurkish ? "Yeniden Analiz Et" : "Re-Analyze";
     public string L_ExportCsv => IsTurkish ? "CSV Dışa Aktar" : "Export CSV";
     public string L_ExportImage => IsTurkish ? "Görseli Kaydet" : "Save Image";
@@ -239,25 +268,25 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string L_Photometry => IsTurkish ? "Fotometri" : "Photometry";
     public string L_Yolo => "DirectML";
     public string L_SelectModel => IsTurkish ? "Model Seç..." : "Select Model...";
-    public string L_LightPanelButton => IsTurkish ? "Işık Ayarları" : "Display & Light";
-    public string L_LightPanelTitle => IsTurkish ? "Görüntü ve Işık Ayarları" : "Image & Light Settings";
+    public string L_LightPanelButton => IsTurkish ? "Işık" : "Light";
+    public string L_LightPanelTitle => IsTurkish ? "Görüntü & Işık Ayarları" : "Display & Light Settings";
     public string L_LightPanelToolTip => IsTurkish
-        ? "Fotoğrafın parlaklık, pozlama ve kontrastını ayarlamak için ışık panelini açar"
-        : "Opens display brightness, exposure, and contrast adjustment panel";
-    public string L_AutoBalanceLabel => IsTurkish ? "Otomatik Işık ve Renk Dengeleme (MTF)" : "Auto Exposure & Color Balance (MTF)";
-    public string L_AutoBalanceNow => IsTurkish ? "⚡ Şimdi Dengele" : "⚡ Balance Now";
+        ? "Sönük yıldızları ve bulutsuları daha net görmek için parlaklık, pozlama ve kontrastı ayarlayın"
+        : "Adjust brightness, exposure, and contrast to reveal faint stars and nebulosity";
+    public string L_AutoBalanceLabel => IsTurkish ? "Otomatik Işık & Renk Dengeleme (MTF)" : "Auto Exposure & Color Stretch (MTF)";
+    public string L_AutoBalanceNow => IsTurkish ? "⚡ Şimdi Dengele" : "⚡ Stretch Now";
     public string L_BrightnessLabel => IsTurkish ? "Parlaklık:" : "Brightness:";
     public string L_ExposureLabel => IsTurkish ? "Pozlama (Gama):" : "Exposure (Gamma):";
     public string L_ContrastLabel => IsTurkish ? "Kontrast:" : "Contrast:";
     public string L_ResetAdjustments => IsTurkish ? "↺ Ayarları Sıfırla" : "↺ Reset Defaults";
 
     public string L_AutoBrightnessToolTip => IsTurkish
-        ? "Çok karanlık veya çok parlak fotoğrafların parlaklık ve arka plan dengesini algoritmanın yıldızları en net seçebileceği seviyeye otomatik getirir"
-        : "Automatically balances exposure and background of underexposed or light-polluted images for optimal star detection";
+        ? "Çok karanlık veya ışık kirlilikli kareleri astronomik MTF eğrisiyle otomatik dengeler (orijinal dosyayı değiştirmez)"
+        : "Automatically balances dark or light-polluted frames with an astronomical MTF stretch without altering your original files";
 
-    public string L_ScanAreaGroup => IsTurkish ? "TARAMA ALANI" : "SCAN AREA";
+    public string L_ScanAreaGroup => IsTurkish ? "ODAK ALANI" : "FOCUS AREA";
     public string L_Pan => IsTurkish ? "Gezin" : "Pan";
-    public string L_Rectangle => IsTurkish ? "Dikdörtgen" : "Rectangle";
+    public string L_Rectangle => IsTurkish ? "Dikdörtgen" : "Box";
     public string L_Polygon => IsTurkish ? "Çokgen" : "Polygon";
     public string L_Exclude => IsTurkish ? "Hariç tut" : "Exclude";
     public string L_Include => IsTurkish ? "Sadece tara" : "Scan only";
@@ -265,100 +294,124 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string L_Clear => IsTurkish ? "Temizle" : "Clear";
 
     public string L_StellariumGroup => IsTurkish ? "GÖK KUBBE / PLANETARYUM" : "CELESTIAL PLANETARIUM";
-    public string L_PlateSolveButton => IsTurkish ? "Yıldızlardan Eşle" : "Solve Star Pattern";
+    public string L_PlateSolveButton => IsTurkish ? "Gökyüzünde Bul" : "Find in Sky";
     public string L_PlateSolveToolTip => IsTurkish
-        ? "Fotoğraftaki yıldızların konumlarını ve üçgen geometrisini analiz ederek gökyüzündeki gerçek koordinatları, ölçeği ve açıyı otomatik bulur"
-        : "Analyzes star positions and triangle geometry in the image to automatically determine celestial coordinates, scale, and roll angle";
+        ? "Fotoğrafınızdaki yıldız desenlerini kataloglarla eşleyip gökyüzündeki gerçek konumunu, ölçeğini ve açısını bulur"
+        : "Matches your star pattern against sky catalogs to automatically pinpoint coordinates, scale, and camera roll";
     public string L_TargetComboToolTip => IsTurkish
-        ? "Fotoğrafın kapsama alanı içinde tespit edilen gök cisimlerini listeler; seçtiğinizde doğrudan o cisme odaklanır"
-        : "Lists celestial objects detected within the image field of view; selecting an object centers directly on it";
+        ? "Fotoğrafınızdaki bilinen takımyıldız ve derin uzay nesnelerini listeler; seçtiğiniz cisme odaklanır"
+        : "Lists known constellations and deep-sky targets inside your frame; select any target to focus directly on it";
     public string L_TwoWaySync => IsTurkish ? "Çift Yönlü 1:1" : "Two-Way 1:1";
     public string L_TwoWaySyncToolTip => IsTurkish
-        ? "Fotoğraf ve 3D gök kubbe çift yönlü birbirine bağlanır: Fotoğrafı kaydırıp yakınlaştırdığınızda kubbe bire bir eşitlenir"
-        : "Links the image and celestial dome bidirectionally: panning or zooming either view syncs the other 1:1";
-    public string L_SphericalGrid => IsTurkish ? "Küresel Izgara" : "Spherical Grid";
+        ? "2D fotoğraf ve 3D gök kubbe senkronize çalışır: Birini kaydırıp yakınlaştırdığınızda diğeri bire bir takip eder"
+        : "Links the 2D canvas and 3D dome bidirectionally: panning or zooming either view syncs the other 1:1";
+    public string L_SphericalGrid => IsTurkish ? "Gökyüzü Izgarası" : "Sky Coord Grid";
     public string L_HipparcosStars => IsTurkish ? "Yıldızlar (HIP)" : "Stars (HIP)";
     public string L_HipparcosStarsToolTip => IsTurkish
-        ? "117.955 ESA Hipparcos yıldız kataloğunu, B-V spektral renkleri ve parlaklıklarıyla doğrudan fotoğrafın üzerine izdüşürür"
-        : "Projects 117,955 ESA Hipparcos catalogue stars with realistic B-V spectral colors and magnitudes directly onto the canvas";
+        ? "117.955 Hipparcos yıldız kataloğunu gerçek spektral renkleri ve parlaklıklarıyla gök haritasına yansıtır"
+        : "Projects 117,955 ESA Hipparcos catalog stars with authentic spectral colors and magnitudes onto the sky";
     public string L_Constellations => IsTurkish ? "Takımyıldızlar" : "Constellations";
     public string L_ConstellationsToolTip => IsTurkish
-        ? "Takımyıldızların çizgilerini ve adlarını gök koordinatlarına göre fotoğraf üzerine çizer"
-        : "Draws constellation stick figures and labels aligned to celestial coordinates";
-    public string L_DsoMarkers => IsTurkish ? "DSO Nesneleri" : "DSO Targets";
+        ? "Takımyıldız çizgilerini ve adlarını gökyüzü koordinatlarına göre hizalayarak gösterir"
+        : "Draws constellation stick figures and names aligned accurately to celestial coordinates";
+    public string L_DsoMarkers => IsTurkish ? "Derin Uzay (DSO)" : "Deep Sky (DSO)";
     public string L_DsoMarkersToolTip => IsTurkish
-        ? "Messier ve NGC derin uzay nesnelerinin (bulutsu, galaksi, küme) konum çemberlerini ve adlarını gösterir"
-        : "Displays boundary circles and labels for Messier and NGC deep-sky objects (nebulae, galaxies, clusters)";
+        ? "Messier ve NGC derin uzay nesnelerinin (galaksi, bulutsu, yıldız kümesi) işaretçilerini gösterir"
+        : "Displays markers and labels for Messier & NGC deep-sky objects (galaxies, nebulae, clusters)";
     public string L_PhotoOpacityLabel => IsTurkish ? "Saydamlık:" : "Opacity:";
     public string L_PhotoOpacityToolTip => IsTurkish
-        ? "Fotoğrafın saydamlığını ayarlayarak arkadaki Hipparcos gök haritası ve takımyıldız kubbesiyle kıyaslayın"
-        : "Adjust photo opacity to compare image stars against the underlying celestial dome and Hipparcos map";
+        ? "Fotoğraf saydamlığını azaltarak alttaki Hipparcos yıldız haritası ve takımyıldızlarla bire bir karşılaştırın"
+        : "Lower photo opacity to compare your stars side-by-side with the underlying Hipparcos map and constellations";
     public string L_SphericalGridToolTip => IsTurkish
-        ? "Fotoğrafın üzerine küresel RA/Dec gök koordinat eksenlerini çizer"
-        : "Draws spherical RA/Dec equatorial coordinate grid lines over the image";
+        ? "Fotoğrafın üzerine küresel RA/Dec gökyüzü koordinat ağını çizer"
+        : "Draws spherical RA/Dec equatorial coordinate grid lines over the sky";
     public string L_AngleLabel => IsTurkish ? "Açı:" : "Angle:";
     public string L_AngleToolTip => IsTurkish
-        ? "Fotoğraf Stellarium açısına göre otomatik döner; ayrıca buradan 0°–360° elle döndürebilirsiniz"
-        : "The image rotates automatically with Stellarium's sky angle; you can also adjust rotation manually from 0° to 360°";
+        ? "Fotoğraf yıldız eşleşmesine göre otomatik döner; dilerseniz buradan 0°–360° elle ayarlayabilirsiniz"
+        : "Rotates automatically to sky north after plate-solving, or adjust manually from 0° to 360°";
     public string L_MosaicDrawerButton => IsTurkish ? "Mozaik Paneli" : "Mosaic Manager";
-    public string L_MosaicDrawerTitle => IsTurkish ? "Mozaik Kareleri Yönetimi" : "Mosaic Tiles Management";
+    public string L_MosaicDrawerTitle => IsTurkish ? "Mozaik Kareleri Yönetimi" : "Mosaic Tiles Manager";
     public string L_RemovePanel => IsTurkish ? "Kaldır" : "Remove";
     public string L_TileOpacity => IsTurkish ? "Opaklık" : "Opacity";
-    public string L_EmptyMosaic => IsTurkish ? "Henüz mozaik atlasına eklenmiş kare yok." : "No mosaic panels added yet.";
+    public string L_EmptyMosaic => IsTurkish ? "Henüz mozaik atlasına eklenmiş kare yok." : "No mosaic tiles added yet.";
 
     public string L_AddToMosaic => IsTurkish ? "Mozaik Atlasına Ekle" : "Add to Mosaic";
     public string L_AddToMosaicToolTip => IsTurkish
-        ? "Çözülen fotoğrafı gök atlası mozaik paneline ekler; birden çok fotoğrafı bir arada görebilirsiniz"
-        : "Adds the solved photo to the mosaic sky atlas; view multiple photo tiles simultaneously";
-    public string L_ClearMosaic => IsTurkish ? "Mozaik Sıfırla" : "Clear Mosaic";
+        ? "Çözülen fotoğrafı mozaik gökyüzü atlasına ekler; birden çok kareyi tek panoramada birleştirebilirsiniz"
+        : "Adds the solved frame to the mosaic atlas so multiple panels stitch into one sky view";
+    public string L_ClearMosaic => IsTurkish ? "Mozaiği Sıfırla" : "Reset Mosaic";
     public string L_FeatheredBlending => IsTurkish ? "Yumuşak Dikiş Geçişi (Feathered)" : "Feathered Alpha Blending";
-    public string L_MoveUp => IsTurkish ? "Öne / Yukarı Taşı" : "Move Up / Front";
-    public string L_MoveDown => IsTurkish ? "Arkaya / Aşağı Taşı" : "Move Down / Back";
+    public string L_MoveUp => IsTurkish ? "Öne Taşı" : "Move Forward";
+    public string L_MoveDown => IsTurkish ? "Arkaya Taşı" : "Move Back";
     public string L_BringToFront => IsTurkish ? "En Öne Getir" : "Bring to Front";
     public string L_SendToBack => IsTurkish ? "En Arkaya Gönder" : "Send to Back";
 
     public string L_SphereMode => IsTurkish ? "🌌 3D Gök Kubbe / Planetaryum" : "🌌 3D Celestial Dome";
     public string L_SphereModeToolTip => IsTurkish
-        ? "Fotoğraflarınızı ve 117k Hipparcos yıldızını etkileşimli 360° dönebilen bağımsız bir gök kubbe ve planetaryum içinde birleştirir"
-        : "Combines photos and 117k Hipparcos stars inside an interactive 360° navigable celestial dome & planetarium";
+        ? "Fotoğraflarınızı ve 117k Hipparcos yıldızını 360° dönebilen etkileşimli gök kubbe içinde birleştirir"
+        : "Places your astrophotographs inside an interactive 360° celestial sphere with 117k Hipparcos stars";
     public string L_ResetAngleToolTip => IsTurkish
-        ? "Açıyı Stellarium'un doğal gökyüzü açısına sıfırla"
-        : "Reset rotation to Stellarium's natural sky angle";
+        ? "Açıyı gökyüzünün doğal kuzey yönelimine sıfırla"
+        : "Reset rotation to the solved celestial north orientation";
 
-    public string L_TotalObjects => IsTurkish ? "TOPLAM OBJE" : "TOTAL OBJECTS";
-    public string L_Speculative => IsTurkish ? "SPEKÜLATİF (<3σ)" : "SPECULATIVE (<3σ)";
-    public string L_ProcessingTime => IsTurkish ? "İŞLEM SÜRESİ" : "PROCESSING TIME";
-    public string L_ConfidenceLabel => IsTurkish ? "Güven Eşiği: " : "Confidence: ";
+    public string L_TotalObjects => IsTurkish ? "TOPLAM NESNE" : "TOTAL OBJECTS";
+    public string L_Tier1Label => IsTurkish ? "Parlak (>10σ)" : "Bright (>10σ)";
+    public string L_Tier1ToolTip => IsTurkish
+        ? "Kademe 1: En belirgin, yüksek sinyal-gürültü oranlı parlak yıldızlar (>10σ)"
+        : "Tier 1: High-confidence prominent stars (SNR > 10σ)";
+    public string L_Tier2Label => IsTurkish ? "Orta (5-10σ)" : "Medium (5-10σ)";
+    public string L_Tier2ToolTip => IsTurkish
+        ? "Kademe 2: Net seçilen standart gök cisimleri (5–10σ)"
+        : "Tier 2: Clear standard field stars (SNR 5–10σ)";
+    public string L_Tier3Label => IsTurkish ? "Sönük (3-5σ)" : "Faint (3-5σ)";
+    public string L_Tier3ToolTip => IsTurkish
+        ? "Kademe 3: Çıplak gözle zor görülen sönük yıldızlar (3–5σ)"
+        : "Tier 3: Faint stars near the visual limit (SNR 3–5σ)";
+    public string L_Speculative => IsTurkish ? "ADAY (<3σ)" : "CANDIDATE (<3σ)";
+    public string L_SpeculativeToolTip => IsTurkish
+        ? "Arka plan gürültüsü sınırındaki çok sönük aday tespitler (<3σ)"
+        : "Ultra-faint candidates near the sky background noise floor (<3σ)";
+    public string L_ProcessingTime => IsTurkish ? "SÜRE" : "DURATION";
+    public string L_ConfidenceLabel => IsTurkish ? "Eşik:" : "Threshold:";
     public string L_Boxes => IsTurkish ? "Kutular" : "Boxes";
     public string L_Labels => IsTurkish ? "Etiketler" : "Labels";
     public string L_LabelsPanelTitle => IsTurkish ? "Görünüm & Katmanlar" : "View & Layers";
     public string L_LabelsPanelButton => IsTurkish ? "Katmanlar" : "Layers";
     public string L_LabelsPanelToolTip => IsTurkish
-        ? "Tespit kutuları, etiketler, takımyıldızlar ve gök atlası katmanlarını yönet"
-        : "Manage detection boxes, labels, constellations, and celestial atlas layers";
-    public string L_DetectionsCategory => IsTurkish ? "Obje Tespit Katmanları" : "Object Detection Layers";
-    public string L_AtlasCategory => IsTurkish ? "Gök Haritası & Atlas" : "Sky Map & Atlas";
+        ? "Tespit kutularını, yıldız etiketlerini, takımyıldızları ve gök haritası katmanlarını yönetin"
+        : "Toggle detection boxes, labels, constellation lines, and sky atlas overlays";
+    public string L_DetectionsCategory => IsTurkish ? "Nesne Sayımı Katmanları" : "Detection Overlays";
+    public string L_AtlasCategory => IsTurkish ? "Gökyüzü Atlası Katmanları" : "Celestial Atlas Layers";
     public string L_CheckAll => IsTurkish ? "Tümünü Aç" : "Enable All";
     public string L_UncheckAll => IsTurkish ? "Tümünü Kapat" : "Disable All";
 
     public string L_PlaceholderTitle => IsTurkish
-        ? "Astrofotoğrafınızı Buraya Sürükleyip Bırakın"
-        : "Drag and Drop Your Astrophotograph Here";
+        ? "İlk Astrofotoğrafınızı Keşfetmeye Hazır mısınız?"
+        : "Ready to Explore Your First Astrophotograph?";
     public string L_PlaceholderFormats => IsTurkish
-        ? "TIFF, PNG, JPG, BMP veya 16-bit FITS formatları desteklenir"
-        : "Supports TIFF, PNG, JPG, BMP, or 16-bit FITS formats";
+        ? "Tek fotoğraf veya klasörü buraya bırakın • TIFF, DNG/RAW, FITS, PNG ve JPG desteklenir"
+        : "Drop photos or folders right here • Supports TIFF, DNG/RAW, FITS, PNG & JPG";
     public string L_PlaceholderBrowse => IsTurkish
-        ? "Gözat ve Görsel Seç"
-        : "Browse and Select Image";
+        ? "Fotoğraf Seç ve Başla"
+        : "Open Photo to Begin";
+    public string L_PlaceholderDropHint => IsTurkish
+        ? "💡 İpucu: Birden fazla kare bırakarak otomatik gökyüzü mozaiği oluşturabilirsiniz"
+        : "💡 Tip: Drop multiple overlapping frames to auto-stitch a seamless sky mosaic";
+    public string L_OnboardStep1Title => IsTurkish ? "1. Fotoğraf Yükle" : "1. Drop Photos";
+    public string L_OnboardStep1Desc => IsTurkish ? "Tek kare ya da çoklu çekim bırakın" : "Single shots or multi-panel sets";
+    public string L_OnboardStep2Title => IsTurkish ? "2. Akıllı Sayım" : "2. Smart Count";
+    public string L_OnboardStep2Desc => IsTurkish ? "Parlak ve sönük yıldızları sayın" : "Pinpoint & faint stars counted cleanly";
+    public string L_OnboardStep3Title => IsTurkish ? "3. 3D Gök Kubbe" : "3. 3D Sky Dome";
+    public string L_OnboardStep3Desc => IsTurkish ? "Takımyıldız ve galaksileri keşfedin" : "Explore constellations & galaxies live";
 
     public string L_CursorLabel => IsTurkish ? "İmleç: " : "Cursor: ";
     public string L_ZoomLabel => IsTurkish ? "Yakınlaştırma: " : "Zoom: ";
     public string L_FitButton => IsTurkish ? "Sığdır" : "Fit";
 
-    public string L_Mode2D => IsTurkish ? "2D Görünüm" : "2D View";
-    public string L_Mode3D => IsTurkish ? "3D Kubbe" : "3D Dome";
+    public string L_Mode2D => IsTurkish ? "2D Görünüm" : "2D Canvas";
+    public string L_Mode3D => IsTurkish ? "3D Gök Kubbe" : "3D Dome";
     public string L_TabDetection => IsTurkish ? "Nesne Sayımı" : "Object Detection";
-    public string L_TabAstrometry => IsTurkish ? "Astrometri" : "Astrometry";
+    public string L_TabAstrometry => IsTurkish ? "Gökyüzü Konumu" : "Astrometry";
     public string L_TabImage => IsTurkish ? "Işık & Renk" : "Image Tuning";
     public string L_TabMosaic => IsTurkish ? "Mozaik Atlası" : "Mosaic Atlas";
 
@@ -383,8 +436,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         _statusMessage = IsTurkish
-            ? "Analiz edilecek astrofotoğrafı sürükleyip bırakın veya 'Görsel Seç'e tıklayın."
-            : "Drag and drop an astrophotograph to analyze, or click 'Select Image'.";
+            ? "Analiz etmek için bir veya birden fazla astrofotoğraf sürükleyip bırakın ya da 'Fotoğraf Aç'a tıklayın."
+            : "Drag and drop one or more astrophotographs to explore, or click 'Open Photo'.";
         _brightnessStatusText = IsTurkish ? "Oto Parlaklık" : "Auto Brightness";
         _stellariumStatusText = IsTurkish ? "Canlı Senk: Bağlan" : "Live Sync: Connect";
 
@@ -530,11 +583,11 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             LoadBitmapPreview(SelectedImagePath);
         }
 
-        if ( string.IsNullOrEmpty(SelectedImagePath))
+        if (string.IsNullOrEmpty(SelectedImagePath))
         {
             StatusMessage = IsTurkish
-                ? "Analiz edilecek astrofotoğrafı sürükleyip bırakın veya 'Görsel Seç'e tıklayın."
-                : "Drag and drop an astrophotograph to analyze, or click 'Select Image'.";
+                ? "Analiz etmek için bir veya birden fazla astrofotoğraf sürükleyip bırakın ya da 'Fotoğraf Aç'a tıklayın."
+                : "Drag and drop one or more astrophotographs to explore, or click 'Open Photo'.";
         }
 
         // Re-populate ComboBox targets so their CommonName updates immediately
@@ -833,8 +886,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         : $"{(int)Math.Round(_confidenceThreshold * 100)}%";
 
     public string ConfidenceButtonText => _isAutoConfidenceEnabled
-        ? (IsTurkish ? $"⚡ Otomatik Güven ({ConfidencePercentText})" : $"⚡ Auto Confidence ({ConfidencePercentText})")
-        : (IsTurkish ? $"⚡ Güven Eşiği ({ConfidencePercentText})" : $"⚡ Confidence ({ConfidencePercentText})");
+        ? (IsTurkish ? $"⚡ Oto Hassasiyet ({ConfidencePercentText})" : $"⚡ Auto Sensitivity ({ConfidencePercentText})")
+        : (IsTurkish ? $"⚡ Hassasiyet ({ConfidencePercentText})" : $"⚡ Sensitivity ({ConfidencePercentText})");
 
     private static readonly SolidColorBrush CyanConfidenceBrush = new(Color.FromRgb(0x00, 0xE5, 0xFF));
     private static readonly SolidColorBrush YellowConfidenceBrush = new(Color.FromRgb(0xFF, 0xD6, 0x00));
@@ -1279,7 +1332,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsScale1x { get => _exportScale == 1; set { if (value) ExportScale = 1; } }
     public bool IsScale2x { get => _exportScale == 2; set { if (value) ExportScale = 2; } }
 
-    public string L_ExportPanelTitle => IsTurkish ? "Gelişmiş Dışa Aktarma Paneli" : "Advanced Export Panel";
+    public string L_ExportPanelTitle => IsTurkish ? "Gelişmiş Dışa Aktarma" : "Export Sky Atlas & Data";
     public string L_ExportButton => IsTurkish ? "🚀 Dışa Aktar..." : "🚀 Export...";
     public string L_PerformExport => IsTurkish ? "💾 Dosyayı Kaydet" : "💾 Save File";
     public string L_ExportProjectionLabel => IsTurkish ? "Çıktı Türü:" : "Output Mode:";
@@ -1290,13 +1343,13 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string L_ExportScaleLabel => IsTurkish ? "Çözünürlük:" : "Resolution:";
     public string L_FormatTiffLossless => IsTurkish ? "TIFF (Kayıpsız)" : "TIFF (Lossless)";
     public string L_ExportBoxes => IsTurkish ? "Tespit Kutuları" : "Detection Boxes";
-    public string L_ExportLabels => IsTurkish ? "Etiketler" : "Labels";
-    public string L_ExportGrid => IsTurkish ? "Küresel Izgara (RA/Dec)" : "Spherical Grid (RA/Dec)";
+    public string L_ExportLabels => IsTurkish ? "Yıldız Etiketleri" : "Star Labels";
+    public string L_ExportGrid => IsTurkish ? "Gökyüzü Izgarası (RA/Dec)" : "Sky Grid (RA/Dec)";
     public string L_ExportConstellations => IsTurkish ? "Takımyıldızlar & HIP Yıldızları" : "Constellations & HIP Stars";
     public string L_Scale1x => IsTurkish ? "1x (Orijinal / 2K)" : "1x (Original / 2K)";
-    public string L_Scale2x => IsTurkish ? "2x (Süper Çözünürlük / 4K)" : "2x (Super-Res / 4K)";
-    public string L_Cancel => IsTurkish ? "İptal" : "Cancel";
-    public string L_PanelDragHint => IsTurkish ? "Sürükleyerek taşıyabilirsiniz" : "Drag to move";
+    public string L_Scale2x => IsTurkish ? "2x (Yüksek Çözünürlük / 4K)" : "2x (Super-Res / 4K)";
+    public string L_Cancel => IsTurkish ? "Vazgeç" : "Cancel";
+    public string L_PanelDragHint => IsTurkish ? "Başlıktan tutup taşıyın" : "Drag header to move";
 
     public string ExportProjectionMode
     {
@@ -1666,6 +1719,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(MosaicPanels));
         OnPropertyChanged(nameof(MosaicPanelCount));
         OnPropertyChanged(nameof(HasPanels));
+        OnPropertyChanged(nameof(IsMosaicEmpty));
         OnPropertyChanged(nameof(HasMultipleMosaicPanels));
         OnPropertyChanged(nameof(MosaicPanelCountText));
         OnPropertyChanged(nameof(L_PhotosButtonText));
@@ -1680,6 +1734,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public IReadOnlyList<MosaicPanel> MosaicPanels => MosaicProject.Panels.ToList();
     public int MosaicPanelCount => MosaicProject.Count;
     public bool HasPanels => MosaicProject.Count > 0;
+    public bool IsMosaicEmpty => MosaicProject.Count == 0;
     public bool HasMultipleMosaicPanels => MosaicProject.Count > 1;
     public string MosaicPanelCountText => IsTurkish
         ? $"Mozaik: {MosaicProject.Count} Panel"
@@ -3395,7 +3450,9 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string TargetComboPlaceholderText =>
         _availableTargetsInPhoto.Count > 0
             ? (IsTurkish ? $"Fotoğraftaki Cisimler ({_availableTargetsInPhoto.Count})" : $"Objects in Frame ({_availableTargetsInPhoto.Count})")
-            : (IsTurkish ? "Kadrajda Katalog Cismi Yok" : "No Catalog Objects in Frame");
+            : (CurrentWcs == null
+                ? (IsTurkish ? "🔭 Cisimler (Önce Gökyüzünü Eşle)" : "🔭 Targets (Solve Sky First)")
+                : (IsTurkish ? "Kadrajda Katalog Cismi Yok" : "No Catalog Objects in Frame"));
 
     public CataloguePlateSolver.AstronomicalTarget? SelectedCatalogueTarget
     {
@@ -3489,6 +3546,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 OnPropertyChanged(nameof(IsWcsAvailable));
                 OnPropertyChanged(nameof(CanSyncToStellarium));
+                OnPropertyChanged(nameof(TargetComboPlaceholderText));
                 OnPropertyChanged(nameof(CanvasWidth));
                 OnPropertyChanged(nameof(CanvasHeight));
                 OnPropertyChanged(nameof(IsSingleImageActive));

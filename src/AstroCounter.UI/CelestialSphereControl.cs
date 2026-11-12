@@ -340,16 +340,23 @@ public class CelestialSphereControl : Grid
         var topCardTransform = new TranslateTransform();
         _topCard = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(225, 11, 17, 32)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(140, 56, 189, 248)),
+            Background = new SolidColorBrush(Color.FromArgb(242, 8, 13, 26)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(120, 56, 189, 248)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
+            CornerRadius = new CornerRadius(12),
             Padding = new Thickness(14, 10, 14, 10),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
             Cursor = Cursors.SizeAll,
             RenderTransform = topCardTransform,
-            ToolTip = CataloguePlateSolver.UseTurkishLanguage ? "Sürükleyerek taşıyabilirsiniz" : "Drag to move"
+            ToolTip = CataloguePlateSolver.UseTurkishLanguage ? "Başlıktan tutup sürükleyebilirsiniz" : "Drag to reposition",
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 18,
+                ShadowDepth = 4,
+                Opacity = 0.55
+            }
         };
 
         bool isDraggingHud = false;
@@ -458,18 +465,29 @@ public class CelestialSphereControl : Grid
 
         _centerPhotoBtn = new Button
         {
-            Content = CataloguePlateSolver.UseTurkishLanguage ? "🎯 Fotoğrafa Odaklan" : "🎯 Center on Photo",
-            Background = new SolidColorBrush(Color.FromArgb(220, 30, 41, 59)),
-            Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(120, 56, 189, 248)),
+            Content = CataloguePlateSolver.UseTurkishLanguage ? "🎯 Fotoğrafa Odaklan" : "🎯 Focus on Photo",
+            Background = new SolidColorBrush(Color.FromArgb(225, 13, 22, 42)),
+            Foreground = new SolidColorBrush(Color.FromRgb(125, 211, 252)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(130, 56, 189, 248)),
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(12, 6, 12, 6),
-            FontSize = 11,
+            Padding = new Thickness(14, 7, 14, 7),
+            FontSize = 11.5,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 4, 0),
             Cursor = Cursors.Hand,
-            ToolTip = CataloguePlateSolver.UseTurkishLanguage ? "Kamerayı seçili fotoğrafın gökyüzündeki merkezine odaklar" : "Focuses the camera on the celestial center of the active photo"
+            ToolTip = CataloguePlateSolver.UseTurkishLanguage ? "Kamerayı seçili fotoğrafın gökyüzündeki merkezine odaklar" : "Centers the 3D camera directly on the active photo",
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 14,
+                ShadowDepth = 3,
+                Opacity = 0.45
+            }
         };
+        if (Application.Current?.TryFindResource("GlassButtonStyle") is Style glassBtnStyle)
+        {
+            _centerPhotoBtn.Style = glassBtnStyle;
+        }
         _centerPhotoBtn.Click += (s, e) =>
         {
             _isUserCameraActive = false;
@@ -483,13 +501,20 @@ public class CelestialSphereControl : Grid
         // Bottom navigation hints
         var bottomCard = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(190, 15, 23, 42)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 56, 189, 248)),
+            Background = new SolidColorBrush(Color.FromArgb(205, 9, 15, 29)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(85, 56, 189, 248)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(12, 6, 12, 6),
+            CornerRadius = new CornerRadius(14),
+            Padding = new Thickness(14, 7, 14, 7),
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Bottom
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 14,
+                ShadowDepth = 3,
+                Opacity = 0.45
+            }
         };
         _hudNavHints = new TextBlock
         {
@@ -800,12 +825,12 @@ public class CelestialSphereControl : Grid
         bool tr = CataloguePlateSolver.UseTurkishLanguage;
         if (_topCard != null)
         {
-            _topCard.ToolTip = tr ? "Sürükleyerek taşıyabilirsiniz" : "Drag to move";
+            _topCard.ToolTip = tr ? "Başlıktan tutup sürükleyebilirsiniz" : "Drag to reposition";
         }
         if (_centerPhotoBtn != null)
         {
-            _centerPhotoBtn.Content = tr ? "🎯 Fotoğrafa Odaklan" : "🎯 Center on Photo";
-            _centerPhotoBtn.ToolTip = tr ? "Kamerayı seçili fotoğrafın gökyüzündeki merkezine odaklar" : "Focuses the camera on the celestial center of the active photo";
+            _centerPhotoBtn.Content = tr ? "🎯 Fotoğrafa Odaklan" : "🎯 Focus on Photo";
+            _centerPhotoBtn.ToolTip = tr ? "Kamerayı seçili fotoğrafın gökyüzündeki merkezine odaklar" : "Centers the 3D camera directly on the active photo";
         }
         UpdateNavHints();
         UpdateCameraVectors();
@@ -934,8 +959,8 @@ public class CelestialSphereControl : Grid
         {
             _hudDetections.Visibility = Visibility.Visible;
             _hudDetections.Text = CataloguePlateSolver.UseTurkishLanguage
-                ? $"⭐ Tespitler: {TotalCount:N0} Obje (Tier 1: {Tier1Count} · Tier 2: {Tier2Count} · Tier 3: {Tier3Count})"
-                : $"⭐ Detections: {TotalCount:N0} Objects (Tier 1: {Tier1Count} · Tier 2: {Tier2Count} · Tier 3: {Tier3Count})";
+                ? $"⭐ Sayılan Nesne: {TotalCount:N0} (Parlak: {Tier1Count} · Orta: {Tier2Count} · Sönük: {Tier3Count})"
+                : $"⭐ Counted: {TotalCount:N0} Objects (Bright: {Tier1Count} · Mid: {Tier2Count} · Faint: {Tier3Count})";
         }
         else
         {
