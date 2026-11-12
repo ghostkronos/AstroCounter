@@ -455,7 +455,8 @@ public class AstrometryTests
     [Fact]
     public async Task StarPatternPlateSolver_SolvesNorthAmericaNebulaDeepField_WithAccurateOrientationAndFov()
     {
-        string uploadPath = @"C:\Users\unala\.gemini\antigravity\brain\b15cadec-52bb-45f3-9cef-cd26e10d6fa3\.user_uploaded\media_1792700998561_fc0e1c71.jpg";
+        string uploadPath = Environment.GetEnvironmentVariable("ASTROCOUNTER_TEST_CYGNUS_IMAGE")
+            ?? Path.Combine(AppContext.BaseDirectory, "samples", "cygnus_sample.jpg");
         if (!System.IO.File.Exists(uploadPath)) return;
 
         using var bmp = AstroCounter.Core.Processing.ImagePreprocessor.LoadImage(uploadPath);

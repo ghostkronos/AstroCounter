@@ -207,8 +207,10 @@ public class UnifiedProjectionAndPhotoManagerTests
     [Fact]
     public async Task MultiPhotoAlignment_BothBootesUserPhotos_SolveToSameCelestialFieldAndAlignCommonStars()
     {
-        string photo1Path = @"C:\Users\unala\.gemini\antigravity\brain\b15cadec-52bb-45f3-9cef-cd26e10d6fa3\.user_uploaded\media_1792694959922_af60c903.jpg";
-        string photo2Path = @"C:\Users\unala\.gemini\antigravity\brain\b15cadec-52bb-45f3-9cef-cd26e10d6fa3\.user_uploaded\media_1792696090606_066067e6.jpg";
+        string photo1Path = Environment.GetEnvironmentVariable("ASTROCOUNTER_TEST_BOOTES_1")
+            ?? Path.Combine(AppContext.BaseDirectory, "samples", "bootes_1.jpg");
+        string photo2Path = Environment.GetEnvironmentVariable("ASTROCOUNTER_TEST_BOOTES_2")
+            ?? Path.Combine(AppContext.BaseDirectory, "samples", "bootes_2.jpg");
         if (!System.IO.File.Exists(photo1Path) || !System.IO.File.Exists(photo2Path))
             return;
 

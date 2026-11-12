@@ -4,6 +4,9 @@
 [Ll]og/
 [Ll]ogs/
 publish/
+dist/
+portable/
+release/
 .vs/
 *.user
 *.suo
