@@ -32,7 +32,7 @@ Yüksek çözünürlüklü astrofotoğraflar ve çok parçalı gökyüzü mozaik
 4. **Kör Geometrik Gökyüzü Çözümleme & Çoklu Mozaik Kenetleme:** Alt-piksel hassasiyetinde yıldız merkezlerini çıkarır, ölçek ve dönüşten bağımsız üçgen kenar oranlarını RANSAC ile J2000 kataloğuna karşı doğrular, örtüşen mozaik karelerini yıldız eşleşmeleriyle birbirine kenetler ve küresel gök koordinatlarında (`RA`/`Dec`) 100.000+ yıldızı mükerrer sayım olmadan birleştirir.
 5. **Eşdikdörtgen (Plate Carrée) 2D Görünüm, 3D Gök Küresi & Çift Yönlü Stellarium Senkronizasyonu:** Hizalanmış mozaikleri kırpılmış silindirik eşdikdörtgen 2D gökyüzü projeksiyonunda sunar, 360° etkileşimli 3D gök kubbesi ve Stellarium ile çift yönlü canlı kamera senkronizasyonu sağlar; doğal mozaik boyutunda, 4K/8K veya 360° panoramik çıktı üretir.
 
-![AstroCounter 3D Gök Küresi ve Çoklu Fotoğraf Işık Kontrolleri](assets/screenshots/02_stellarium_sync_andromeda.png)
+![AstroCounter v1.4.1 Eşdikdörtgen 2D Gökyüzü Mozaiği](assets/screenshots/01_2d_equirectangular_mosaic.png)
 
 ---
 
@@ -97,25 +97,25 @@ flowchart TD
 
 ## Ekran Görüntüleri ve Arayüz Önizlemesi
 
-### 1. Yüksek Hassasiyetli Fotometrik Yıldız Tespiti, Mozaik Yöneticisi ve Fotoğraf Başına Güven Eşiği
-Sinyal-gürültü oranına (SNR) dayalı katmanlı yıldız çıkarımı (`>10σ`, `5-10σ`, `3-5σ`), format duyarlı fotoğraf başına otomatik güven eşiği kontrolü ve sürükle-bırak mozaik katman yönetimi.
-![Fotometrik Yıldız Tespiti ve Güven Paneli](assets/screenshots/01_photometric_detection_masking.png)
+### 1. Kırpılmış Eşdikdörtgen 2D Mozaik & Gökyüzü Tonu Eşitleme
+Çoklu astrofotoğraf mozaiğinin (`124.624` tekilleştirilmiş gök cismi) otomatik gökyüzü tonu eşitleme, 88 IAU takımyıldızı, Hipparcos referans yıldızları ve hizalanamayan kare uyarılarıyla kırpılmış Plate Carrée 2D gökyüzü haritasındaki görünümü.
+![2D Eşdikdörtgen Mozaik ve Gökyüzü Eşitleme](assets/screenshots/01_2d_equirectangular_mosaic.png)
 
-### 2. 3D Gök Küresi (Planetarium) ve Çoklu Fotoğraf Işık Ayarları
-Hipparcos referans yıldızları, takımyıldız çizgileri ve seçili fotoğraflara eşzamanlı uygulanan parlaklık, gama pozlama, kontrast ve MTF otomatik renk/pozlama dengeleme kontrolleri.
-![3D Gök Küresi ve Görüntü Işık Ayarları](assets/screenshots/02_stellarium_sync_andromeda.png)
+### 2. 3D Gök Kubbe Planetaryum (Eşitlenmiş Canlı Görünüm)
+Birleştirilmiş ve gökyüzü tonu dengelenmiş mozaik panellerinin Herkül (`M13`, `M92`), Kuzey Tacı ve Ejderha takımyıldızlarıyla birebir hizalandığı etkileşimli 360° 3D gök küresi görünümü.
+![3D Gök Kubbe Planetaryum](assets/screenshots/02_3d_celestial_dome.png)
 
-### 3. Kadraj İçi Gök Cismi Seçimi ve Görünüm Katmanları Paneli
-Yalnızca fotoğrafın görüş açısı içinde kalan Messier, NGC ve IC gök cisimlerinin otomatik taranması, tek tıkla hedef merkezleme ve sürüklenebilir **Görünüm & Katmanlar** penceresi.
-![Kadraj İçi Katalog Seçimi ve Katmanlar](assets/screenshots/03_in_frame_catalog_target_selection.png)
+### 3. Entegre Görüntü & Işık Paneli (`Mozaik Gökyüzü Tonu Eşitle`)
+Aktif hedef kapsamı (`Seçili Panel` / `Tüm Paneller`), canlı eşitleme durumu (`Aktif (7 panel • 3 ton eşitlendi)`) ve eşitleme üzerine uygulanabilen Saydamlık, Parlaklık, Pozlama ve Kontrast ayarları.
+![Gökyüzü Tonu Eşitleme ve Işık Paneli](assets/screenshots/03_sky_harmonize_light_panel.png)
 
-### 4. Küresel Koordinat Izgarası ve Etkileşimli Yardım Merkezi
-Gnomonik teğet düzlem Dünya Koordinat Sistemi (WCS) çözümü ile 2D sınırsız tuval üzerine izdüşürülen eğrisel Sağ Açıklık / Dik Açıklık eksenleri ve tüm özelliklerin anlatıldığı **Kullanım Kılavuzu & Yardım Merkezi (`❓`)**.
-![Gökyüzü Çözümleme, Koordinat Izgarası ve Yardım Merkezi](assets/screenshots/04_plate_solved_coordinate_grid.png)
+### 4. Gelişmiş Dışa Aktarım Paneli & Doğal Mozaik Alanı
+**Doğal Tam Mozaik Alanı** (`13.775 × 7.405 px`), `1x`, `2x`, `4K`, `8K` ve **Özel Çözünürlük** seçenekleriyle `2D Mozaik`, `360° Panorama`, `CSV` ve `JSON` çıktısı sunan akıllı filigran destekli dışa aktarım ekranı.
+![Gelişmiş Dışa Aktarım Paneli](assets/screenshots/04_advanced_export_panel.png)
 
-### 5. Gelişmiş Dışa Aktarım: 2D Mozaik Tuvali ve 360° Panoramik Gökyüzü Haritası
-İşaretli 2D mozaik tuvalinin veya 360° × 180° panoramik gökyüzü haritasının `PNG`, `Kayıpsız TIFF`, `JPG`, `CSV` ve `JSON` formatlarında (`1x` veya `2x / 4K`) dışa aktarımı.
-![Gelişmiş 2D ve 360 Panoramik Dışa Aktarım](assets/screenshots/05_csv_data_export_analysis.png)
+### 5. 360° × 180° Eşitlenmiş Panoramik Gökyüzü Haritası Çıktısı
+Radyal ışık kubbesi düzeltmesi uygulanmış, kesintisiz 360° × 180° panoramik gökyüzü çıktısı ve boş köşeye otomatik yerleşen `AstroCounter v1.4.1` akıllı filigranı.
+![360 Panoramik Dışa Aktarım](assets/screenshots/05_360_equirectangular_export.png)
 
 ---
 

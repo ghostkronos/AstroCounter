@@ -32,7 +32,7 @@ High-resolution astrophotography frames and multi-panel sky mosaics frequently e
 4. **Blind Geometric Plate Solving & Multi-Tile Mosaic Alignment:** Extracts sub-pixel stellar centroids, matches scale- and rotation-invariant geometric invariants against the dense J2000 catalog using RANSAC, bridges adjacent panels via pairwise star-correspondence homography, and deduplicates 100,000+ stars across overlapping mosaic frames in spherical sky coordinates (`RA`/`Dec`).
 5. **Cropped Equirectangular 2D Sky Projection, 3D Planetarium Dome & 2-Way Stellarium Sync:** Renders aligned mosaics in a cropped Plate Carrée equirectangular sky projection (`2D`), an interactive 360° **3D Celestial Dome**, bidirectional real-time camera synchronization with Stellarium, and native/4K/8K/360° panoramic exports with smart empty-corner watermarking.
 
-![AstroCounter 3D Celestial Dome and Multi-Photo Light Controls](assets/screenshots/02_stellarium_sync_andromeda.png)
+![AstroCounter v1.4.1 Equirectangular 2D Sky Mosaic](assets/screenshots/01_2d_equirectangular_mosaic.png)
 
 ---
 
@@ -97,25 +97,25 @@ flowchart TD
 
 ## Screenshots and Interface Preview
 
-### 1. High-Precision Photometric Detection, Multi-Photo Manager & Per-Photo Confidence
-Sub-pixel stellar centroid extraction across signal-to-noise confidence tiers (`>10σ`, `5-10σ`, `3-5σ`) with format-aware per-photo Auto-Confidence controls and drag-and-drop mosaic layer management.
-![Photometric Detection and Per-Photo Confidence](assets/screenshots/01_photometric_detection_masking.png)
+### 1. Cropped Equirectangular 2D Mosaic & Sky-Tone Harmonization
+Full multi-panel astrophotography mosaic (`124,624` deduplicated celestial objects) rendered onto a cropped Plate Carrée equirectangular sky grid with automatic sky-tone harmonization, 88 IAU constellations, Hipparcos reference stars, and clean unsolved-frame warnings.
+![2D Equirectangular Mosaic and Sky Harmonization](assets/screenshots/01_2d_equirectangular_mosaic.png)
 
-### 2. 3D Celestial Sphere Planetarium Dome & Simultaneous Display & Light Controls
-Interactive 3D celestial sphere projection with Hipparcos reference stars, constellation lines, and real-time multi-photo brightness, gamma exposure, contrast, and MTF auto-balance adjustments.
-![3D Celestial Dome and Display Light Settings](assets/screenshots/02_stellarium_sync_andromeda.png)
+### 2. 3D Celestial Dome Planetarium (Harmonized Live View)
+Interactive 360° 3D celestial sphere planetarium displaying stitched, sky-tone equalized panels aligned seamlessly with Hercules (`M13`, `M92`), Corona Borealis, and Draco catalog overlays.
+![3D Celestial Dome Planetarium](assets/screenshots/02_3d_celestial_dome.png)
 
-### 3. In-Frame Celestial Target Selection & View Layers Control
-Automatic scanning of embedded celestial catalogs filtered strictly to objects inside the camera's field of view, paired with the draggable **View & Layers** floating window.
-![In-Frame Catalog Target Selection](assets/screenshots/03_in_frame_catalog_target_selection.png)
+### 3. Integrated Display & Light Panel (`Mozaik Gökyüzü Tonu Eşitle`)
+Floating **Display & Light** controls showing active target scope (`Selected Panel` vs. `All Panels`), live sky-tone equalization status (`7 panels • 3 equalized`), and non-destructive Opacity, Brightness, Exposure, and Contrast grading.
+![Sky-Tone Harmonization and Light Panel](assets/screenshots/03_sky_harmonize_light_panel.png)
 
-### 4. Spherical Coordinate Grid & Interactive Help Center
-Gnomonic tangent-plane World Coordinate System (WCS) solution projecting curved Right Ascension and Declination lines onto the 2D infinite canvas alongside the bilingual **User Guide & Help Center (`❓`)**.
-![Plate Solved Coordinate Grid and Help Center](assets/screenshots/04_plate_solved_coordinate_grid.png)
+### 4. Advanced Export Configuration & Native Mosaic Area
+Export modal supporting **Native Full Mosaic** (`13,775 × 7,405 px`), `1x`, `2x`, `4K`, `8K`, and **Custom Resolution** outputs across `2D Mosaic`, `360° Panorama`, `CSV`, and `JSON` with smart empty-corner watermarking.
+![Advanced Export Panel](assets/screenshots/04_advanced_export_panel.png)
 
-### 5. Advanced Export: 2D Mosaic Canvas & 360° Panoramic Sky Map
-Export annotated 2D mosaics or 360° × 180° equirectangular panoramic sky maps in `PNG`, `Lossless TIFF`, `JPG`, `CSV`, or `JSON` formats at `1x` or `2x (4K)` resolution.
-![Advanced 2D and 360 Panoramic Export](assets/screenshots/05_csv_data_export_analysis.png)
+### 5. 360° × 180° Harmonized Equirectangular Panoramic Export
+Seamless 360° × 180° equirectangular sky map output with automatic radial dome flattening, clean constellation lines, and the `AstroCounter v1.4.1` smart empty-corner watermark.
+![360 Equirectangular Panoramic Export](assets/screenshots/05_360_equirectangular_export.png)
 
 ---
 
