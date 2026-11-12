@@ -292,40 +292,43 @@ public class WcsMatrix
         double ruSq = (dx * dx) + (dy * dy);
         if ((Math.Abs(RadialDistortionK1) > 1e-7 || Math.Abs(RadialDistortionK2) > 1e-7) && ruSq > 1e-6)
         {
-            // Robust Bounded Inversion (Sprint 2 / Architect Directive 1):
-            // Inverts ru = rd * (1 + k1*rd^2 + k2*rd^4) with max 10 iterations, 1e-7 normalized tol (~1e-4 px),
-            // and immediate fallback to Linear TAN WCS if derivative vanishes or divergence occurs.
+            // Robust Bounded Inversion:
+            // Inverts ru = rd * (1 + k1*rd^2 + k2*rd^4) strictly inside the physical monotonic sensor neighborhood
+            // (ruNorm <= 2.5, converged residual < 1e-7, positive branch slope f' > 0.05) so large-angle off-axis
+            // sky coordinates can never fold back across the polynomial turnaround point into concentric rings.
             double ruNorm = Math.Sqrt(ruSq) / _normRadius;
-            if (ruNorm > 1e-8)
+            if (ruNorm > 1e-8 && ruNorm <= 2.5)
             {
-                double rd = ruNorm;
+                double rd = Math.Min(ruNorm, 1.45);
                 bool converged = false;
+                double finalFPrime = 0.0;
                 const double tol = 1e-7;
 
-                for (int iter = 0; iter < 10; iter++)
+                for (int iter = 0; iter < 16; iter++)
                 {
                     double rd2 = rd * rd;
                     double rd4 = rd2 * rd2;
                     double f = (rd * (1.0 + (RadialDistortionK1 * rd2) + (RadialDistortionK2 * rd4))) - ruNorm;
+                    double fPrime = 1.0 + (3.0 * RadialDistortionK1 * rd2) + (5.0 * RadialDistortionK2 * rd4);
                     if (Math.Abs(f) < tol)
                     {
+                        finalFPrime = fPrime;
                         converged = true;
                         break;
                     }
-                    double fPrime = 1.0 + (3.0 * RadialDistortionK1 * rd2) + (5.0 * RadialDistortionK2 * rd4);
-                    if (Math.Abs(fPrime) <= 1e-9 || double.IsNaN(fPrime))
+                    if (fPrime <= 0.05 || double.IsNaN(fPrime))
                     {
                         break;
                     }
                     double step = f / fPrime;
                     rd -= step;
-                    if (double.IsNaN(rd) || double.IsInfinity(rd) || rd < 0.0)
+                    if (double.IsNaN(rd) || double.IsInfinity(rd) || rd < 0.0 || rd > 3.0)
                     {
                         break;
                     }
                 }
 
-                if (converged || (rd > 0.0 && !double.IsNaN(rd) && !double.IsInfinity(rd) && rd < ruNorm * 3.0))
+                if (converged && rd > 0.0 && rd <= 2.8 && finalFPrime > 0.05)
                 {
                     double factor = rd / ruNorm;
                     dx *= factor;
@@ -333,10 +336,15 @@ public class WcsMatrix
                 }
                 else
                 {
-                    // Linear TAN Fallback on divergence (Architect Directive Risk A)
+                    // Linear TAN Fallback outside monotonic lens domain (prevents off-axis concentric folding rings)
                     dx = linearDx;
                     dy = linearDy;
                 }
+            }
+            else if (ruNorm > 2.5)
+            {
+                dx = linearDx;
+                dy = linearDy;
             }
         }
 

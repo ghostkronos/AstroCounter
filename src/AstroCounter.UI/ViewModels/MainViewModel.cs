@@ -74,7 +74,20 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private bool _exportIncludeLabels = true;
     private bool _exportIncludeGrid = false;
     private bool _exportIncludeConstellations = false;
+    private bool _exportIncludeDsoMarkers = true;
+    private bool _exportHarmonizeMosaic = true;
     private int _exportScale = 1;
+    private string _exportResolutionMode = "Native";
+    private int _exportCustomWidth = 3840;
+    private int _exportCustomHeight = 2160;
+    private bool _exportLockAspectRatio = true;
+    private int _exportJpegQuality = 95;
+    private bool _suppressCustomDimSync;
+    private bool _isExporting;
+    private double _exportProgressValue;
+    private string _exportProgressStage = string.Empty;
+    private string _exportProgressDetail = string.Empty;
+    private CancellationTokenSource? _exportCts;
     private MosaicPanel? _selectedMosaicPanel;
     private bool _suppressConfidenceSync;
     private bool _suppressDisplaySync;
@@ -134,10 +147,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         ? "SDSS DR16 derin uzay görüntüleriyle eğitilmiş YOLO11n ONNX modeli (DirectML GPU destekli)"
         : "YOLO11n ONNX neural network trained on SDSS DR16 deep-sky imagery (DirectML GPU accelerated)";
 
-    // Help Panel Localized Strings (Beginner-Friendly & v1.4.0 Updated)
+    // Help Panel Localized Strings (Beginner-Friendly & v1.4.1 Updated)
     public string L_HelpButton => IsTurkish ? "❓ Rehber" : "❓ Guide";
     public string L_HelpToolTip => IsTurkish ? "Adım adım başlangıç rehberi ve kısayollar (F1)" : "Open beginner-friendly user guide and shortcuts (F1)";
-    public string L_HelpPanelTitle => IsTurkish ? "AstroCounter v1.4.0 • Hızlı Başlangıç Rehberi" : "AstroCounter v1.4.0 • Quick Start Guide";
+    public string L_HelpPanelTitle => IsTurkish ? "AstroCounter v1.4.1 • Hızlı Başlangıç Rehberi" : "AstroCounter v1.4.1 • Quick Start Guide";
     public string L_HelpSec1Title => IsTurkish ? "🖱️ 1. Fotoğrafında Gezinme (2D & 3D Gök Kubbe)" : "🖱️ 1. Navigating Your Sky (2D & 3D Dome)";
     public string L_HelpSec1Body => IsTurkish
         ? "• 2D Görünüm: Sol tuşa basılı tutup sürükleyerek fotoğrafı kaydırın, fare tekerleğiyle yıldızlara istediğiniz kadar yakınlaşın.\n• 3D Gök Kubbe: Fotoğrafınızı gerçek gökyüzü küresi üzerine yerleştirir; sürükleyerek 360° etrafınıza bakabilirsiniz."
@@ -215,14 +228,14 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string LanguageButtonText => IsTurkish ? "TR | EN" : "EN | TR";
     public string L_LanguageToolTip => IsTurkish ? "Uygulama dilini değiştir (Türkçe / İngilizce)" : "Switch application language (English / Turkish)";
 
-    // Localized UI Strings (v1.4.0 — Beginner-Friendly TR & EN)
+    // Localized UI Strings (v1.4.1 — Beginner-Friendly TR & EN)
     public string L_WindowTitle => IsTurkish
-        ? "AstroCounter v1.4.0 — Astrofotoğraf Yıldız Sayacı ve 3D Gök Kubbe"
-        : "AstroCounter v1.4.0 — Astrophotography Star Counter & 3D Sky Dome";
+        ? "AstroCounter v1.4.1 — Astrofotoğraf Yıldız Sayacı ve 3D Gök Kubbe"
+        : "AstroCounter v1.4.1 — Astrophotography Star Counter & 3D Sky Dome";
     public string L_HeaderSubtitle => IsTurkish
-        ? "v1.4.0 • Akıllı Yıldız Sayımı, Mozaik Atlası ve 3D Planetaryum"
-        : "v1.4.0 • Smart Star Counting, Mosaic Atlas & 3D Planetarium";
-    public string L_VersionBadge => "v1.4.0";
+        ? "v1.4.1 • Akıllı Yıldız Sayımı, Mozaik Atlası ve 3D Planetaryum"
+        : "v1.4.1 • Smart Star Counting, Mosaic Atlas & 3D Planetarium";
+    public string L_VersionBadge => "v1.4.1";
     public string L_SplashTitle => "AstroCounter";
     public string L_SplashSubtitle => IsTurkish
         ? "Yıldızları Keşfet • Akıllı Sayım & 3D Gök Kubbe"
@@ -521,9 +534,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         ToggleLightPanelCommand = new RelayCommand(() => IsLightPanelOpen = !IsLightPanelOpen);
         ToggleMosaicDrawerCommand = new RelayCommand(() => IsMosaicDrawerOpen = !IsMosaicDrawerOpen);
         ApplyAutoConfidenceCommand = new RelayCommand(ExecuteApplyAutoConfidence, () => _lastDetectionResult != null);
-        ToggleExportPanelCommand = new RelayCommand(() => IsExportPanelOpen = !IsExportPanelOpen, () => HasLoadedImage || _lastDetectionResult != null);
+        ToggleExportPanelCommand = new RelayCommand(() => IsExportPanelOpen = !IsExportPanelOpen, () => (HasLoadedImage || MosaicProject.Count > 0 || _lastDetectionResult != null) && !IsExporting);
         CloseExportPanelCommand = new RelayCommand(() => IsExportPanelOpen = false);
-        PerformExportCommand = new RelayCommand(ExecutePerformExport);
+        PerformExportCommand = new RelayCommand(async () => await ExecutePerformExportAsync(), () => (HasLoadedImage || MosaicProject.Count > 0 || _lastDetectionResult != null) && !IsExporting);
+        CancelExportCommand = new RelayCommand(() => _exportCts?.Cancel(), () => IsExporting);
         CloseMosaicDrawerCommand = new RelayCommand(() => IsMosaicDrawerOpen = false);
         RemoveMosaicPanelCommand = new RelayCommand(p => ExecuteRemoveMosaicPanel(p as MosaicPanel));
         MoveMosaicPanelUpCommand = new RelayCommand(p => ExecuteMoveMosaicPanelUp(p as MosaicPanel));
@@ -1267,7 +1281,14 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsExportPanelOpen
     {
         get => _isExportPanelOpen;
-        set => SetProperty(ref _isExportPanelOpen, value);
+        set
+        {
+            if (SetProperty(ref _isExportPanelOpen, value) && value)
+            {
+                SyncDefaultCustomDimensions();
+                RefreshExportPreviewProperties();
+            }
+        }
     }
 
     public string ExportFormat
@@ -1282,6 +1303,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(IsFormatJpg));
                 OnPropertyChanged(nameof(IsFormatCsv));
                 OnPropertyChanged(nameof(IsFormatJson));
+                OnPropertyChanged(nameof(IsImageExportFormat));
             }
         }
     }
@@ -1291,6 +1313,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsFormatJpg { get => _exportFormat == "JPG"; set { if (value) ExportFormat = "JPG"; } }
     public bool IsFormatCsv { get => _exportFormat == "CSV"; set { if (value) ExportFormat = "CSV"; } }
     public bool IsFormatJson { get => _exportFormat == "JSON"; set { if (value) ExportFormat = "JSON"; } }
+    public bool IsImageExportFormat => _exportFormat is "PNG" or "TIFF" or "JPG";
 
     public bool ExportIncludeBoxes
     {
@@ -1316,6 +1339,18 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         set => SetProperty(ref _exportIncludeConstellations, value);
     }
 
+    public bool ExportIncludeDsoMarkers
+    {
+        get => _exportIncludeDsoMarkers;
+        set => SetProperty(ref _exportIncludeDsoMarkers, value);
+    }
+
+    public bool ExportHarmonizeMosaic
+    {
+        get => _exportHarmonizeMosaic;
+        set => SetProperty(ref _exportHarmonizeMosaic, value);
+    }
+
     public int ExportScale
     {
         get => _exportScale;
@@ -1332,20 +1367,204 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool IsScale1x { get => _exportScale == 1; set { if (value) ExportScale = 1; } }
     public bool IsScale2x { get => _exportScale == 2; set { if (value) ExportScale = 2; } }
 
-    public string L_ExportPanelTitle => IsTurkish ? "Gelişmiş Dışa Aktarma" : "Export Sky Atlas & Data";
+    public string ExportResolutionMode
+    {
+        get => _exportResolutionMode;
+        set
+        {
+            if (SetProperty(ref _exportResolutionMode, value))
+            {
+                OnPropertyChanged(nameof(IsResNative));
+                OnPropertyChanged(nameof(IsRes1x));
+                OnPropertyChanged(nameof(IsRes2x));
+                OnPropertyChanged(nameof(IsRes4K));
+                OnPropertyChanged(nameof(IsRes8K));
+                OnPropertyChanged(nameof(IsResCustom));
+                if (value == "Custom")
+                {
+                    SyncDefaultCustomDimensions();
+                }
+                RefreshExportPreviewProperties();
+            }
+        }
+    }
+
+    public bool IsResNative { get => _exportResolutionMode == "Native"; set { if (value) ExportResolutionMode = "Native"; } }
+    public bool IsRes1x { get => _exportResolutionMode == "Scale1x"; set { if (value) ExportResolutionMode = "Scale1x"; } }
+    public bool IsRes2x { get => _exportResolutionMode == "Scale2x"; set { if (value) ExportResolutionMode = "Scale2x"; } }
+    public bool IsRes4K { get => _exportResolutionMode == "Uhd4K"; set { if (value) ExportResolutionMode = "Uhd4K"; } }
+    public bool IsRes8K { get => _exportResolutionMode == "Uhd8K"; set { if (value) ExportResolutionMode = "Uhd8K"; } }
+    public bool IsResCustom { get => _exportResolutionMode == "Custom"; set { if (value) ExportResolutionMode = "Custom"; } }
+
+    public int ExportCustomWidth
+    {
+        get => _exportCustomWidth;
+        set
+        {
+            int clamped = Math.Clamp(value, 64, 14000);
+            if (SetProperty(ref _exportCustomWidth, clamped))
+            {
+                if (_exportLockAspectRatio && !_suppressCustomDimSync)
+                {
+                    _suppressCustomDimSync = true;
+                    double aspect = GetCurrentExportNaturalAspect();
+                    ExportCustomHeight = Math.Clamp((int)Math.Round(clamped / aspect), 64, 14000);
+                    _suppressCustomDimSync = false;
+                }
+                RefreshExportPreviewProperties();
+            }
+        }
+    }
+
+    public int ExportCustomHeight
+    {
+        get => _exportCustomHeight;
+        set
+        {
+            int clamped = Math.Clamp(value, 64, 14000);
+            if (SetProperty(ref _exportCustomHeight, clamped))
+            {
+                if (_exportLockAspectRatio && !_suppressCustomDimSync)
+                {
+                    _suppressCustomDimSync = true;
+                    double aspect = GetCurrentExportNaturalAspect();
+                    ExportCustomWidth = Math.Clamp((int)Math.Round(clamped * aspect), 64, 14000);
+                    _suppressCustomDimSync = false;
+                }
+                RefreshExportPreviewProperties();
+            }
+        }
+    }
+
+    public bool ExportLockAspectRatio
+    {
+        get => _exportLockAspectRatio;
+        set => SetProperty(ref _exportLockAspectRatio, value);
+    }
+
+    public int ExportJpegQuality
+    {
+        get => _exportJpegQuality;
+        set
+        {
+            int clamped = Math.Clamp(value, 50, 100);
+            if (SetProperty(ref _exportJpegQuality, clamped))
+            {
+                OnPropertyChanged(nameof(ExportJpegQualityText));
+            }
+        }
+    }
+
+    public string ExportJpegQualityText => $"{_exportJpegQuality}%";
+
+    public bool IsExporting
+    {
+        get => _isExporting;
+        private set
+        {
+            if (SetProperty(ref _isExporting, value))
+            {
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+    }
+
+    public double ExportProgressValue
+    {
+        get => _exportProgressValue;
+        private set
+        {
+            if (SetProperty(ref _exportProgressValue, value))
+            {
+                OnPropertyChanged(nameof(ExportProgressPercentText));
+            }
+        }
+    }
+
+    public string ExportProgressPercentText => $"{(int)Math.Round(_exportProgressValue)}%";
+
+    public string ExportProgressStage
+    {
+        get => _exportProgressStage;
+        private set => SetProperty(ref _exportProgressStage, value);
+    }
+
+    public string ExportProgressDetail
+    {
+        get => _exportProgressDetail;
+        private set => SetProperty(ref _exportProgressDetail, value);
+    }
+
+    public string ExportMosaicNativeAreaText
+    {
+        get
+        {
+            var bounds = AstroCounter.Core.Export.ResultExporter.ComputeMosaicExportBounds(
+                MosaicProject,
+                _currentWcs,
+                (int)Math.Max(0, ImageWidth),
+                (int)Math.Max(0, ImageHeight));
+            double mp = bounds.TotalPixels / 1_000_000.0;
+            return IsTurkish
+                ? $"Tam Mozaik Piksel Alanı (1:1): {bounds.PixelWidth:N0} × {bounds.PixelHeight:N0} px ({mp:F1} MP • {Math.Max(1, bounds.ActivePanelCount)} Panel)"
+                : $"Full Mosaic Pixel Area (1:1): {bounds.PixelWidth:N0} × {bounds.PixelHeight:N0} px ({mp:F1} MP • {Math.Max(1, bounds.ActivePanelCount)} Panels)";
+        }
+    }
+
+    public string ExportTargetResolutionText
+    {
+        get
+        {
+            var bounds = AstroCounter.Core.Export.ResultExporter.ComputeMosaicExportBounds(
+                MosaicProject,
+                _currentWcs,
+                (int)Math.Max(0, ImageWidth),
+                (int)Math.Max(0, ImageHeight));
+            var cfg = BuildCurrentExportConfig(TotalCount);
+            var (tw, th) = AstroCounter.Core.Export.ResultExporter.ComputeTargetExportDimensions(cfg, bounds, MosaicProject, _currentWcs);
+            double mp = ((long)tw * th) / 1_000_000.0;
+            return IsTurkish
+                ? $"{tw:N0} × {th:N0} px ({mp:F1} MP)"
+                : $"{tw:N0} × {th:N0} px ({mp:F1} MP)";
+        }
+    }
+
+    public string ExportWatermarkNoticeText => IsTurkish
+        ? $"✨ Akıllı Filigran Her Zaman Açık: 'AstroCounter v1.4.1' + {TotalCount:N0} yıldız sayısı yıldızsız boş bir köşeye otomatik eklenir."
+        : $"✨ Smart Watermark Always On: 'AstroCounter v1.4.1' + {TotalCount:N0} star count placed automatically in an empty star-free corner.";
+
+    public string L_ExportPanelTitle => IsTurkish ? "Gelişmiş Dışa Aktarma & 360° Atlas" : "Advanced Export & 360° Sky Atlas";
     public string L_ExportButton => IsTurkish ? "🚀 Dışa Aktar..." : "🚀 Export...";
     public string L_PerformExport => IsTurkish ? "💾 Dosyayı Kaydet" : "💾 Save File";
     public string L_ExportProjectionLabel => IsTurkish ? "Çıktı Türü:" : "Output Mode:";
-    public string L_ExportProj2D => IsTurkish ? "🖼️ 2D Görsel / Mozaik" : "🖼️ 2D Canvas / Mosaic";
+    public string L_ExportProj2D => IsTurkish ? "🖼️ 2D Tam Mozaik / Görsel" : "🖼️ 2D Full Mosaic / Canvas";
     public string L_ExportProj360 => IsTurkish ? "🌐 360° Panoramik Gök Haritası" : "🌐 360° Panoramic Sky Map";
-    public string L_ExportFormatLabel => IsTurkish ? "Format:" : "Format:";
-    public string L_ExportLayersLabel => IsTurkish ? "Katmanlar:" : "Layers:";
-    public string L_ExportScaleLabel => IsTurkish ? "Çözünürlük:" : "Resolution:";
+    public string L_ExportFormatLabel => IsTurkish ? "Dosya Formatı:" : "Format:";
+    public string L_ExportLayersLabel => IsTurkish ? "Katmanlar & Haritalama:" : "Layers & Mapping:";
+    public string L_ExportScaleLabel => IsTurkish ? "Çözünürlük ve Piksel Alanı:" : "Resolution & Mosaic Area:";
     public string L_FormatTiffLossless => IsTurkish ? "TIFF (Kayıpsız)" : "TIFF (Lossless)";
     public string L_ExportBoxes => IsTurkish ? "Tespit Kutuları" : "Detection Boxes";
     public string L_ExportLabels => IsTurkish ? "Yıldız Etiketleri" : "Star Labels";
     public string L_ExportGrid => IsTurkish ? "Gökyüzü Izgarası (RA/Dec)" : "Sky Grid (RA/Dec)";
-    public string L_ExportConstellations => IsTurkish ? "Takımyıldızlar & HIP Yıldızları" : "Constellations & HIP Stars";
+    public string L_ExportConstellations => IsTurkish ? "Takımyıldızlar & HIP" : "Constellations & HIP";
+    public string L_ExportDso => IsTurkish ? "Derin Uzay (Messier/NGC)" : "Deep-Sky (Messier/NGC)";
+    public string L_ExportHarmonize => IsTurkish ? "Mozaik Gökyüzü Tonunu Eşitle" : "Harmonize Mosaic Sky Tone";
+    public string L_ExportJpgQuality => IsTurkish ? "JPEG Kalitesi:" : "JPEG Quality:";
+    public string L_ResNative => IsTurkish ? "Orijinal 1:1 (Tam Alan)" : "Native 1:1 (Full Area)";
+    public string L_Res1x => "1x (2K)";
+    public string L_Res2x => "2x (4K)";
+    public string L_Res4K => "4K UHD";
+    public string L_Res8K => "8K UHD";
+    public string L_ResCustom => IsTurkish ? "Özel Boyut (px)" : "Custom Size (px)";
+    public string L_ExportCustomWidth => IsTurkish ? "Genişlik:" : "Width:";
+    public string L_ExportCustomHeight => IsTurkish ? "Yükseklik:" : "Height:";
+    public string L_ExportLockAspect => IsTurkish ? "Oranı Koru" : "Lock Aspect";
+    public string L_ExportOutputSizeLabel => IsTurkish ? "Hedef Çıktı:" : "Output Size:";
+    public string L_ExportOverlayTitle => IsTurkish ? "Gök Haritası Dışa Aktarılıyor..." : "Rendering Sky Export...";
+    public string L_ExportOverlaySubtitle => IsTurkish
+        ? "Projeksiyon, kenar yumuşatma ve yıldız katmanları hazırlanıyor; pencere donmaz."
+        : "Rendering projection, feathered seams & star overlays seamlessly in the background.";
+    public string L_ExportCancelButton => IsTurkish ? "✕ İptal Et" : "✕ Cancel Export";
     public string L_Scale1x => IsTurkish ? "1x (Orijinal / 2K)" : "1x (Original / 2K)";
     public string L_Scale2x => IsTurkish ? "2x (Yüksek Çözünürlük / 4K)" : "2x (Super-Res / 4K)";
     public string L_Cancel => IsTurkish ? "Vazgeç" : "Cancel";
@@ -1360,6 +1579,8 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             {
                 OnPropertyChanged(nameof(IsExportCanvas2D));
                 OnPropertyChanged(nameof(IsExportPanorama360));
+                SyncDefaultCustomDimensions();
+                RefreshExportPreviewProperties();
             }
         }
     }
@@ -1390,6 +1611,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand ToggleExportPanelCommand { get; }
     public ICommand CloseExportPanelCommand { get; }
     public ICommand PerformExportCommand { get; }
+    public ICommand CancelExportCommand { get; }
 
     public bool IsMosaicDrawerOpen
     {
@@ -1728,6 +1950,95 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(IsSingleImageActive));
         OnPropertyChanged(nameof(HasLoadedImage));
         OnPropertyChanged(nameof(IsPlaceholderVisible));
+        RefreshExportPreviewProperties();
+    }
+
+    private double GetCurrentExportNaturalAspect()
+    {
+        if (IsExportPanorama360)
+        {
+            return 2.0;
+        }
+        var bounds = AstroCounter.Core.Export.ResultExporter.ComputeMosaicExportBounds(
+            MosaicProject,
+            _currentWcs,
+            (int)Math.Max(0, ImageWidth),
+            (int)Math.Max(0, ImageHeight));
+        return Math.Max(0.1, bounds.PixelWidth / (double)Math.Max(1, bounds.PixelHeight));
+    }
+
+    private void SyncDefaultCustomDimensions()
+    {
+        _suppressCustomDimSync = true;
+        try
+        {
+            if (IsExportPanorama360)
+            {
+                var bounds = AstroCounter.Core.Export.ResultExporter.ComputeMosaicExportBounds(
+                    MosaicProject,
+                    _currentWcs,
+                    (int)Math.Max(0, ImageWidth),
+                    (int)Math.Max(0, ImageHeight));
+                var tempCfg = new AstroCounter.Core.Export.ExportConfig(
+                    Format: ExportFormat,
+                    ExportProjectionMode: "Panorama360",
+                    ResolutionMode: "Native");
+                var (nw, nh) = AstroCounter.Core.Export.ResultExporter.ComputeTargetExportDimensions(tempCfg, bounds, MosaicProject, _currentWcs);
+                _exportCustomWidth = nw;
+                _exportCustomHeight = nh;
+            }
+            else
+            {
+                var bounds = AstroCounter.Core.Export.ResultExporter.ComputeMosaicExportBounds(
+                    MosaicProject,
+                    _currentWcs,
+                    (int)Math.Max(0, ImageWidth),
+                    (int)Math.Max(0, ImageHeight));
+                _exportCustomWidth = Math.Clamp(bounds.PixelWidth, 64, 14000);
+                _exportCustomHeight = Math.Clamp(bounds.PixelHeight, 64, 14000);
+            }
+            OnPropertyChanged(nameof(ExportCustomWidth));
+            OnPropertyChanged(nameof(ExportCustomHeight));
+        }
+        finally
+        {
+            _suppressCustomDimSync = false;
+        }
+    }
+
+    private void RefreshExportPreviewProperties()
+    {
+        OnPropertyChanged(nameof(ExportMosaicNativeAreaText));
+        OnPropertyChanged(nameof(ExportTargetResolutionText));
+        OnPropertyChanged(nameof(ExportWatermarkNoticeText));
+    }
+
+    private AstroCounter.Core.Export.ExportConfig BuildCurrentExportConfig(int totalDetectedCount)
+    {
+        string fmt = ExportFormat.ToUpperInvariant();
+        int legacyScale = (_exportResolutionMode == "Scale2x" || _exportResolutionMode == "Uhd4K" || _exportResolutionMode == "Uhd8K") ? 2 : 1;
+        return new AstroCounter.Core.Export.ExportConfig(
+            Format: fmt,
+            IncludeBoundingBoxes: ExportIncludeBoxes,
+            IncludeLabels: ExportIncludeLabels,
+            IncludeSphericalGrid: ExportIncludeGrid,
+            IncludeConstellations: ExportIncludeConstellations,
+            ScaleFactor: legacyScale,
+            ExportProjectionMode: ExportProjectionMode,
+            ResolutionMode: _exportResolutionMode,
+            CustomWidth: _exportCustomWidth,
+            CustomHeight: _exportCustomHeight,
+            JpegQuality: _exportJpegQuality,
+            IncludeWatermark: true,
+            TotalDetectedCount: totalDetectedCount,
+            ApplyDisplayAdjustments: true,
+            FallbackAutoBalance: _isAutoBrightnessEnabled,
+            FallbackBrightness: _displayBrightness,
+            FallbackExposure: _displayExposure,
+            FallbackContrast: _displayContrast,
+            IncludeDsoMarkers: _exportIncludeDsoMarkers,
+            UseTurkishLanguage: IsTurkish,
+            HarmonizeMosaicExposure: _exportHarmonizeMosaic);
     }
 
     public MosaicProject MosaicProject { get; } = new();
@@ -2478,6 +2789,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         SpeculativeCount = filtered.NoiseCount;
         VisibleObjects = filtered.FilteredObjects;
         AnomalyCount = filtered.FilteredObjects.Count(o => o.IsAnomaly);
+        RefreshExportPreviewProperties();
 
         CommandManager.InvalidateRequerySuggested();
     }
@@ -3170,9 +3482,9 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
-    private void ExecutePerformExport()
+    private async Task ExecutePerformExportAsync()
     {
-        if (!HasLoadedImage && _lastDetectionResult == null) return;
+        if ((!HasLoadedImage && MosaicProject.Count == 0 && _lastDetectionResult == null) || IsExporting) return;
 
         IReadOnlyDictionary<string, float>? perPanelMap = null;
         if (MosaicProject.Count > 0)
@@ -3226,7 +3538,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
         // Image export: TIFF, PNG, JPG
         string ext = fmt.ToLowerInvariant();
-        string prefix = IsExportPanorama360 ? "AstroPanorama360" : "AstroDetected";
+        string prefix = IsExportPanorama360 ? "AstroPanorama360" : "AstroMosaic";
         var imgSfd = new SaveFileDialog
         {
             Title = IsTurkish ? $"{fmt} Olarak Kaydet" : $"Save as {fmt}",
@@ -3234,38 +3546,77 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             FileName = $"{prefix}_{DateTime.Now:yyyyMMdd_HHmmss}.{ext}"
         };
 
-        if (imgSfd.ShowDialog() == true)
-        {
-            try
-            {
-                var cfg = new AstroCounter.Core.Export.ExportConfig(
-                    Format: fmt,
-                    IncludeBoundingBoxes: ExportIncludeBoxes,
-                    IncludeLabels: ExportIncludeLabels,
-                    IncludeSphericalGrid: ExportIncludeGrid,
-                    IncludeConstellations: ExportIncludeConstellations,
-                    ScaleFactor: ExportScale,
-                    ExportProjectionMode: ExportProjectionMode);
+        if (imgSfd.ShowDialog() != true) return;
 
-                string sourceImg = SelectedImagePath ?? MosaicProject.Panels.FirstOrDefault(p => !string.IsNullOrEmpty(p.FilePath))?.FilePath ?? string.Empty;
+        var cfg = BuildCurrentExportConfig(filtered.Count);
+        string sourceImg = SelectedImagePath ?? MosaicProject.Panels.FirstOrDefault(p => !string.IsNullOrEmpty(p.FilePath))?.FilePath ?? string.Empty;
+        string targetPath = imgSfd.FileName;
+        var activeWcs = CurrentWcs;
+        var activeMask = _mask;
+        var activeProject = MosaicProject;
+
+        IsExportPanelOpen = false;
+        _exportCts?.Dispose();
+        _exportCts = new CancellationTokenSource();
+        var ct = _exportCts.Token;
+
+        IsExporting = true;
+        ExportProgressValue = 3;
+        ExportProgressStage = IsTurkish ? "Dışa aktarma başlatılıyor..." : "Starting export...";
+        ExportProgressDetail = ExportTargetResolutionText;
+
+        var progress = new Progress<AstroCounter.Core.Export.ExportProgress>(p =>
+        {
+            ExportProgressValue = p.Percent;
+            if (!string.IsNullOrEmpty(p.DetailText))
+            {
+                ExportProgressDetail = p.DetailText;
+            }
+            ExportProgressStage = p.StageKey switch
+            {
+                "load" => IsTurkish ? "Paneller ve ton ayarları hazırlanıyor..." : "Preparing panels & tone adjustments...",
+                "render" => IsTurkish ? "Yüksek çözünürlüklü projeksiyon oluşturuluyor..." : "Rendering high-resolution sky projection...",
+                "overlays" => IsTurkish ? "Yıldızlar ve gökyüzü katmanları işleniyor..." : "Drawing detected stars & sky overlays...",
+                "watermark" => IsTurkish ? "Yıldızsız boş köşeye filigran yerleştiriliyor..." : "Placing watermark in empty star-free corner...",
+                "encode" => IsTurkish ? $"{fmt} dosyası kaydediliyor..." : $"Writing {fmt} image file...",
+                "done" => IsTurkish ? "Tamamlandı!" : "Export complete!",
+                _ => ExportProgressStage
+            };
+        });
+
+        try
+        {
+            await Task.Run(() =>
+            {
                 AstroCounter.Core.Export.ResultExporter.ExportAdvancedImage(
                     sourceImg,
                     filtered,
-                    imgSfd.FileName,
+                    targetPath,
                     cfg,
-                    CurrentWcs,
-                    _mask,
-                    MosaicProject);
+                    activeWcs,
+                    activeMask,
+                    activeProject,
+                    progress,
+                    ct);
+            }, ct);
 
-                IsExportPanelOpen = false;
-                StatusMessage = IsTurkish
-                    ? $"{fmt} ({(IsExportPanorama360 ? "360° Panoramik" : "2D Görsel")}) kaydedildi: {Path.GetFileName(imgSfd.FileName)}"
-                    : $"{fmt} ({(IsExportPanorama360 ? "360° Panorama" : "2D Canvas")}) saved: {Path.GetFileName(imgSfd.FileName)}";
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = IsTurkish ? $"Dışa aktarma hatası: {ex.Message}" : $"Export error: {ex.Message}";
-            }
+            StatusMessage = IsTurkish
+                ? $"✅ {fmt} ({(IsExportPanorama360 ? "360° Panoramik" : "2D Mozaik")} • {ExportTargetResolutionText}) kaydedildi: {Path.GetFileName(targetPath)}"
+                : $"✅ {fmt} ({(IsExportPanorama360 ? "360° Panorama" : "2D Mosaic")} • {ExportTargetResolutionText}) saved: {Path.GetFileName(targetPath)}";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = IsTurkish ? "Dışa aktarma iptal edildi." : "Export cancelled by user.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = IsTurkish ? $"Dışa aktarma hatası: {ex.Message}" : $"Export error: {ex.Message}";
+        }
+        finally
+        {
+            IsExporting = false;
+            _exportCts?.Dispose();
+            _exportCts = null;
         }
     }
 

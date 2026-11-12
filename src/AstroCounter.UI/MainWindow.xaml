@@ -1703,7 +1703,7 @@
             <Border x:Name="ExportPanelBorder"
                     Grid.Row="3"
                     HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Width="430"
+                    Width="500" MaxHeight="660"
                     Panel.ZIndex="120"
                     Style="{StaticResource FloatingPanelStyle}"
                     BorderBrush="#38BDF8"
@@ -1712,10 +1712,18 @@
                 <Border.RenderTransform>
                     <TranslateTransform X="0" Y="0"/>
                 </Border.RenderTransform>
-                <StackPanel>
-                    <Border Background="Transparent"
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Draggable Header -->
+                    <Border Grid.Row="0"
+                            Background="Transparent"
                             Cursor="SizeAll"
-                            Margin="0,0,0,12"
+                            Margin="0,0,0,10"
                             ToolTip="{Binding L_PanelDragHint}"
                             MouseLeftButtonDown="FloatingPanelHeader_MouseLeftButtonDown"
                             MouseMove="FloatingPanelHeader_MouseMove"
@@ -1733,56 +1741,116 @@
                         </DockPanel>
                     </Border>
 
-                    <Border Background="#0E1729" BorderBrush="#1C2C47" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,10">
+                    <!-- Scrollable Options Body -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="490" Padding="0,0,4,0">
                         <StackPanel>
-                            <TextBlock Text="{Binding L_ExportProjectionLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,8"/>
-                            <WrapPanel Orientation="Horizontal">
-                                <RadioButton Content="{Binding L_ExportProj2D}" IsChecked="{Binding IsExportCanvas2D, Mode=TwoWay}" GroupName="ProjGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,2"/>
-                                <RadioButton Content="{Binding L_ExportProj360}" IsChecked="{Binding IsExportPanorama360, Mode=TwoWay}" GroupName="ProjGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,0,2"/>
-                            </WrapPanel>
+                            <!-- Card 1: Projection Mode + Live Mosaic Area -->
+                            <Border Background="#0E1729" BorderBrush="#1C2C47" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,9">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding L_ExportProjectionLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,7"/>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <RadioButton Content="{Binding L_ExportProj2D}" IsChecked="{Binding IsExportCanvas2D, Mode=TwoWay}" GroupName="ProjGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                                        <RadioButton Content="{Binding L_ExportProj360}" IsChecked="{Binding IsExportPanorama360, Mode=TwoWay}" GroupName="ProjGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,0,4"/>
+                                    </WrapPanel>
+                                    <Border Background="#091122" BorderBrush="#1B3356" BorderThickness="1" CornerRadius="7" Padding="9,5" Margin="0,5,0,0">
+                                        <TextBlock Text="{Binding ExportMosaicNativeAreaText}" Foreground="#38BDF8" FontSize="10.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 2: Format + Optional JPG Quality -->
+                            <Border Background="#0E1729" BorderBrush="#1C2C47" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,9">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding L_ExportFormatLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,7"/>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <RadioButton Content="PNG" IsChecked="{Binding IsFormatPng, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                                        <RadioButton Content="{Binding L_FormatTiffLossless}" IsChecked="{Binding IsFormatTiff, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                                        <RadioButton Content="JPG" IsChecked="{Binding IsFormatJpg, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                                        <RadioButton Content="CSV" IsChecked="{Binding IsFormatCsv, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                                        <RadioButton Content="JSON" IsChecked="{Binding IsFormatJson, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
+                                    </WrapPanel>
+                                    <Grid Margin="0,6,0,0" Visibility="{Binding IsFormatJpg, Converter={StaticResource BoolToVis}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="40"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding L_ExportJpgQuality}" Foreground="#94A3B8" FontSize="10.5" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <Slider Grid.Column="1" Minimum="50" Maximum="100" Value="{Binding ExportJpegQuality, Mode=TwoWay}" VerticalAlignment="Center" SmallChange="1" LargeChange="5"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding ExportJpegQualityText}" Foreground="#38BDF8" FontSize="10.5" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 3: Resolution Presets + Custom Width/Height + Live Target Output -->
+                            <Border Background="#0E1729" BorderBrush="#1C2C47" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,9"
+                                    Visibility="{Binding IsImageExportFormat, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <DockPanel LastChildFill="False" Margin="0,0,0,7">
+                                        <TextBlock DockPanel.Dock="Left" Text="{Binding L_ExportScaleLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center"/>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding ExportTargetResolutionText}" Foreground="#34D399" FontWeight="Bold" FontSize="11" VerticalAlignment="Center"/>
+                                    </DockPanel>
+                                    <WrapPanel Orientation="Horizontal">
+                                        <RadioButton Content="{Binding L_ResNative}" IsChecked="{Binding IsResNative, Mode=TwoWay}" GroupName="ResGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,5,5"/>
+                                        <RadioButton Content="{Binding L_Res1x}" IsChecked="{Binding IsRes1x, Mode=TwoWay}" GroupName="ResGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,5,5"/>
+                                        <RadioButton Content="{Binding L_Res2x}" IsChecked="{Binding IsRes2x, Mode=TwoWay}" GroupName="ResGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,5,5"/>
+                                        <RadioButton Content="{Binding L_Res4K}" IsChecked="{Binding IsRes4K, Mode=TwoWay}" GroupName="ResGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,5,5"/>
+                                        <RadioButton Content="{Binding L_Res8K}" IsChecked="{Binding IsRes8K, Mode=TwoWay}" GroupName="ResGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,5,5"/>
+                                        <RadioButton Content="{Binding L_ResCustom}" IsChecked="{Binding IsResCustom, Mode=TwoWay}" GroupName="ResGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,0,5"/>
+                                    </WrapPanel>
+
+                                    <Border Background="#091122" BorderBrush="#1C2E4F" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,4,0,0"
+                                            Visibility="{Binding IsResCustom, Converter={StaticResource BoolToVis}}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="74"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="74"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding L_ExportCustomWidth}" Foreground="#94A3B8" FontSize="10.5" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBox Grid.Column="1" Text="{Binding ExportCustomWidth, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Background="#060C18" Foreground="#F8FAFC" BorderBrush="#263B5E" BorderThickness="1" Padding="6,3" FontSize="11" CaretBrush="#38BDF8" VerticalContentAlignment="Center"/>
+                                            <TextBlock Grid.Column="2" Text="×" Foreground="#64748B" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="7,0,7,0"/>
+                                            <TextBlock Grid.Column="3" Text="{Binding L_ExportCustomHeight}" Foreground="#94A3B8" FontSize="10.5" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                            <TextBox Grid.Column="4" Text="{Binding ExportCustomHeight, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Background="#060C18" Foreground="#F8FAFC" BorderBrush="#263B5E" BorderThickness="1" Padding="6,3" FontSize="11" CaretBrush="#38BDF8" VerticalContentAlignment="Center"/>
+                                            <CheckBox Grid.Column="5" Content="{Binding L_ExportLockAspect}" IsChecked="{Binding ExportLockAspectRatio, Mode=TwoWay}" Foreground="#CBD5E1" FontSize="10" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 4: Overlay Layers & Seamless Sky Blending -->
+                            <Border Background="#0E1729" BorderBrush="#1C2C47" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,9"
+                                    Visibility="{Binding IsImageExportFormat, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding L_ExportLayersLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,7"/>
+                                    <UniformGrid Columns="2">
+                                        <CheckBox Content="{Binding L_ExportBoxes}" IsChecked="{Binding ExportIncludeBoxes, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,6"/>
+                                        <CheckBox Content="{Binding L_ExportLabels}" IsChecked="{Binding ExportIncludeLabels, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,6"/>
+                                        <CheckBox Content="{Binding L_ExportGrid}" IsChecked="{Binding ExportIncludeGrid, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,6"/>
+                                        <CheckBox Content="{Binding L_ExportConstellations}" IsChecked="{Binding ExportIncludeConstellations, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,6"/>
+                                        <CheckBox Content="{Binding L_ExportDso}" IsChecked="{Binding ExportIncludeDsoMarkers, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,2"/>
+                                        <CheckBox Content="{Binding L_ExportHarmonize}" IsChecked="{Binding ExportHarmonizeMosaic, Mode=TwoWay}" Foreground="#38BDF8" FontSize="11" Margin="0,0,0,2"/>
+                                    </UniformGrid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 5: Always-On Smart Empty-Corner Watermark Info -->
+                            <Border Background="#0A192E" BorderBrush="#1D436F" BorderThickness="1" CornerRadius="9" Padding="11,7" Margin="0,0,0,4"
+                                    Visibility="{Binding IsImageExportFormat, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding ExportWatermarkNoticeText}" Foreground="#BAE6FD" FontSize="10.5" TextWrapping="Wrap"/>
+                            </Border>
                         </StackPanel>
-                    </Border>
+                    </ScrollViewer>
 
-                    <Border Background="#0E1729" BorderBrush="#1C2C47" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,10">
-                        <StackPanel>
-                            <TextBlock Text="{Binding L_ExportFormatLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,8"/>
-                            <WrapPanel Orientation="Horizontal">
-                                <RadioButton Content="PNG" IsChecked="{Binding IsFormatPng, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
-                                <RadioButton Content="{Binding L_FormatTiffLossless}" IsChecked="{Binding IsFormatTiff, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
-                                <RadioButton Content="JPG" IsChecked="{Binding IsFormatJpg, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
-                                <RadioButton Content="CSV" IsChecked="{Binding IsFormatCsv, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
-                                <RadioButton Content="JSON" IsChecked="{Binding IsFormatJson, Mode=TwoWay}" GroupName="FmtGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,4"/>
-                            </WrapPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Background="#0E1729" BorderBrush="#1C2C47" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,10">
-                        <StackPanel>
-                            <TextBlock Text="{Binding L_ExportLayersLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" Margin="0,0,0,8"/>
-                            <UniformGrid Columns="2">
-                                <CheckBox Content="{Binding L_ExportBoxes}" IsChecked="{Binding ExportIncludeBoxes, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,6"/>
-                                <CheckBox Content="{Binding L_ExportLabels}" IsChecked="{Binding ExportIncludeLabels, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,6"/>
-                                <CheckBox Content="{Binding L_ExportGrid}" IsChecked="{Binding ExportIncludeGrid, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,4"/>
-                                <CheckBox Content="{Binding L_ExportConstellations}" IsChecked="{Binding ExportIncludeConstellations, Mode=TwoWay}" Foreground="#F1F5F9" FontSize="11" Margin="0,0,0,4"/>
-                            </UniformGrid>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Background="#0E1729" BorderBrush="#1C2C47" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,14">
-                        <DockPanel LastChildFill="True">
-                            <TextBlock Text="{Binding L_ExportScaleLabel}" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <RadioButton Content="{Binding L_Scale1x}" IsChecked="{Binding IsScale1x, Mode=TwoWay}" GroupName="ScaleGroup" Style="{StaticResource ChipRadioStyle}" Margin="0,0,6,0"/>
-                                <RadioButton Content="{Binding L_Scale2x}" IsChecked="{Binding IsScale2x, Mode=TwoWay}" GroupName="ScaleGroup" Style="{StaticResource ChipRadioStyle}"/>
-                            </StackPanel>
-                        </DockPanel>
-                    </Border>
-
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button Content="{Binding L_Cancel}" Command="{Binding CloseExportPanelCommand}" Style="{StaticResource ModernButtonStyle}" Padding="13,5.5" Margin="0,0,8,0" FontSize="11"/>
-                        <Button Content="{Binding L_PerformExport}" Command="{Binding PerformExportCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="17,6.5" FontSize="11" FontWeight="Bold"/>
+                    <!-- Footer Actions -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                        <Button Content="{Binding L_Cancel}" Command="{Binding CloseExportPanelCommand}" Style="{StaticResource ModernButtonStyle}" Padding="13,6" Margin="0,0,8,0" FontSize="11"/>
+                        <Button Content="{Binding L_PerformExport}" Command="{Binding PerformExportCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="18,6.5" FontSize="11" FontWeight="Bold"/>
                     </StackPanel>
-                </StackPanel>
+                </Grid>
             </Border>
 
             <!-- ==================== DRAGGABLE FLOATING WINDOW 6: BEGINNER GUIDE & SHORTCUTS ==================== -->
@@ -1909,6 +1977,85 @@
                                  Minimum="0" Maximum="100"
                                  VerticalAlignment="Center"/>
                 </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ==================== ASYNC EXPORT LOADING OVERLAY ==================== -->
+        <Grid x:Name="ExportLoadingOverlay"
+              Panel.ZIndex="950"
+              Background="#D9040812"
+              Visibility="{Binding IsExporting, Converter={StaticResource BoolToVis}}">
+            <Grid.Triggers>
+                <EventTrigger RoutedEvent="FrameworkElement.Loaded">
+                    <BeginStoryboard>
+                        <Storyboard RepeatBehavior="Forever" Timeline.DesiredFrameRate="60">
+                            <DoubleAnimation Storyboard.TargetName="ExportRingRotate"
+                                             Storyboard.TargetProperty="Angle"
+                                             From="0" To="360"
+                                             Duration="0:0:2.8"/>
+                        </Storyboard>
+                    </BeginStoryboard>
+                </EventTrigger>
+            </Grid.Triggers>
+
+            <Border Background="#F20B1325"
+                    BorderBrush="#38BDF8"
+                    BorderThickness="1.5"
+                    CornerRadius="20"
+                    Padding="34,28"
+                    Width="440"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" BlurRadius="38" ShadowDepth="0" Opacity="0.82"/>
+                </Border.Effect>
+                <StackPanel HorizontalAlignment="Center">
+                    <!-- Animated Orbital Spinner & Emblem -->
+                    <Grid HorizontalAlignment="Center" Margin="0,0,0,16">
+                        <Ellipse Width="102" Height="102" RenderTransformOrigin="0.5,0.5"
+                                 StrokeThickness="2" StrokeDashArray="9 5">
+                            <Ellipse.RenderTransform>
+                                <RotateTransform x:Name="ExportRingRotate" Angle="0"/>
+                            </Ellipse.RenderTransform>
+                            <Ellipse.Stroke>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#FF38BDF8" Offset="0.0"/>
+                                    <GradientStop Color="#66A855F7" Offset="0.55"/>
+                                    <GradientStop Color="#1138BDF8" Offset="1.0"/>
+                                </LinearGradientBrush>
+                            </Ellipse.Stroke>
+                        </Ellipse>
+                        <Border Background="#0D1930" BorderBrush="#264C7D" BorderThickness="1.2" CornerRadius="34" Width="68" Height="68" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Image Source="pack://application:,,,/Assets/logo.png" Width="44" Height="44" RenderOptions.BitmapScalingMode="HighQuality"/>
+                        </Border>
+                    </Grid>
+
+                    <TextBlock Text="{Binding L_ExportOverlayTitle}" FontSize="17" FontWeight="Bold" Foreground="#F8FAFC" HorizontalAlignment="Center"/>
+                    <TextBlock Text="{Binding L_ExportOverlaySubtitle}" FontSize="11.5" Foreground="#94A3B8" TextAlignment="Center" TextWrapping="Wrap" Margin="0,6,0,14"/>
+
+                    <!-- Live Target Detail Pill -->
+                    <Border Background="#0A1A32" BorderBrush="#1C3960" BorderThickness="1" CornerRadius="8" Padding="10,4.5" HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <TextBlock Text="{Binding ExportProgressDetail}" FontSize="11" FontWeight="SemiBold" Foreground="#38BDF8" HorizontalAlignment="Center"/>
+                    </Border>
+
+                    <!-- Live Progress Bar & Percent -->
+                    <DockPanel Width="350" Margin="0,0,0,6">
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding ExportProgressStage}" FontSize="11" Foreground="#CBD5E1" TextTrimming="CharacterEllipsis" MaxWidth="295"/>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding ExportProgressPercentText}" FontSize="11.5" FontWeight="Bold" Foreground="#34D399" HorizontalAlignment="Right"/>
+                    </DockPanel>
+                    <ProgressBar Style="{StaticResource ObservatoryProgressStyle}"
+                                 Width="350" Height="8"
+                                 Minimum="0" Maximum="100"
+                                 Value="{Binding ExportProgressValue, Mode=OneWay}"
+                                 Margin="0,0,0,18"/>
+
+                    <Button Content="{Binding L_ExportCancelButton}"
+                            Command="{Binding CancelExportCommand}"
+                            Style="{StaticResource ModernButtonStyle}"
+                            HorizontalAlignment="Center"
+                            Padding="18,6.5"
+                            FontSize="11.5"/>
+                </StackPanel>
             </Border>
         </Grid>
 
