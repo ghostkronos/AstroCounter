@@ -226,6 +226,12 @@ public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
     /// </summary>
     public object? CachedSkiaBitmap { get; set; }
 
+    /// <summary>
+    /// Lightweight downscaled (max 2048px) unadjusted SKBitmap proxy retained in memory for responsive
+    /// non-blocking live sky-tone harmonization and light-slider updates in 2D and 3D views.
+    /// </summary>
+    public object? DisplayBaseSkiaBitmap { get; set; }
+
     public double Opacity
     {
         get => _opacity;
@@ -278,9 +284,9 @@ public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
         }
     }
 
-    public bool IsSolved => Wcs != null && (TargetName != null || Math.Abs(Wcs.CenterCoordinates.RaDegrees - 180.0) > 1e-3 || Math.Abs(Wcs.CenterCoordinates.DecDegrees - 30.0) > 1e-3);
+    public bool IsSolved => Wcs != null && (!string.IsNullOrWhiteSpace(TargetName) || Math.Abs(Wcs.CenterCoordinates.RaDegrees - 180.0) > 1e-3 || Math.Abs(Wcs.CenterCoordinates.DecDegrees - 30.0) > 1e-3);
     public string StatusText => IsSolved
-        ? (TargetName != null ? $"✅ {TargetName}" : (CataloguePlateSolver.UseTurkishLanguage ? "✅ Çözümlendi" : "✅ Solved"))
+        ? (!string.IsNullOrWhiteSpace(TargetName) ? $"✅ {TargetName}" : (CataloguePlateSolver.UseTurkishLanguage ? "✅ Çözümlendi" : "✅ Solved"))
         : (CataloguePlateSolver.UseTurkishLanguage ? "⚠️ Hizalanamadı / Hizalanıyor" : "⚠️ Unsolved / Aligning");
     public string CenterCoordinatesText => Wcs != null ? $"{Wcs.CenterCoordinates.FormatRa()}  {Wcs.CenterCoordinates.FormatDec()}" : "-";
     public string ResolutionText => $"{Width} × {Height} px";
@@ -894,8 +900,7 @@ public class MosaicProject
         if (activePanels.Count == 0) return null;
 
         // Prioritize solved panels with specific celestial targets over default (180, 30) fallback panels
-        var solvedPanels = activePanels.Where(p => p.Wcs != null &&
-            !(p.Wcs.CenterCoordinates.RaDegrees == 180.0 && p.Wcs.CenterCoordinates.DecDegrees == 30.0 && p.TargetName == null)).ToList();
+        var solvedPanels = activePanels.Where(p => p.IsSolved).ToList();
         var panelsToUse = solvedPanels.Count > 0 ? solvedPanels : activePanels;
 
         var allCorners = new List<CelestialCoordinates>(panelsToUse.Count * 4);

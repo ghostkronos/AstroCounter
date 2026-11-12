@@ -111,6 +111,16 @@ public class CelestialSphereControl : Grid
         nameof(ExitCommand), typeof(ICommand), typeof(CelestialSphereControl),
         new PropertyMetadata(null));
 
+    public static readonly DependencyProperty MosaicTextureRevisionProperty = DependencyProperty.Register(
+        nameof(MosaicTextureRevision), typeof(int), typeof(CelestialSphereControl),
+        new PropertyMetadata(0, OnMosaicTextureRevisionChanged));
+
+    public int MosaicTextureRevision
+    {
+        get => (int)GetValue(MosaicTextureRevisionProperty);
+        set => SetValue(MosaicTextureRevisionProperty, value);
+    }
+
     public WcsMatrix? CurrentWcs
     {
         get => (WcsMatrix?)GetValue(CurrentWcsProperty);
@@ -758,6 +768,16 @@ public class CelestialSphereControl : Grid
         if (d is CelestialSphereControl csc)
         {
             csc._overlayCanvas.InvalidateVisual();
+        }
+    }
+
+    private static void OnMosaicTextureRevisionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is CelestialSphereControl csc)
+        {
+            // Refresh 3D panel materials in place while strictly preserving current camera azimuth/elevation/FOV
+            csc.RebuildPhotoMeshes();
+            csc.UpdateAlignmentHud();
         }
     }
 
@@ -1898,7 +1918,7 @@ public class CelestialSphereControl : Grid
                 if (_owner.MosaicPanels != null && _owner.MosaicPanels.Count > 1 && !string.IsNullOrEmpty(obj.PanelId))
                 {
                     var parentPanel = _owner.MosaicPanels.FirstOrDefault(p => p.Id == obj.PanelId);
-                    if (parentPanel != null && parentPanel.TargetName == null) continue;
+                    if (parentPanel != null && !parentPanel.IsSolved) continue;
                 }
 
                 double targetRa = obj.RaDegrees ?? (wcs != null ? wcs.PixelToEquatorial(obj.CenterX, obj.CenterY).RaDegrees : 0);

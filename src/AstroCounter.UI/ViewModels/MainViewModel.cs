@@ -58,8 +58,14 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     private int _speculativeCount;
     private bool _showBoundingBoxes = false;
     private bool _showLabels = false;
-    private bool _isAutoBrightnessEnabled = false;
-    private string _brightnessStatusText = string.Empty;
+    private bool _isHarmonizeSkyToneEnabled = true;
+    private string _harmonizeSkyStatusText = string.Empty;
+    private MosaicHarmonizationResult? _lastHarmonizationResult;
+    private EquirectangularProjection? _activeEquirectangularProjection;
+    private BitmapSource? _mosaicCompositeBitmap;
+    private int _mosaicTextureRevision;
+    private CancellationTokenSource? _displayRefreshCts;
+    private Task? _activeDisplayRefreshTask;
     private SkiaSharp.SKBitmap? _originalSkBitmap;
     private double _displayBrightness = 0.0;
     private double _displayExposure = 1.0;
@@ -286,16 +292,14 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string L_LightPanelToolTip => IsTurkish
         ? "Sönük yıldızları ve bulutsuları daha net görmek için parlaklık, pozlama ve kontrastı ayarlayın"
         : "Adjust brightness, exposure, and contrast to reveal faint stars and nebulosity";
-    public string L_AutoBalanceLabel => IsTurkish ? "Otomatik Işık & Renk Dengeleme (MTF)" : "Auto Exposure & Color Stretch (MTF)";
-    public string L_AutoBalanceNow => IsTurkish ? "⚡ Şimdi Dengele" : "⚡ Stretch Now";
+    public string L_HarmonizeSkyToneLabel => IsTurkish ? "Mozaik Gökyüzü Tonunu Eşitle" : "Harmonize Mosaic Sky Tone";
+    public string L_HarmonizeSkyToneToolTip => IsTurkish
+        ? "Paneller arasındaki parlak ışık kirliliği, vinyet ve pozlama farklarını otomatik eşitleyerek hem 2D hem 3D gök kubbede pürüzsüz birleşim sağlar (orijinal dosyayı değiştirmez)"
+        : "Automatically equalizes light pollution, vignetting, and exposure differences across panels for seamless 2D & 3D sky blending (non-destructive)";
     public string L_BrightnessLabel => IsTurkish ? "Parlaklık:" : "Brightness:";
     public string L_ExposureLabel => IsTurkish ? "Pozlama (Gama):" : "Exposure (Gamma):";
     public string L_ContrastLabel => IsTurkish ? "Kontrast:" : "Contrast:";
     public string L_ResetAdjustments => IsTurkish ? "↺ Ayarları Sıfırla" : "↺ Reset Defaults";
-
-    public string L_AutoBrightnessToolTip => IsTurkish
-        ? "Çok karanlık veya ışık kirlilikli kareleri astronomik MTF eğrisiyle otomatik dengeler (orijinal dosyayı değiştirmez)"
-        : "Automatically balances dark or light-polluted frames with an astronomical MTF stretch without altering your original files";
 
     public string L_ScanAreaGroup => IsTurkish ? "ODAK ALANI" : "FOCUS AREA";
     public string L_Pan => IsTurkish ? "Gezin" : "Pan";
@@ -451,7 +455,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _statusMessage = IsTurkish
             ? "Analiz etmek için bir veya birden fazla astrofotoğraf sürükleyip bırakın ya da 'Fotoğraf Aç'a tıklayın."
             : "Drag and drop one or more astrophotographs to explore, or click 'Open Photo'.";
-        _brightnessStatusText = IsTurkish ? "Oto Parlaklık" : "Auto Brightness";
+        UpdateHarmonizeStatusText();
         _stellariumStatusText = IsTurkish ? "Canlı Senk: Bağlan" : "Live Sync: Connect";
 
         InitializeEngine();
@@ -552,7 +556,6 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         ToggleFeatheredBlendingCommand = new RelayCommand(() => UseFeatheredBlending = !UseFeatheredBlending);
         CloseLightPanelCommand = new RelayCommand(() => IsLightPanelOpen = false);
         ResetDisplayAdjustmentsCommand = new RelayCommand(ResetDisplayAdjustments);
-        AutoBalanceNowCommand = new RelayCommand(AutoBalanceNow);
         ToggleHelpPanelCommand = new RelayCommand(() => IsHelpPanelOpen = !IsHelpPanelOpen);
         CloseHelpPanelCommand = new RelayCommand(() => IsHelpPanelOpen = false);
         SelectAllPanelsCommand = new RelayCommand(SelectAllPanels, () => MosaicProject.Count > 0);
@@ -584,18 +587,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             StellariumStatusText = IsTurkish ? "Canlı Senk: Bağlı" : "Live Sync: Active";
         }
 
-        if (!IsAutoBrightnessEnabled)
-        {
-            BrightnessStatusText = IsTurkish ? "Oto Parlaklık: Kapalı" : "Auto Brightness: Off";
-        }
-        else if (string.IsNullOrEmpty(SelectedImagePath))
-        {
-            BrightnessStatusText = IsTurkish ? "Oto Parlaklık" : "Auto Brightness";
-        }
-        else if (File.Exists(SelectedImagePath))
-        {
-            LoadBitmapPreview(SelectedImagePath);
-        }
+        UpdateHarmonizeStatusText();
 
         if (string.IsNullOrEmpty(SelectedImagePath))
         {
@@ -605,14 +597,15 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         // Re-populate ComboBox targets so their CommonName updates immediately
-        if (_currentWcs != null && ImageWidth > 0 && ImageHeight > 0)
+        if ((_currentWcs != null || _activeEquirectangularProjection != null) && CanvasWidth > 1 && CanvasHeight > 1)
         {
             var prevNameEn = _selectedCatalogueTarget?.NameEn;
             var refreshed = CataloguePlateSolver.GetTargetsInField(
                 _currentWcs,
-                (int)ImageWidth,
-                (int)ImageHeight,
-                IsPixelInsideValidPhotoSky);
+                (int)Math.Max(1, CanvasWidth),
+                (int)Math.Max(1, CanvasHeight),
+                IsPixelInsideValidPhotoSky,
+                _activeEquirectangularProjection);
             AvailableTargetsInPhoto = Array.Empty<CataloguePlateSolver.AstronomicalTarget>();
             AvailableTargetsInPhoto = refreshed;
             if (prevNameEn != null)
@@ -744,6 +737,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         get
         {
+            if (_activeEquirectangularProjection != null)
+            {
+                return _activeEquirectangularProjection.CanvasWidth;
+            }
             if (MosaicProject.Count > 1)
             {
                 if (CurrentWcs != null) return CurrentWcs.ImageWidth;
@@ -758,6 +755,10 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         get
         {
+            if (_activeEquirectangularProjection != null)
+            {
+                return _activeEquirectangularProjection.CanvasHeight;
+            }
             if (MosaicProject.Count > 1)
             {
                 if (CurrentWcs != null) return CurrentWcs.ImageHeight;
@@ -768,6 +769,41 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
     }
     public bool IsSingleImageActive => MosaicProject.Count <= 1;
+    public bool IsRawFlatSingleImageActive => MosaicProject.Count <= 1 && _activeEquirectangularProjection == null;
+
+    public EquirectangularProjection? ActiveEquirectangularProjection
+    {
+        get => _activeEquirectangularProjection;
+        private set
+        {
+            if (!Equals(_activeEquirectangularProjection, value))
+            {
+                _activeEquirectangularProjection = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanvasWidth));
+                OnPropertyChanged(nameof(CanvasHeight));
+                OnPropertyChanged(nameof(IsRawFlatSingleImageActive));
+                RefreshAvailableTargetsInPhoto();
+            }
+        }
+    }
+
+    public BitmapSource? MosaicCompositeBitmap
+    {
+        get => _mosaicCompositeBitmap;
+        private set => SetProperty(ref _mosaicCompositeBitmap, value);
+    }
+
+    public int MosaicTextureRevision
+    {
+        get => _mosaicTextureRevision;
+        private set => SetProperty(ref _mosaicTextureRevision, value);
+    }
+
+    /// <summary>
+    /// Awaits any in-flight asynchronous harmonization / equirectangular composite rebuild task.
+    /// </summary>
+    public Task WaitForDisplayRefreshAsync() => _activeDisplayRefreshTask ?? Task.CompletedTask;
 
     private async Task AnalyzeAndPlateSolveSequentiallyAsync()
     {
@@ -1348,7 +1384,19 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public bool ExportHarmonizeMosaic
     {
         get => _exportHarmonizeMosaic;
-        set => SetProperty(ref _exportHarmonizeMosaic, value);
+        set
+        {
+            if (SetProperty(ref _exportHarmonizeMosaic, value))
+            {
+                if (_isHarmonizeSkyToneEnabled != value)
+                {
+                    _isHarmonizeSkyToneEnabled = value;
+                    OnPropertyChanged(nameof(IsHarmonizeSkyToneEnabled));
+                    UpdateHarmonizeStatusText();
+                    ScheduleMosaicDisplayRefresh(immediate: true);
+                }
+            }
+        }
     }
 
     public int ExportScale
@@ -1635,6 +1683,11 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     {
         if (panel == null) return;
         panel.PropertyChanged -= OnMosaicPanelPropertyChanged;
+        if (panel.DisplayBaseSkiaBitmap is SKBitmap proxySk)
+        {
+            proxySk.Dispose();
+            panel.DisplayBaseSkiaBitmap = null;
+        }
         MosaicProject.RemovePanel(panel);
         RefreshMosaicProperties();
 
@@ -1656,6 +1709,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
         OnPropertyChanged(nameof(CanvasWidth));
         OnPropertyChanged(nameof(CanvasHeight));
+        OnPropertyChanged(nameof(IsRawFlatSingleImageActive));
         _ = ExecuteAnalyzeAsync();
 
         StatusMessage = IsTurkish ? $"'{panel.Name}' kaldırıldı." : $"'{panel.Name}' removed.";
@@ -1681,6 +1735,12 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                     _suppressConfidenceSync = false;
                 }
                 ApplyLiveFilter();
+                return;
+            }
+
+            if (e.PropertyName == nameof(MosaicPanel.IsVisible) || e.PropertyName == nameof(MosaicPanel.Opacity))
+            {
+                RefreshMosaicProperties();
                 return;
             }
         }
@@ -1872,20 +1932,30 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _displayBrightness = syncPanel.Brightness;
         _displayExposure = syncPanel.Exposure;
         _displayContrast = syncPanel.Contrast;
-        _isAutoBrightnessEnabled = syncPanel.IsAutoBrightnessEnabled;
+        syncPanel.IsAutoBrightnessEnabled = false;
         OnPropertyChanged(nameof(DisplayBrightness));
         OnPropertyChanged(nameof(DisplayExposure));
         OnPropertyChanged(nameof(DisplayContrast));
         OnPropertyChanged(nameof(DisplayBrightnessText));
         OnPropertyChanged(nameof(DisplayExposureText));
         OnPropertyChanged(nameof(DisplayContrastText));
-        OnPropertyChanged(nameof(IsAutoBrightnessEnabled));
+        OnPropertyChanged(nameof(LightTargetScopeText));
         _suppressDisplaySync = false;
 
         if (!string.IsNullOrEmpty(syncPanel.FilePath) && File.Exists(syncPanel.FilePath))
         {
             _selectedImagePath = syncPanel.FilePath;
-            LoadBitmapPreview(syncPanel.FilePath);
+            if (MosaicProject.Count <= 1 || syncPanel.CachedBitmap == null)
+            {
+                LoadBitmapPreview(syncPanel.FilePath);
+            }
+            else if (syncPanel.CachedBitmap is BitmapSource cachedBmp)
+            {
+                ImageWidth = syncPanel.Width;
+                ImageHeight = syncPanel.Height;
+                ImageBitmap = cachedBmp;
+                UpdateFormatAccuracyBadge(syncPanel.FilePath);
+            }
             OnPropertyChanged(nameof(SelectedImagePath));
             OnPropertyChanged(nameof(ImageFileName));
             OnPropertyChanged(nameof(HasLoadedImage));
@@ -1920,10 +1990,15 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         bool multi = (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) != 0 ||
                      MosaicProject.Panels.Any(p => p.IsSelected);
         SelectAndHighlightPanel(panel, openDrawer: false, toggleMultiSelect: multi);
-        if (panel.IsSelected && MosaicProject.Count > 1 && CurrentWcs != null && panel.Wcs != null)
+        if (panel.IsSelected && MosaicProject.Count > 1 && panel.Wcs != null)
         {
             var centerSky = panel.Wcs.CenterCoordinates;
-            if (CurrentWcs.EquatorialToPixel(centerSky, out double px, out double py))
+            if (_activeEquirectangularProjection != null)
+            {
+                _activeEquirectangularProjection.EquatorialToCanvas(centerSky.RaDegrees, centerSky.DecDegrees, out double ex, out double ey);
+                RequestCenterOnPixel?.Invoke(ex, ey);
+            }
+            else if (CurrentWcs != null && CurrentWcs.EquatorialToPixel(centerSky, out double px, out double py))
             {
                 RequestCenterOnPixel?.Invoke(px, py);
             }
@@ -1938,6 +2013,9 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public void RefreshMosaicProperties()
     {
         MosaicProject.UpdatePanelEdgeOverlaps(CurrentWcs);
+        var nextEqProj = EquirectangularProjection.CreateForPanels(MosaicProject.Panels, CurrentWcs, targetMaxDim: 3200);
+        ActiveEquirectangularProjection = nextEqProj;
+        ReprojectDetectionResultForActiveProjection();
         OnPropertyChanged(nameof(MosaicPanels));
         OnPropertyChanged(nameof(MosaicPanelCount));
         OnPropertyChanged(nameof(HasPanels));
@@ -1945,12 +2023,15 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(HasMultipleMosaicPanels));
         OnPropertyChanged(nameof(MosaicPanelCountText));
         OnPropertyChanged(nameof(L_PhotosButtonText));
+        OnPropertyChanged(nameof(LightTargetScopeText));
         OnPropertyChanged(nameof(CanvasWidth));
         OnPropertyChanged(nameof(CanvasHeight));
         OnPropertyChanged(nameof(IsSingleImageActive));
+        OnPropertyChanged(nameof(IsRawFlatSingleImageActive));
         OnPropertyChanged(nameof(HasLoadedImage));
         OnPropertyChanged(nameof(IsPlaceholderVisible));
         RefreshExportPreviewProperties();
+        ScheduleMosaicDisplayRefresh(immediate: true);
     }
 
     private double GetCurrentExportNaturalAspect()
@@ -2032,13 +2113,13 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             IncludeWatermark: true,
             TotalDetectedCount: totalDetectedCount,
             ApplyDisplayAdjustments: true,
-            FallbackAutoBalance: _isAutoBrightnessEnabled,
+            FallbackAutoBalance: false,
             FallbackBrightness: _displayBrightness,
             FallbackExposure: _displayExposure,
             FallbackContrast: _displayContrast,
             IncludeDsoMarkers: _exportIncludeDsoMarkers,
             UseTurkishLanguage: IsTurkish,
-            HarmonizeMosaicExposure: _exportHarmonizeMosaic);
+            HarmonizeMosaicExposure: _isHarmonizeSkyToneEnabled);
     }
 
     public MosaicProject MosaicProject { get; } = new();
@@ -2070,12 +2151,14 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
         panel.PropertyChanged -= OnMosaicPanelPropertyChanged;
         panel.PropertyChanged += OnMosaicPanelPropertyChanged;
+        if (panel.DisplayBaseSkiaBitmap == null && _originalSkBitmap != null &&
+            !string.IsNullOrEmpty(filePath) &&
+            string.Equals(filePath, SelectedImagePath, StringComparison.OrdinalIgnoreCase))
+        {
+            panel.DisplayBaseSkiaBitmap = CreateDownscaledSkiaProxy(_originalSkBitmap, 1600);
+        }
         MosaicProject.AddOrUpdatePanel(panel);
-        OnPropertyChanged(nameof(MosaicPanels));
-        OnPropertyChanged(nameof(MosaicPanelCount));
-        OnPropertyChanged(nameof(HasMultipleMosaicPanels));
-        OnPropertyChanged(nameof(MosaicPanelCountText));
-        OnPropertyChanged(nameof(L_PhotosButtonText));
+        RefreshMosaicProperties();
     }
 
     private void ExecuteAddToMosaic()
@@ -2101,6 +2184,16 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     private void ExecuteClearMosaic()
     {
+        _displayRefreshCts?.Cancel();
+        foreach (var p in MosaicProject.Panels)
+        {
+            p.PropertyChanged -= OnMosaicPanelPropertyChanged;
+            if (p.DisplayBaseSkiaBitmap is SKBitmap proxySk)
+            {
+                proxySk.Dispose();
+                p.DisplayBaseSkiaBitmap = null;
+            }
+        }
         MosaicProject.Clear();
         _lastDetectionResult = null;
         VisibleObjects = Array.Empty<AstrophotographyObject>();
@@ -2111,12 +2204,15 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         SpeculativeCount = 0;
         AnomalyCount = 0;
         ImageBitmap = null;
+        MosaicCompositeBitmap = null;
+        ActiveEquirectangularProjection = null;
         _selectedImagePath = null;
         CurrentWcs = null;
         SolvedCoordinatesText = "-";
         OnPropertyChanged(nameof(SelectedImagePath));
         OnPropertyChanged(nameof(ImageFileName));
         RefreshMosaicProperties();
+        MosaicTextureRevision++;
         RequestInvalidateOverlay?.Invoke();
 
         StatusMessage = IsTurkish ? "Tüm fotoğraflar ve mozaik temizlendi." : "All photos and mosaic cleared.";
@@ -2183,7 +2279,6 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public ICommand ToggleLightPanelCommand { get; }
     public ICommand CloseLightPanelCommand { get; }
     public ICommand ResetDisplayAdjustmentsCommand { get; }
-    public ICommand AutoBalanceNowCommand { get; }
 
     private bool _isConfidencePanelOpen;
     public bool IsConfidencePanelOpen
@@ -2274,22 +2369,80 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     public string DisplayExposureText => $"{_displayExposure:F2}x";
     public string DisplayContrastText => $"{_displayContrast:F2}x";
 
-    public bool IsAutoBrightnessEnabled
+    public bool IsHarmonizeSkyToneEnabled
     {
-        get => _isAutoBrightnessEnabled;
+        get => _isHarmonizeSkyToneEnabled;
         set
         {
-            if (SetProperty(ref _isAutoBrightnessEnabled, value))
+            if (SetProperty(ref _isHarmonizeSkyToneEnabled, value))
             {
-                ApplyDisplayAdjustments();
+                if (_exportHarmonizeMosaic != value)
+                {
+                    _exportHarmonizeMosaic = value;
+                    OnPropertyChanged(nameof(ExportHarmonizeMosaic));
+                }
+                UpdateHarmonizeStatusText();
+                ScheduleMosaicDisplayRefresh(immediate: true);
             }
         }
     }
 
-    public string BrightnessStatusText
+    public string HarmonizeSkyStatusText
     {
-        get => _brightnessStatusText;
-        private set => SetProperty(ref _brightnessStatusText, value);
+        get => string.IsNullOrEmpty(_harmonizeSkyStatusText)
+            ? (IsTurkish
+                ? (_isHarmonizeSkyToneEnabled ? "Otomatik Gökyüzü Tonu Eşitleme: Aktif" : "Eşitleme Kapalı (Ham Paneller)")
+                : (_isHarmonizeSkyToneEnabled ? "Auto Sky-Tone Harmonize: Active" : "Harmonization Off (Raw Panels)"))
+            : _harmonizeSkyStatusText;
+        private set => SetProperty(ref _harmonizeSkyStatusText, value);
+    }
+
+    public string LightTargetScopeText
+    {
+        get
+        {
+            var selected = MosaicProject.Panels.Where(p => p.IsSelected).ToList();
+            if (selected.Count == 1)
+            {
+                return IsTurkish
+                    ? $"🎯 Hedef: {selected[0].Name} (Seçili Panel)"
+                    : $"🎯 Target: {selected[0].Name} (Selected Panel)";
+            }
+            if (selected.Count > 1)
+            {
+                return IsTurkish
+                    ? $"🎯 Hedef: {selected.Count} Seçili Panel"
+                    : $"🎯 Target: {selected.Count} Selected Panels";
+            }
+            int count = Math.Max(1, MosaicProject.Count);
+            return IsTurkish
+                ? $"🌌 Hedef: Tüm Paneller ({count})"
+                : $"🌌 Target: All Panels ({count})";
+        }
+    }
+
+    private void UpdateHarmonizeStatusText(MosaicHarmonizationResult? lastResult = null)
+    {
+        if (!_isHarmonizeSkyToneEnabled)
+        {
+            HarmonizeSkyStatusText = IsTurkish ? "Eşitleme Kapalı (Ham Paneller)" : "Harmonization Off (Raw Panels)";
+            return;
+        }
+
+        var effResult = lastResult ?? _lastHarmonizationResult;
+        if (effResult is { } r && r.PanelsAnalyzed >= 2)
+        {
+            int adjusted = Math.Max(r.PedestalShiftedPanels, r.FlattenedPanels);
+            HarmonizeSkyStatusText = IsTurkish
+                ? $"Aktif ({r.PanelsAnalyzed} panel • {adjusted} ton eşitlendi)"
+                : $"Active ({r.PanelsAnalyzed} panels • {adjusted} equalized)";
+        }
+        else
+        {
+            HarmonizeSkyStatusText = IsTurkish
+                ? "Otomatik Gökyüzü Tonu Eşitleme: Aktif"
+                : "Auto Sky-Tone Harmonize: Active";
+        }
     }
 
     private void ResetDisplayAdjustments()
@@ -2297,22 +2450,13 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _displayBrightness = 0.0;
         _displayExposure = 1.0;
         _displayContrast = 1.0;
-        _isAutoBrightnessEnabled = false;
         OnPropertyChanged(nameof(DisplayBrightness));
         OnPropertyChanged(nameof(DisplayExposure));
         OnPropertyChanged(nameof(DisplayContrast));
-        OnPropertyChanged(nameof(IsAutoBrightnessEnabled));
         OnPropertyChanged(nameof(DisplayBrightnessText));
         OnPropertyChanged(nameof(DisplayExposureText));
         OnPropertyChanged(nameof(DisplayContrastText));
         ApplyDisplayAdjustments();
-    }
-
-    private void AutoBalanceNow()
-    {
-        IsAutoBrightnessEnabled = true;
-        ApplyDisplayAdjustments();
-        StatusMessage = IsTurkish ? "Görsel için otomatik ışık ve renk dengelendi." : "Image exposure and color automatically balanced.";
     }
 
     private void ApplyDisplayAdjustments()
@@ -2331,99 +2475,347 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                     tp.Brightness = _displayBrightness;
                     tp.Exposure = _displayExposure;
                     tp.Contrast = _displayContrast;
-                    tp.IsAutoBrightnessEnabled = _isAutoBrightnessEnabled;
-
-                    SkiaSharp.SKBitmap? panelSkBmp = tp.CachedSkiaBitmap as SkiaSharp.SKBitmap;
-                    if (panelSkBmp == null && !string.IsNullOrEmpty(tp.FilePath) && File.Exists(tp.FilePath))
-                    {
-                        panelSkBmp = ImagePreprocessor.LoadImage(tp.FilePath);
-                        tp.CachedSkiaBitmap = panelSkBmp;
-                    }
-
-                    if (panelSkBmp != null)
-                    {
-                        SkiaSharp.SKBitmap panelBase;
-                        if (_isAutoBrightnessEnabled)
-                        {
-                            panelBase = ImagePreprocessor.AutoBalanceBrightness(panelSkBmp, out var pInfo);
-                            BrightnessStatusText = pInfo.WasAdjusted ? pInfo.SummaryText : (IsTurkish ? "Oto Parlaklık: Optimal" : "Auto Brightness: Optimal");
-                        }
-                        else
-                        {
-                            panelBase = panelSkBmp.Copy();
-                            BrightnessStatusText = IsTurkish ? "Oto Parlaklık: Kapalı" : "Auto Brightness: Off";
-                        }
-
-                        using (panelBase)
-                        {
-                            using var panelAdjusted = ImagePreprocessor.ApplyDisplayToneAdjustment(
-                                panelBase, _displayBrightness, _displayExposure, _displayContrast);
-                            var panelWpfBmp = ConvertToWpfBitmap(panelAdjusted);
-                            tp.CachedBitmap = panelWpfBmp;
-                            if (!string.IsNullOrEmpty(tp.FilePath))
-                            {
-                                DetectionOverlay.CachePanelBitmap(tp.FilePath, panelWpfBmp);
-                            }
-                            if (!string.IsNullOrEmpty(SelectedImagePath) &&
-                                !string.IsNullOrEmpty(tp.FilePath) &&
-                                string.Equals(tp.FilePath, SelectedImagePath, StringComparison.OrdinalIgnoreCase))
-                            {
-                                ImageWidth = panelWpfBmp.PixelWidth;
-                                ImageHeight = panelWpfBmp.PixelHeight;
-                                ImageBitmap = panelWpfBmp;
-                            }
-                        }
-                    }
+                    tp.IsAutoBrightnessEnabled = false;
                 }
 
-                OnPropertyChanged(nameof(MosaicPanels));
-                RequestInvalidateOverlay?.Invoke();
+                ScheduleMosaicDisplayRefresh(immediate: false);
                 return;
             }
 
             if (_originalSkBitmap == null) return;
 
-            SkiaSharp.SKBitmap baseBmp;
-            if (IsAutoBrightnessEnabled)
+            using var adjusted = ImagePreprocessor.ApplyDisplayToneAdjustment(
+                _originalSkBitmap, _displayBrightness, _displayExposure, _displayContrast);
+
+            var wpfBitmap = ConvertToWpfBitmap(adjusted);
+            ImageWidth = wpfBitmap.PixelWidth;
+            ImageHeight = wpfBitmap.PixelHeight;
+            ImageBitmap = wpfBitmap;
+
+            var activePanel = GetActiveMosaicPanel();
+            if (activePanel != null)
             {
-                baseBmp = ImagePreprocessor.AutoBalanceBrightness(_originalSkBitmap, out var bInfo);
-                BrightnessStatusText = bInfo.WasAdjusted ? bInfo.SummaryText : (IsTurkish ? "Oto Parlaklık: Optimal" : "Auto Brightness: Optimal");
+                activePanel.CachedBitmap = wpfBitmap;
             }
-            else
+
+            if (!string.IsNullOrEmpty(SelectedImagePath))
             {
-                baseBmp = _originalSkBitmap.Copy();
-                BrightnessStatusText = IsTurkish ? "Oto Parlaklık: Kapalı" : "Auto Brightness: Off";
+                DetectionOverlay.CachePanelBitmap(SelectedImagePath, wpfBitmap);
             }
 
-            using (baseBmp)
+            MosaicTextureRevision++;
+            RequestInvalidateOverlay?.Invoke();
+        }
+        catch
+        {
+            // Ignore transient slider drag errors
+        }
+    }
+
+    private Task RunOnUiThreadAsync(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher ?? _stellariumPollTimer.Dispatcher;
+        if (dispatcher.CheckAccess())
+        {
+            action();
+            return Task.CompletedTask;
+        }
+        return dispatcher.InvokeAsync(action).Task;
+    }
+
+    private void ScheduleMosaicDisplayRefresh(bool immediate)
+    {
+        _displayRefreshCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _displayRefreshCts = cts;
+        _activeDisplayRefreshTask = RefreshMosaicDisplayAndProjectionAsync(immediate, cts.Token);
+    }
+
+    private async Task RefreshMosaicDisplayAndProjectionAsync(bool immediate, CancellationToken ct)
+    {
+        try
+        {
+            if (!immediate)
             {
-                using var adjusted = ImagePreprocessor.ApplyDisplayToneAdjustment(
-                    baseBmp, _displayBrightness, _displayExposure, _displayContrast);
+                await Task.Delay(45, ct);
+            }
+            if (ct.IsCancellationRequested) return;
 
-                var wpfBitmap = ConvertToWpfBitmap(adjusted);
-                ImageWidth = wpfBitmap.PixelWidth;
-                ImageHeight = wpfBitmap.PixelHeight;
-                ImageBitmap = wpfBitmap;
+            var visiblePanels = MosaicProject.Panels.Where(p => p.IsVisible).ToList();
+            var eqProj = EquirectangularProjection.CreateForPanels(MosaicProject.Panels, CurrentWcs, targetMaxDim: 3200);
+            bool harmonize = _isHarmonizeSkyToneEnabled;
+            bool useFeather = MosaicProject.UseFeatheredBlending;
 
-                var activePanel = GetActiveMosaicPanel();
-                if (activePanel != null)
+            if (visiblePanels.Count == 0)
+            {
+                await RunOnUiThreadAsync(() =>
                 {
-                    activePanel.CachedBitmap = wpfBitmap;
+                    if (ct.IsCancellationRequested) return;
+                    _lastHarmonizationResult = null;
+                    ActiveEquirectangularProjection = eqProj;
+                    MosaicCompositeBitmap = null;
+                    UpdateHarmonizeStatusText();
+                    MosaicTextureRevision++;
+                    RequestInvalidateOverlay?.Invoke();
+                });
+                return;
+            }
+
+            var renderPanels = eqProj != null && visiblePanels.Any(p => p.IsSolved && p.Wcs != null)
+                ? visiblePanels.Where(p => p.IsSolved && p.Wcs != null).ToList()
+                : visiblePanels;
+
+            var panelSettings = renderPanels
+                .Select(p => (
+                    Panel: p,
+                    Brightness: p.Brightness,
+                    Exposure: p.Exposure,
+                    Contrast: p.Contrast))
+                .ToList();
+
+            var result = await Task.Run(() =>
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var workingBmps = new SKBitmap?[panelSettings.Count];
+                var pairList = new List<(MosaicPanel Panel, SKBitmap Bmp)>(panelSettings.Count);
+
+                try
+                {
+                    // 1. Obtain or cache lightweight <=1600px BGRA proxies in parallel (zero UI-thread disk stall)
+                    Parallel.For(0, panelSettings.Count, new ParallelOptions { CancellationToken = ct }, i =>
+                    {
+                        var p = panelSettings[i].Panel;
+                        SKBitmap? baseProxy = p.DisplayBaseSkiaBitmap as SKBitmap;
+                        if (baseProxy == null)
+                        {
+                            SKBitmap? full = p.CachedSkiaBitmap as SKBitmap;
+                            bool loadedFromDisk = false;
+                            if (full == null && !string.IsNullOrEmpty(p.FilePath) && File.Exists(p.FilePath))
+                            {
+                                full = ImagePreprocessor.LoadImage(p.FilePath);
+                                loadedFromDisk = true;
+                            }
+                            if (full != null)
+                            {
+                                baseProxy = CreateDownscaledSkiaProxy(full, 1600);
+                                p.DisplayBaseSkiaBitmap = baseProxy;
+                                if (loadedFromDisk) full.Dispose();
+                            }
+                        }
+
+                        if (baseProxy != null)
+                        {
+                            workingBmps[i] = baseProxy.ColorType == SKColorType.Bgra8888
+                                ? baseProxy.Copy()
+                                : baseProxy.Copy(SKColorType.Bgra8888);
+                        }
+                    });
+
+                    ct.ThrowIfCancellationRequested();
+
+                    // 2. Shared mosaic sky-tone harmonization FIRST (identical to Export pipeline)
+                    MosaicHarmonizationResult? harmRes = null;
+                    var validIndices = new List<int>(panelSettings.Count);
+                    var validBmps = new List<SKBitmap>(panelSettings.Count);
+                    for (int i = 0; i < workingBmps.Length; i++)
+                    {
+                        if (workingBmps[i] is { } wb)
+                        {
+                            validIndices.Add(i);
+                            validBmps.Add(wb);
+                        }
+                    }
+
+                    if (harmonize && validBmps.Count >= 2)
+                    {
+                        harmRes = MosaicSkyHarmonizer.HarmonizeBitmaps(validBmps);
+                        for (int k = 0; k < validIndices.Count; k++)
+                        {
+                            workingBmps[validIndices[k]] = validBmps[k];
+                        }
+                    }
+
+                    ct.ThrowIfCancellationRequested();
+
+                    // 3. Apply per-panel manual sliders AFTER base sky harmonization, then build frozen WPF bitmaps
+                    var perPanelWpf = new BitmapSource?[panelSettings.Count];
+                    Parallel.For(0, panelSettings.Count, new ParallelOptions { CancellationToken = ct }, i =>
+                    {
+                        var wb = workingBmps[i];
+                        if (wb == null) return;
+                        var ps = panelSettings[i];
+                        if (Math.Abs(ps.Brightness) >= 0.5 ||
+                            Math.Abs(ps.Exposure - 1.0) >= 0.01 ||
+                            Math.Abs(ps.Contrast - 1.0) >= 0.01)
+                        {
+                            var toned = ImagePreprocessor.ApplyDisplayToneAdjustment(wb, ps.Brightness, ps.Exposure, ps.Contrast);
+                            wb.Dispose();
+                            wb = toned.ColorType == SKColorType.Bgra8888 ? toned : EnsureBgraAndDispose(toned);
+                            workingBmps[i] = wb;
+                        }
+                        perPanelWpf[i] = ConvertToWpfBitmap(wb);
+                    });
+
+                    ct.ThrowIfCancellationRequested();
+
+                    // 4. Render cropped Plate Carree equirectangular composite for 60 FPS 2D zoom/pan
+                    BitmapSource? compositeWpf = null;
+                    if (eqProj != null)
+                    {
+                        for (int i = 0; i < panelSettings.Count; i++)
+                        {
+                            if (workingBmps[i] is { } wb)
+                            {
+                                pairList.Add((panelSettings[i].Panel, wb));
+                            }
+                        }
+
+                        if (pairList.Count > 0)
+                        {
+                            using var compSk = ResultExporter.RenderEquirectangularCompositeBitmap(
+                                eqProj,
+                                pairList,
+                                useFeatheredBlending: useFeather,
+                                harmonizeSkyTone: false,
+                                transparentBackground: true,
+                                ct);
+                            compositeWpf = ConvertToWpfBitmap(compSk);
+                        }
+                    }
+
+                    return (HarmResult: harmRes, PerPanelWpf: perPanelWpf, CompositeWpf: compositeWpf);
+                }
+                finally
+                {
+                    for (int i = 0; i < workingBmps.Length; i++)
+                    {
+                        workingBmps[i]?.Dispose();
+                    }
+                }
+            }, ct);
+
+            if (ct.IsCancellationRequested) return;
+
+            await RunOnUiThreadAsync(() =>
+            {
+                if (ct.IsCancellationRequested) return;
+
+                for (int i = 0; i < panelSettings.Count; i++)
+                {
+                    var p = panelSettings[i].Panel;
+                    var wpfBmp = result.PerPanelWpf[i];
+                    if (wpfBmp == null) continue;
+
+                    p.CachedBitmap = wpfBmp;
+                    if (!string.IsNullOrEmpty(p.FilePath))
+                    {
+                        DetectionOverlay.CachePanelBitmap(p.FilePath, wpfBmp);
+                    }
+
+                    if (eqProj == null &&
+                        !string.IsNullOrEmpty(SelectedImagePath) &&
+                        !string.IsNullOrEmpty(p.FilePath) &&
+                        string.Equals(p.FilePath, SelectedImagePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        ImageWidth = wpfBmp.PixelWidth;
+                        ImageHeight = wpfBmp.PixelHeight;
+                        ImageBitmap = wpfBmp;
+                    }
                 }
 
-                if (!string.IsNullOrEmpty(SelectedImagePath))
-                {
-                    DetectionOverlay.CachePanelBitmap(SelectedImagePath, wpfBitmap);
-                }
-
+                ActiveEquirectangularProjection = eqProj;
+                MosaicCompositeBitmap = result.CompositeWpf;
+                ReprojectDetectionResultForActiveProjection();
+                _lastHarmonizationResult = result.HarmResult;
+                UpdateHarmonizeStatusText(result.HarmResult);
                 OnPropertyChanged(nameof(MosaicPanels));
+                MosaicTextureRevision++;
                 RequestInvalidateOverlay?.Invoke();
-            }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by newer panel or slider update
         }
         catch (Exception ex)
         {
-            StatusMessage = IsTurkish ? $"Görsel işleme hatası: {ex.Message}" : $"Display adjustment error: {ex.Message}";
+            // Preserve previous displayed textures on unexpected IO error
+            System.Diagnostics.Debug.WriteLine($"RefreshMosaicDisplayAndProjectionAsync error: {ex}");
         }
+    }
+
+    private void ReprojectDetectionResultForActiveProjection()
+    {
+        if (_lastDetectionResult == null || _lastDetectionResult.AllObjects.Count == 0) return;
+        var proj = _activeEquirectangularProjection;
+        if (proj == null) return;
+
+        int cw = Math.Max(1, proj.CanvasWidth);
+        int ch = Math.Max(1, proj.CanvasHeight);
+
+        var mapped = new List<AstrophotographyObject>(_lastDetectionResult.AllObjects.Count);
+        bool anyChanged = _lastDetectionResult.ImageWidth != cw || _lastDetectionResult.ImageHeight != ch;
+        foreach (var o in _lastDetectionResult.AllObjects)
+        {
+            if (o.RaDegrees.HasValue && o.DecDegrees.HasValue)
+            {
+                proj.EquatorialToCanvas(o.RaDegrees.Value, o.DecDegrees.Value, out double cx, out double cy);
+                float w = Math.Clamp(o.Box.Width, 4.0f, 32.0f);
+                float h = Math.Clamp(o.Box.Height, 4.0f, 32.0f);
+                var nb = new BoundingBox((float)(cx - (w * 0.5)), (float)(cy - (h * 0.5)), w, h);
+                if (!anyChanged && (Math.Abs(nb.X - o.Box.X) > 0.3f || Math.Abs(nb.Y - o.Box.Y) > 0.3f))
+                {
+                    anyChanged = true;
+                }
+                mapped.Add(o with { Box = nb });
+            }
+            else
+            {
+                mapped.Add(o);
+            }
+        }
+
+        if (!anyChanged) return;
+
+        _lastDetectionResult = new DetectionResult(
+            mapped,
+            cw,
+            ch,
+            _lastDetectionResult.TileCount,
+            _lastDetectionResult.ElapsedTime,
+            _lastDetectionResult.ExecutionProvider,
+            _lastDetectionResult.RecommendedConfidence);
+        ApplyLiveFilter();
+    }
+
+    private static SKBitmap EnsureBgraAndDispose(SKBitmap src)
+    {
+        var copy = src.Copy(SKColorType.Bgra8888);
+        src.Dispose();
+        return copy;
+    }
+
+    private static SKBitmap CreateDownscaledSkiaProxy(SKBitmap skBitmap, int maxDimension = 1600)
+    {
+        if (skBitmap.Width <= maxDimension && skBitmap.Height <= maxDimension)
+        {
+            return skBitmap.ColorType == SKColorType.Bgra8888
+                ? skBitmap.Copy()
+                : skBitmap.Copy(SKColorType.Bgra8888);
+        }
+
+        float scale = (float)maxDimension / Math.Max(skBitmap.Width, skBitmap.Height);
+        int newW = Math.Max(64, (int)Math.Round(skBitmap.Width * scale));
+        int newH = Math.Max(64, (int)Math.Round(skBitmap.Height * scale));
+        using var resized = skBitmap.Resize(
+            new SKImageInfo(newW, newH, SKColorType.Bgra8888, SKAlphaType.Unpremul),
+            SKSamplingOptions.Default);
+        if (resized != null)
+        {
+            return resized.Copy(SKColorType.Bgra8888);
+        }
+        return skBitmap.Copy(SKColorType.Bgra8888);
     }
 
     private void UpdateFormatAccuracyBadge(string filePath)
@@ -2500,12 +2892,16 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             ? skBitmap.Copy()
             : skBitmap.Copy(SKColorType.Bgra8888);
 
+        var pixelFormat = converted.AlphaType == SKAlphaType.Premul
+            ? System.Windows.Media.PixelFormats.Pbgra32
+            : System.Windows.Media.PixelFormats.Bgra32;
+
         var wb = new WriteableBitmap(
             converted.Width,
             converted.Height,
             96,
             96,
-            System.Windows.Media.PixelFormats.Bgra32,
+            pixelFormat,
             null);
 
         wb.WritePixels(
@@ -2610,6 +3006,12 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanvasHeight));
 
                 var mosaicConfig = new TilingConfig(DefaultConfidenceThreshold: _confidenceThreshold, MinConfidence: Math.Max(0.05f, _confidenceThreshold * 0.35f));
+                var eqProj = EquirectangularProjection.CreateForPanels(MosaicProject.Panels, masterWcs ?? _currentWcs, targetMaxDim: 3200);
+                if (eqProj != null)
+                {
+                    ActiveEquirectangularProjection = eqProj;
+                }
+
                 var mosaicResult = await MosaicStarCounter.CountMosaicStarsAsync(
                     MosaicProject,
                     mosaicConfig,
@@ -2617,6 +3019,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                     progress: mosaicProgress,
                     targetWcs: masterWcs ?? _currentWcs,
                     engine: _engine,
+                    equirectangularProjection: eqProj ?? _activeEquirectangularProjection,
                     cancellationToken: token);
 
                 if (token.IsCancellationRequested) return;
@@ -2738,6 +3141,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 ? (IsTurkish ? "Fotometri - Tam Kare" : "Photometry - Full Frame")
                 : (IsTurkish ? $"{result.TileCount} Dilim" : $"{result.TileCount} Tiles");
 
+            ReprojectDetectionResultForActiveProjection();
             ApplyLiveFilter();
 
             StatusMessage = IsTurkish
@@ -2865,7 +3269,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             int maxDecoders = Math.Clamp(Environment.ProcessorCount / 2, 1, 3);
             var decodedItems = await Task.Run(() =>
             {
-                var items = new (string Path, int Width, int Height, BitmapSource? WpfPreview, SKBitmap? KeptSkBmp, IReadOnlyList<AstrophotographyObject>? Stars, string? Error)[valid.Count];
+                var items = new (string Path, int Width, int Height, BitmapSource? WpfPreview, SKBitmap? KeptSkBmp, SKBitmap? ProxySkBmp, IReadOnlyList<AstrophotographyObject>? Stars, string? Error)[valid.Count];
                 Parallel.For(0, valid.Count, new ParallelOptions { MaxDegreeOfParallelism = maxDecoders }, idx =>
                 {
                     string p = valid[idx];
@@ -2875,11 +3279,12 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                         if (sk == null || sk.Width <= 0 || sk.Height <= 0)
                         {
                             sk?.Dispose();
-                            items[idx] = (p, 0, 0, null, null, null, "Boş veya geçersiz görsel");
+                            items[idx] = (p, 0, 0, null, null, null, null, "Boş veya geçersiz görsel");
                             return;
                         }
 
-                        var wpfPreview = ConvertToPreviewWpfBitmap(sk, 2048);
+                        var proxySk = CreateDownscaledSkiaProxy(sk, 1600);
+                        var wpfPreview = ConvertToWpfBitmap(proxySk);
                         var stars = PhotometricStarFinder.DetectStarsFast(
                             sk,
                             new TilingConfig(DefaultConfidenceThreshold: 0.20f, MinConfidence: 0.05f));
@@ -2887,19 +3292,19 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                         // Keep full SKBitmap only for single-image mode or very small sets (<= 2) to prevent OOM on new devices
                         if (!isBatchMode || valid.Count <= 2)
                         {
-                            items[idx] = (p, sk.Width, sk.Height, wpfPreview, sk, stars, null);
+                            items[idx] = (p, sk.Width, sk.Height, wpfPreview, sk, proxySk, stars, null);
                         }
                         else
                         {
                             int w = sk.Width;
                             int h = sk.Height;
                             sk.Dispose();
-                            items[idx] = (p, w, h, wpfPreview, null, stars, null);
+                            items[idx] = (p, w, h, wpfPreview, null, proxySk, stars, null);
                         }
                     }
                     catch (Exception ex)
                     {
-                        items[idx] = (p, 0, 0, null, null, null, ex.Message);
+                        items[idx] = (p, 0, 0, null, null, null, null, ex.Message);
                     }
                 });
                 return items;
@@ -2979,6 +3384,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 {
                     CachedBitmap = item.WpfPreview,
                     CachedSkiaBitmap = item.KeptSkBmp,
+                    DisplayBaseSkiaBitmap = item.ProxySkBmp,
                     DetectedStars = item.Stars
                 };
 
@@ -3408,7 +3814,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 int w = skBmp.Width;
                 int h = skBmp.Height;
 
-                var solvedNeighbor = MosaicProject.Panels.FirstOrDefault(other => other.TargetName != null && other.Wcs != null);
+                var solvedNeighbor = MosaicProject.Panels.FirstOrDefault(other => other.IsSolved && other.Wcs != null);
                 CelestialCoordinates? hint = solvedNeighbor?.Wcs?.CenterCoordinates;
 
                 WcsMatrix? solvedWcs = null;
@@ -3901,6 +4307,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(CanvasWidth));
                 OnPropertyChanged(nameof(CanvasHeight));
                 OnPropertyChanged(nameof(IsSingleImageActive));
+                OnPropertyChanged(nameof(IsRawFlatSingleImageActive));
                 RefreshAvailableTargetsInPhoto();
             }
         }
@@ -3919,7 +4326,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         int refW = (int)Math.Max(1, CanvasWidth);
         int refH = (int)Math.Max(1, CanvasHeight);
 
-        if (_currentWcs == null || refW <= 1 || refH <= 1)
+        if ((_currentWcs == null && _activeEquirectangularProjection == null) || refW <= 1 || refH <= 1)
         {
             AvailableTargetsInPhoto = Array.Empty<CataloguePlateSolver.AstronomicalTarget>();
             return;
@@ -3929,12 +4336,19 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
             _currentWcs,
             refW,
             refH,
-            IsPixelInsideValidPhotoSky);
+            IsPixelInsideValidPhotoSky,
+            _activeEquirectangularProjection);
     }
 
     public void OnMouseMoveOnImage(double pixelX, double pixelY)
     {
-        if (_currentWcs != null)
+        if (_activeEquirectangularProjection != null)
+        {
+            _activeEquirectangularProjection.CanvasToEquatorial(pixelX, pixelY, out double raDeg, out double decDeg);
+            var coords = new CelestialCoordinates(raDeg, decDeg);
+            CursorCelestialText = $"RA: {coords.FormatRa()} | Dec: {coords.FormatDec()}";
+        }
+        else if (_currentWcs != null)
         {
             var coords = _currentWcs.PixelToEquatorial(pixelX, pixelY);
             CursorCelestialText = $"RA: {coords.FormatRa()} | Dec: {coords.FormatDec()}";
@@ -3988,7 +4402,7 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         }
 
         if (!notifyStellarium) return;
-        if (!_isStellariumConnected || !_isStellariumSyncEnabled || _currentWcs == null) return;
+        if (!_isStellariumConnected || !_isStellariumSyncEnabled || (_currentWcs == null && _activeEquirectangularProjection == null)) return;
         if (_isSyncingFromStellarium) return;
 
         long now = Environment.TickCount64;
@@ -3996,14 +4410,26 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
         _lastSyncTicks = now;
 
         var wcs = _currentWcs;
+        var eqProj = _activeEquirectangularProjection;
         double refHeight = visiblePixelsHeight > 10 ? visiblePixelsHeight : CanvasHeight;
 
         _ = Task.Run(async () =>
         {
             try
             {
-                var coord = wcs.PixelToEquatorial(centerPixelX, centerPixelY);
-                double fov = Math.Clamp((refHeight * wcs.PixelScaleArcsec) / 3600.0, 0.05, 130.0);
+                CelestialCoordinates coord;
+                double fov;
+                if (eqProj != null)
+                {
+                    eqProj.CanvasToEquatorial(centerPixelX, centerPixelY, out double raDeg, out double decDeg);
+                    coord = new CelestialCoordinates(raDeg, decDeg);
+                    fov = Math.Clamp(refHeight / Math.Max(0.1, eqProj.PixelsPerDegreeY), 0.05, 130.0);
+                }
+                else
+                {
+                    coord = wcs!.PixelToEquatorial(centerPixelX, centerPixelY);
+                    fov = Math.Clamp((refHeight * wcs.PixelScaleArcsec) / 3600.0, 0.05, 130.0);
+                }
 
                 _lastPolledStellariumCoords = coord;
                 _lastPolledStellariumFov = fov;
@@ -4019,30 +4445,44 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
 
     public async void SetTarget(CataloguePlateSolver.AstronomicalTarget target)
     {
-        if (_currentWcs == null || CanvasWidth <= 1 || CanvasHeight <= 1)
+        if ((_currentWcs == null && _activeEquirectangularProjection == null) || CanvasWidth <= 1 || CanvasHeight <= 1)
         {
             return;
         }
 
-        if (!_currentWcs.EquatorialToPixel(target.Coordinates, out double px, out double py))
+        double px, py;
+        double fovSpanDeg;
+        double targetVisiblePixelsH;
+        if (_activeEquirectangularProjection != null)
         {
-            return;
+            if (!_activeEquirectangularProjection.EquatorialToCanvas(target.Coordinates.RaDegrees, target.Coordinates.DecDegrees, out px, out py))
+            {
+                return;
+            }
+            fovSpanDeg = Math.Max(0.5, _activeEquirectangularProjection.DecSpanDeg);
+            double minFov = Math.Min(0.15, fovSpanDeg * 0.2);
+            double maxFov = Math.Max(0.1, fovSpanDeg * 0.75);
+            double clampedFov = Math.Clamp(Math.Min(target.TypicalFovDegrees * 2.5, fovSpanDeg * 0.5), minFov, maxFov);
+            targetVisiblePixelsH = Math.Clamp(clampedFov * _activeEquirectangularProjection.PixelsPerDegreeY, 80.0, CanvasHeight);
+            fovSpanDeg = clampedFov;
         }
+        else
+        {
+            if (!_currentWcs!.EquatorialToPixel(target.Coordinates, out px, out py))
+            {
+                return;
+            }
+            double maxFov = Math.Max(0.1, _currentWcs.FovHeightDegrees * 0.75);
+            double minFov = Math.Min(0.15, maxFov * 0.2);
+            fovSpanDeg = Math.Clamp(Math.Min(target.TypicalFovDegrees * 2.5, _currentWcs.FovHeightDegrees * 0.5), minFov, maxFov);
+            targetVisiblePixelsH = Math.Clamp((fovSpanDeg * 3600.0) / Math.Max(0.05, _currentWcs.PixelScaleArcsec), 80.0, CanvasHeight);
+        }
+
+        double targetFovDeg = fovSpanDeg;
 
         // Highlight and jump directly to (px, py) on the photo / mosaic canvas
         TargetMarkerPixel = new Point(px, py);
         TargetMarkerLabel = target.CommonName;
-
-        double maxFov = Math.Max(0.1, _currentWcs.FovHeightDegrees * 0.75);
-        double minFov = Math.Min(0.15, maxFov * 0.2);
-        double targetFovDeg = Math.Clamp(
-            Math.Min(target.TypicalFovDegrees * 2.5, _currentWcs.FovHeightDegrees * 0.5),
-            minFov,
-            maxFov);
-        double targetVisiblePixelsH = Math.Clamp(
-            (targetFovDeg * 3600.0) / Math.Max(0.05, _currentWcs.PixelScaleArcsec),
-            80.0,
-            CanvasHeight);
 
         _isSyncingFromStellarium = true;
         RequestCenterOnPixel?.Invoke(px, py);
@@ -4079,6 +4519,22 @@ public class MainViewModel : INotifyPropertyChanged, IDisposable
     /// </summary>
     private bool IsPixelInsideValidPhotoSky(double px, double py)
     {
+        if (_activeEquirectangularProjection != null && MosaicProject.Count > 0)
+        {
+            _activeEquirectangularProjection.CanvasToEquatorial(px, py, out double raDeg, out double decDeg);
+            var sky = new CelestialCoordinates(raDeg, decDeg);
+            foreach (var p in MosaicProject.Panels)
+            {
+                if (!p.IsVisible || !p.IsSolved || p.Wcs == null) continue;
+                if (p.Wcs.EquatorialToPixel(sky, out double lx, out double ly) &&
+                    lx >= 0 && lx <= p.Width && ly >= 0 && ly <= p.Height)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         if (_imageBitmap == null) return true;
         try
         {

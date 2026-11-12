@@ -883,8 +883,16 @@ public static class ResultExporter
 
             using var panoBmp = new SKBitmap(panoW, panoH, SKColorType.Bgra8888, SKAlphaType.Premul);
             bool useFeather = mosaicProject?.UseFeatheredBlending ?? true;
+            var fullProjection = new EquirectangularProjection(centerRaDeg, 360.0, -90.0, 90.0, panoW, panoH);
 
-            RenderEquirectangularPanelsParallel(panoBmp, activePanels, centerRaDeg, useFeather, progress, cancellationToken);
+            RenderEquirectangularPanelsParallel(
+                panoBmp,
+                activePanels,
+                fullProjection,
+                useFeather,
+                transparentBackground: false,
+                progress,
+                cancellationToken);
 
             ReportProgress(progress, 78, "overlays", config.UseTurkishLanguage ? "Katalog yıldızları ve katmanlar çiziliyor..." : "Drawing sky catalog & overlays...");
             using var canvas = new SKCanvas(panoBmp);
@@ -949,11 +957,116 @@ public static class ResultExporter
         }
     }
 
+    /// <summary>
+    /// Renders solved mosaic panels onto a cropped or full equirectangular cylindrical sky projection.
+    /// Used by both the live 2D equirectangular viewer (with <paramref name="transparentBackground"/> = true)
+    /// and 360° panorama export pipelines. Caller retains ownership of input bitmaps.
+    /// </summary>
+    public static SKBitmap RenderEquirectangularCompositeBitmap(
+        EquirectangularProjection projection,
+        IReadOnlyList<(MosaicPanel Panel, SKBitmap Bitmap)> panels,
+        bool useFeatheredBlending,
+        bool harmonizeSkyTone = false,
+        bool transparentBackground = true,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(projection);
+        ArgumentNullException.ThrowIfNull(panels);
+
+        var output = new SKBitmap(projection.CanvasWidth, projection.CanvasHeight, SKColorType.Bgra8888, SKAlphaType.Premul);
+        var ownedCopies = new List<SKBitmap>();
+        var prepared = new List<PreparedPanel>(panels.Count);
+
+        try
+        {
+            var workingBmps = new List<SKBitmap>(panels.Count);
+            var validPanels = new List<MosaicPanel>(panels.Count);
+            for (int i = 0; i < panels.Count; i++)
+            {
+                var (p, rawBmp) = panels[i];
+                if (!p.IsVisible || !p.IsSolved || p.Wcs == null || rawBmp == null || rawBmp.Width <= 0 || rawBmp.Height <= 0)
+                {
+                    continue;
+                }
+
+                SKBitmap bmpToUse;
+                if (harmonizeSkyTone || rawBmp.ColorType != SKColorType.Bgra8888)
+                {
+                    bmpToUse = rawBmp.ColorType == SKColorType.Bgra8888
+                        ? rawBmp.Copy()
+                        : rawBmp.Copy(SKColorType.Bgra8888);
+                    ownedCopies.Add(bmpToUse);
+                }
+                else
+                {
+                    bmpToUse = rawBmp;
+                }
+
+                workingBmps.Add(bmpToUse);
+                validPanels.Add(p);
+            }
+
+            if (harmonizeSkyTone && workingBmps.Count >= 2)
+            {
+                // Keep ownedCopies synchronized in case MosaicSkyHarmonizer replaces any bitmap in-place
+                var snapshots = workingBmps.ToArray();
+                MosaicSkyHarmonizer.HarmonizeBitmaps(snapshots);
+                for (int i = 0; i < snapshots.Length; i++)
+                {
+                    if (!ReferenceEquals(snapshots[i], workingBmps[i]))
+                    {
+                        ownedCopies.Remove(workingBmps[i]);
+                        ownedCopies.Add(snapshots[i]);
+                        workingBmps[i] = snapshots[i];
+                    }
+                }
+            }
+
+            for (int i = 0; i < validPanels.Count; i++)
+            {
+                var p = validPanels[i];
+                var bmp = workingBmps[i];
+                var feather = new FeatherContext(p, bmp.Width, bmp.Height);
+                prepared.Add(new PreparedPanel(p, p.Wcs, bmp, p.Opacity, feather, i));
+            }
+
+            if (prepared.Count > 0)
+            {
+                RenderEquirectangularPanelsParallel(
+                    output,
+                    prepared,
+                    projection,
+                    useFeatheredBlending,
+                    transparentBackground,
+                    progress: null,
+                    cancellationToken);
+            }
+            else if (!transparentBackground)
+            {
+                output.Erase(new SKColor(4, 7, 15, 255));
+            }
+            else
+            {
+                output.Erase(SKColors.Transparent);
+            }
+
+            return output;
+        }
+        finally
+        {
+            foreach (var owned in ownedCopies)
+            {
+                owned.Dispose();
+            }
+        }
+    }
+
     private static unsafe void RenderEquirectangularPanelsParallel(
         SKBitmap panoBmp,
         List<PreparedPanel> activePanels,
-        double centerRaDeg,
+        EquirectangularProjection projection,
         bool useFeather,
+        bool transparentBackground,
         IProgress<ExportProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -970,17 +1083,20 @@ public static class ResultExporter
             cones.Add(BuildPanoramaCone(pp));
         }
 
-        double centerRaRad = centerRaDeg * (Math.PI / 180.0);
+        double centerRaRad = projection.CenterRaDeg * (Math.PI / 180.0);
+        double decMaxDeg = projection.DecMaxDeg;
+        double decSpanDeg = projection.DecSpanDeg;
+        double raSpanDeg = projection.RaSpanDeg;
         int completedRows = 0;
 
         Parallel.For(0, panoH, new ParallelOptions { CancellationToken = cancellationToken }, py =>
         {
-            double decDeg = 90.0 - (((py + 0.5) / panoH) * 180.0);
+            double decDeg = decMaxDeg - (((py + 0.5) / panoH) * decSpanDeg);
             double decRad = decDeg * (Math.PI / 180.0);
             double sinD = Math.Sin(decRad);
             double cosD = Math.Cos(decRad);
 
-            // Subtle deep night-sky vertical gradient background
+            // Subtle deep night-sky vertical gradient background (used when opaque background requested)
             byte bgR = (byte)(4 + (int)(Math.Abs(cosD) * 4));
             byte bgG = (byte)(7 + (int)(Math.Abs(cosD) * 5));
             byte bgB = (byte)(15 + (int)(Math.Abs(cosD) * 10));
@@ -1000,20 +1116,27 @@ public static class ResultExporter
 
             if (rowPanelCount == 0)
             {
-                for (int px = 0; px < panoW; px++)
+                if (transparentBackground)
                 {
-                    int o = px * 4;
-                    rowPtr[o + 0] = bgB;
-                    rowPtr[o + 1] = bgG;
-                    rowPtr[o + 2] = bgR;
-                    rowPtr[o + 3] = 255;
+                    new Span<byte>(rowPtr, panoW * 4).Clear();
+                }
+                else
+                {
+                    for (int px = 0; px < panoW; px++)
+                    {
+                        int o = px * 4;
+                        rowPtr[o + 0] = bgB;
+                        rowPtr[o + 1] = bgG;
+                        rowPtr[o + 2] = bgR;
+                        rowPtr[o + 3] = 255;
+                    }
                 }
             }
             else
             {
                 for (int px = 0; px < panoW; px++)
                 {
-                    double relRaDeg = ((((px + 0.5) / panoW) - 0.5) * 360.0);
+                    double relRaDeg = ((((px + 0.5) / panoW) - 0.5) * raSpanDeg);
                     double raRad = centerRaRad - (relRaDeg * (Math.PI / 180.0));
                     double cosRa = Math.Cos(raRad);
                     double sinRa = Math.Sin(raRad);
@@ -1041,7 +1164,7 @@ public static class ResultExporter
                             continue;
                         }
 
-                        if (ix < 0.0 || ix > cone.SrcW - 1.0 || iy < 0.0 || iy > cone.SrcH - 1.0)
+                        if (ix < 0.0 || ix > cone.WcsW - 1.0 || iy < 0.0 || iy > cone.WcsH - 1.0)
                         {
                             continue;
                         }
@@ -1059,11 +1182,14 @@ public static class ResultExporter
                             }
                         }
 
+                        double bx = Math.Clamp(ix * cone.WcsToBmpX, 0.0, cone.SrcW - 1.0);
+                        double by = Math.Clamp(iy * cone.WcsToBmpY, 0.0, cone.SrcH - 1.0);
+
                         hit = true;
-                        SampleBilinearBgra(cone.Ptr, cone.SrcW, cone.SrcH, cone.RowBytes, ix, iy, out float bVal, out float gVal, out float rVal, out float aVal);
+                        SampleBilinearBgra(cone.Ptr, cone.SrcW, cone.SrcH, cone.RowBytes, bx, by, out float bVal, out float gVal, out float rVal, out float aVal);
 
                         float edgeW = (useFeather && cone.Feather != null)
-                            ? cone.Feather.EvaluateWeight((float)ix, (float)iy)
+                            ? cone.Feather.EvaluateWeight((float)bx, (float)by)
                             : 1.0f;
 
                         float panelOpacity = (float)Math.Clamp(cone.Opacity, 0.02, 1.0);
@@ -1082,10 +1208,20 @@ public static class ResultExporter
                     int o = px * 4;
                     if (!hit || sumW <= 1e-6f)
                     {
-                        rowPtr[o + 0] = bgB;
-                        rowPtr[o + 1] = bgG;
-                        rowPtr[o + 2] = bgR;
-                        rowPtr[o + 3] = 255;
+                        if (transparentBackground)
+                        {
+                            rowPtr[o + 0] = 0;
+                            rowPtr[o + 1] = 0;
+                            rowPtr[o + 2] = 0;
+                            rowPtr[o + 3] = 0;
+                        }
+                        else
+                        {
+                            rowPtr[o + 0] = bgB;
+                            rowPtr[o + 1] = bgG;
+                            rowPtr[o + 2] = bgR;
+                            rowPtr[o + 3] = 255;
+                        }
                     }
                     else
                     {
@@ -1094,27 +1230,41 @@ public static class ResultExporter
                         float cg = sumG * invW;
                         float cb = sumB * invW;
 
-                        if (maxAlpha < 0.999f)
+                        if (transparentBackground)
                         {
-                            float invA = 1.0f - maxAlpha;
-                            cr = (cr * maxAlpha) + (bgR * invA);
-                            cg = (cg * maxAlpha) + (bgG * invA);
-                            cb = (cb * maxAlpha) + (bgB * invA);
+                            float alpha = Math.Clamp(maxAlpha, 0f, 1f);
+                            rowPtr[o + 0] = (byte)Math.Clamp((int)MathF.Round(cb * alpha), 0, 255);
+                            rowPtr[o + 1] = (byte)Math.Clamp((int)MathF.Round(cg * alpha), 0, 255);
+                            rowPtr[o + 2] = (byte)Math.Clamp((int)MathF.Round(cr * alpha), 0, 255);
+                            rowPtr[o + 3] = (byte)Math.Clamp((int)MathF.Round(255f * alpha), 0, 255);
                         }
+                        else
+                        {
+                            if (maxAlpha < 0.999f)
+                            {
+                                float invA = 1.0f - maxAlpha;
+                                cr = (cr * maxAlpha) + (bgR * invA);
+                                cg = (cg * maxAlpha) + (bgG * invA);
+                                cb = (cb * maxAlpha) + (bgB * invA);
+                            }
 
-                        rowPtr[o + 0] = (byte)Math.Clamp((int)MathF.Round(cb), 0, 255);
-                        rowPtr[o + 1] = (byte)Math.Clamp((int)MathF.Round(cg), 0, 255);
-                        rowPtr[o + 2] = (byte)Math.Clamp((int)MathF.Round(cr), 0, 255);
-                        rowPtr[o + 3] = 255;
+                            rowPtr[o + 0] = (byte)Math.Clamp((int)MathF.Round(cb), 0, 255);
+                            rowPtr[o + 1] = (byte)Math.Clamp((int)MathF.Round(cg), 0, 255);
+                            rowPtr[o + 2] = (byte)Math.Clamp((int)MathF.Round(cr), 0, 255);
+                            rowPtr[o + 3] = 255;
+                        }
                     }
                 }
             }
 
-            int done = Interlocked.Increment(ref completedRows);
-            if ((done & 31) == 0)
+            if (progress != null)
             {
-                int pct = 22 + (int)Math.Round((done / (double)panoH) * 54.0);
-                ReportProgress(progress, pct, "render", $"{panoW} × {panoH} px 360°");
+                int done = Interlocked.Increment(ref completedRows);
+                if ((done & 31) == 0)
+                {
+                    int pct = 22 + (int)Math.Round((done / (double)panoH) * 54.0);
+                    ReportProgress(progress, pct, "render", $"{panoW} × {panoH} px 360°");
+                }
             }
         });
     }
@@ -1125,6 +1275,10 @@ public static class ResultExporter
         public byte* Ptr { get; init; }
         public int SrcW { get; init; }
         public int SrcH { get; init; }
+        public int WcsW { get; init; }
+        public int WcsH { get; init; }
+        public double WcsToBmpX { get; init; }
+        public double WcsToBmpY { get; init; }
         public int RowBytes { get; init; }
         public double Opacity { get; init; }
         public FeatherContext? Feather { get; init; }
@@ -1143,6 +1297,8 @@ public static class ResultExporter
         var wcs = pp.Wcs!;
         int srcW = pp.BgraBmp.Width;
         int srcH = pp.BgraBmp.Height;
+        int wcsW = Math.Max(2, wcs.ImageWidth > 0 ? wcs.ImageWidth : srcW);
+        int wcsH = Math.Max(2, wcs.ImageHeight > 0 ? wcs.ImageHeight : srcH);
 
         double cCosD = Math.Cos(wcs.CenterCoordinates.DecRadians);
         double cx = cCosD * Math.Cos(wcs.CenterCoordinates.RaRadians);
@@ -1155,10 +1311,10 @@ public static class ResultExporter
 
         for (int gy = 0; gy <= 4; gy++)
         {
-            double py = (gy / 4.0) * (srcH - 1);
+            double py = (gy / 4.0) * (wcsH - 1);
             for (int gx = 0; gx <= 4; gx++)
             {
-                double px = (gx / 4.0) * (srcW - 1);
+                double px = (gx / 4.0) * (wcsW - 1);
                 var eq = wcs.PixelToEquatorial(px, py);
                 if (eq.DecDegrees < minDec) minDec = eq.DecDegrees;
                 if (eq.DecDegrees > maxDec) maxDec = eq.DecDegrees;
@@ -1181,7 +1337,7 @@ public static class ResultExporter
                          || Math.Abs(wcs.RadialDistortionK2) > 1e-7
                          || wcs.SplineWarp != null;
 
-        double tolDeg = Math.Clamp((Math.Max(srcW, srcH) * 0.025 * wcs.PixelScaleArcsec / 3600.0) + 0.40, 0.40, 6.0);
+        double tolDeg = Math.Clamp((Math.Max(wcsW, wcsH) * 0.025 * wcs.PixelScaleArcsec / 3600.0) + 0.40, 0.40, 6.0);
         double roundtripCosMin = Math.Cos(tolDeg * (Math.PI / 180.0));
 
         return new PanoramaPanelCone
@@ -1190,6 +1346,10 @@ public static class ResultExporter
             Ptr = (byte*)pp.BgraBmp.GetPixels(),
             SrcW = srcW,
             SrcH = srcH,
+            WcsW = wcsW,
+            WcsH = wcsH,
+            WcsToBmpX = srcW == wcsW ? 1.0 : (srcW - 1.0) / Math.Max(1.0, wcsW - 1.0),
+            WcsToBmpY = srcH == wcsH ? 1.0 : (srcH - 1.0) / Math.Max(1.0, wcsH - 1.0),
             RowBytes = pp.BgraBmp.RowBytes,
             Opacity = pp.Opacity,
             Feather = pp.Feather,
@@ -2076,256 +2236,22 @@ public static class ResultExporter
     /// Equalizes harsh sky-background exposure mismatches (such as bright twilight or light-polluted frames)
     /// across multi-panel mosaics using per-panel dark-sky percentile pedestals while keeping star peaks unclipped.
     /// </summary>
-    private static unsafe void HarmonizePanelSkyPedestals(List<PreparedPanel> panels)
+    private static void HarmonizePanelSkyPedestals(List<PreparedPanel> panels)
     {
         if (panels.Count < 2) return;
 
-        var stats = new (bool Valid, double MedR, double MedG, double MedB, double MedLum)[panels.Count];
-        var darkLums = new List<double>(panels.Count);
+        var bmps = new SKBitmap[panels.Count];
+        for (int p = 0; p < panels.Count; p++)
+        {
+            bmps[p] = panels[p].BgraBmp;
+        }
+
+        MosaicSkyHarmonizer.HarmonizeBitmaps(bmps);
 
         for (int p = 0; p < panels.Count; p++)
         {
-            var metrics = SamplePanelSkyMetrics(panels[p].BgraBmp);
-
-            // Skip completely uniform synthetic test patches
-            if (metrics.Spread < 6.0) continue;
-
-            // Flatten spatially-varying light-pollution or lens-vignetting bright domes in bright frames
-            if (Math.Max(metrics.Med50Lum, metrics.InteriorMed50Lum) > 42.0)
-            {
-                var balanced = ImagePreprocessor.AutoBalanceBrightness(panels[p].BgraBmp, out var info);
-                if (info.WasAdjusted && info.State == ImagePreprocessor.ExposureState.TooBright)
-                {
-                    panels[p].ReplaceBgraBitmap(balanced);
-                    metrics = SamplePanelSkyMetrics(panels[p].BgraBmp);
-                }
-                else
-                {
-                    balanced.Dispose();
-                    if (metrics.InteriorMed50Lum > 42.0)
-                    {
-                        FlattenRadialSkyDome(panels[p].BgraBmp, targetFloor: 14.0);
-                        metrics = SamplePanelSkyMetrics(panels[p].BgraBmp);
-                    }
-                }
-            }
-
-            if (metrics.Spread < 6.0) continue;
-
-            var s25 = metrics.DarkQuartile;
-            stats[p] = (true, s25.R, s25.G, s25.B, s25.Lum);
-            darkLums.Add(s25.Lum);
+            panels[p].AdoptReplacedBgraBitmap(bmps[p]);
         }
-
-        if (darkLums.Count < 2) return;
-
-        darkLums.Sort();
-        // Target deep-sky pedestal = lower quartile of valid mosaic panels (bounded safely between 5 and 38 DN)
-        int targetIdx = Math.Min(darkLums.Count - 1, Math.Max(0, darkLums.Count / 4));
-        double refLum = Math.Clamp(darkLums[targetIdx], 5.0, 38.0);
-
-        double refR = 0, refG = 0, refB = 0;
-        int refCount = 0;
-        for (int p = 0; p < panels.Count; p++)
-        {
-            if (stats[p].Valid && stats[p].MedLum <= darkLums[Math.Min(darkLums.Count - 1, darkLums.Count / 2)] + 4.0)
-            {
-                refR += stats[p].MedR;
-                refG += stats[p].MedG;
-                refB += stats[p].MedB;
-                refCount++;
-            }
-        }
-        if (refCount > 0)
-        {
-            refR = Math.Clamp(refR / refCount, 3.0, 42.0);
-            refG = Math.Clamp(refG / refCount, 4.0, 42.0);
-            refB = Math.Clamp(refB / refCount, 8.0, 48.0);
-        }
-        else
-        {
-            refR = refLum * 0.75;
-            refG = refLum * 0.90;
-            refB = Math.Min(45.0, refLum * 1.25);
-        }
-
-        for (int p = 0; p < panels.Count; p++)
-        {
-            if (!stats[p].Valid) continue;
-            if (stats[p].MedLum - refLum <= 16.0) continue; // Already consistent dark sky
-
-            byte[] lutR = BuildPedestalLut(stats[p].MedR, refR);
-            byte[] lutG = BuildPedestalLut(stats[p].MedG, refG);
-            byte[] lutB = BuildPedestalLut(stats[p].MedB, refB);
-
-            var bmp = panels[p].BgraBmp;
-            int w = bmp.Width;
-            int h = bmp.Height;
-            int stride = bmp.RowBytes;
-            byte* basePtr = (byte*)bmp.GetPixels();
-
-            Parallel.For(0, h, y =>
-            {
-                byte* row = basePtr + (y * stride);
-                for (int x = 0; x < w; x++)
-                {
-                    int o = x * 4;
-                    row[o + 0] = lutB[row[o + 0]];
-                    row[o + 1] = lutG[row[o + 1]];
-                    row[o + 2] = lutR[row[o + 2]];
-                }
-            });
-        }
-    }
-
-    private static unsafe (double Spread, double Med50Lum, double InteriorMed50Lum, (double Lum, byte R, byte G, byte B) DarkQuartile) SamplePanelSkyMetrics(SKBitmap bmp)
-    {
-        int w = bmp.Width;
-        int h = bmp.Height;
-        int stride = bmp.RowBytes;
-        byte* basePtr = (byte*)bmp.GetPixels();
-
-        const int gridX = 40;
-        const int gridY = 28;
-        var samples = new List<(double Lum, byte R, byte G, byte B)>(gridX * gridY);
-        var interiorLums = new List<double>((gridX * gridY) / 2);
-
-        for (int gy = 0; gy < gridY; gy++)
-        {
-            int sy = Math.Clamp((gy * h) / gridY + (h / (gridY * 2)), 0, h - 1);
-            byte* row = basePtr + (sy * stride);
-            bool inY = gy >= (gridY / 5) && gy < ((gridY * 4) / 5);
-
-            for (int gx = 0; gx < gridX; gx++)
-            {
-                int sx = Math.Clamp((gx * w) / gridX + (w / (gridX * 2)), 0, w - 1);
-                int o = sx * 4;
-                byte b = row[o + 0];
-                byte g = row[o + 1];
-                byte r = row[o + 2];
-                double lum = (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
-                samples.Add((lum, r, g, b));
-                if (inY && gx >= (gridX / 5) && gx < ((gridX * 4) / 5))
-                {
-                    interiorLums.Add(lum);
-                }
-            }
-        }
-
-        samples.Sort((a, b) => a.Lum.CompareTo(b.Lum));
-        interiorLums.Sort();
-
-        int idx10 = samples.Count / 10;
-        int idx90 = (samples.Count * 9) / 10;
-        double spread = samples[idx90].Lum - samples[idx10].Lum;
-        double med50Lum = samples[samples.Count / 2].Lum;
-        double interiorMed50Lum = interiorLums.Count > 0 ? interiorLums[interiorLums.Count / 2] : med50Lum;
-        var darkQuartile = samples[samples.Count / 4];
-
-        return (spread, med50Lum, interiorMed50Lum, darkQuartile);
-    }
-
-    private static unsafe void FlattenRadialSkyDome(SKBitmap bmp, double targetFloor)
-    {
-        int w = bmp.Width;
-        int h = bmp.Height;
-        if (w < 16 || h < 16) return;
-
-        int stride = bmp.RowBytes;
-        byte* basePtr = (byte*)bmp.GetPixels();
-
-        const int cols = 8;
-        const int rows = 6;
-        var bgR = new double[rows * cols];
-        var bgG = new double[rows * cols];
-        var bgB = new double[rows * cols];
-
-        // Estimate coarse 25th-percentile local sky floor per cell (captures smooth vignette/sky-glow dome)
-        var cellSamples = new List<(double lum, byte r, byte g, byte b)>(256);
-        for (int cy = 0; cy < rows; cy++)
-        {
-            int y0 = (cy * h) / rows;
-            int y1 = ((cy + 1) * h) / rows;
-            int stepY = Math.Max(1, (y1 - y0) / 12);
-
-            for (int cx = 0; cx < cols; cx++)
-            {
-                int x0 = (cx * w) / cols;
-                int x1 = ((cx + 1) * w) / cols;
-                int stepX = Math.Max(1, (x1 - x0) / 12);
-
-                cellSamples.Clear();
-                for (int y = y0; y < y1; y += stepY)
-                {
-                    byte* rPtr = basePtr + (y * stride);
-                    for (int x = x0; x < x1; x += stepX)
-                    {
-                        int o = x * 4;
-                        byte b = rPtr[o + 0];
-                        byte g = rPtr[o + 1];
-                        byte r = rPtr[o + 2];
-                        cellSamples.Add(((0.2126 * r) + (0.7152 * g) + (0.0722 * b), r, g, b));
-                    }
-                }
-
-                if (cellSamples.Count == 0) continue;
-                cellSamples.Sort((a, b) => a.lum.CompareTo(b.lum));
-                var q = cellSamples[cellSamples.Count / 4];
-                int idx = (cy * cols) + cx;
-                bgR[idx] = Math.Max(0.0, q.r - targetFloor);
-                bgG[idx] = Math.Max(0.0, q.g - (targetFloor * 1.05));
-                bgB[idx] = Math.Max(0.0, q.b - (targetFloor * 1.25));
-            }
-        }
-
-        Parallel.For(0, h, y =>
-        {
-            double gy = (((y + 0.5) * rows) / h) - 0.5;
-            int y0 = Math.Clamp((int)Math.Floor(gy), 0, rows - 1);
-            int y1 = Math.Clamp(y0 + 1, 0, rows - 1);
-            double fy = Math.Clamp(gy - y0, 0.0, 1.0);
-
-            byte* row = basePtr + (y * stride);
-            for (int x = 0; x < w; x++)
-            {
-                double gx = (((x + 0.5) * cols) / w) - 0.5;
-                int x0 = Math.Clamp((int)Math.Floor(gx), 0, cols - 1);
-                int x1 = Math.Clamp(x0 + 1, 0, cols - 1);
-                double fx = Math.Clamp(gx - x0, 0.0, 1.0);
-
-                int i00 = (y0 * cols) + x0;
-                int i10 = (y0 * cols) + x1;
-                int i01 = (y1 * cols) + x0;
-                int i11 = (y1 * cols) + x1;
-
-                double subB = ((bgB[i00] * (1.0 - fx) + bgB[i10] * fx) * (1.0 - fy)) + ((bgB[i01] * (1.0 - fx) + bgB[i11] * fx) * fy);
-                double subG = ((bgG[i00] * (1.0 - fx) + bgG[i10] * fx) * (1.0 - fy)) + ((bgG[i01] * (1.0 - fx) + bgG[i11] * fx) * fy);
-                double subR = ((bgR[i00] * (1.0 - fx) + bgR[i10] * fx) * (1.0 - fy)) + ((bgR[i01] * (1.0 - fx) + bgR[i11] * fx) * fy);
-
-                int o = x * 4;
-                row[o + 0] = (byte)Math.Clamp((int)Math.Round(row[o + 0] - subB), 0, 255);
-                row[o + 1] = (byte)Math.Clamp((int)Math.Round(row[o + 1] - subG), 0, 255);
-                row[o + 2] = (byte)Math.Clamp((int)Math.Round(row[o + 2] - subR), 0, 255);
-            }
-        });
-    }
-
-    private static byte[] BuildPedestalLut(double srcMed, double dstRef)
-    {
-        var lut = new byte[256];
-        double denom = Math.Max(16.0, 255.0 - srcMed);
-        double scale = (255.0 - dstRef) / denom;
-        for (int i = 0; i < 256; i++)
-        {
-            double mapped = dstRef + ((i - srcMed) * scale);
-            if (i < srcMed)
-            {
-                double t = i / Math.Max(1.0, srcMed);
-                mapped = t * dstRef;
-            }
-            lut[i] = (byte)Math.Clamp((int)Math.Round(mapped), 0, 255);
-        }
-        return lut;
     }
 
     private static unsafe void SampleBilinearBgra(
@@ -2386,20 +2312,10 @@ public static class ResultExporter
             OriginalIndex = originalIndex;
         }
 
-        public void ReplaceBgraBitmap(SKBitmap newBitmap)
+        public void AdoptReplacedBgraBitmap(SKBitmap newBitmap)
         {
             if (ReferenceEquals(BgraBmp, newBitmap)) return;
-            BgraBmp.Dispose();
-            BgraBmp = newBitmap.ColorType == SKColorType.Bgra8888
-                ? newBitmap
-                : EnsureBgraBitmapAndDispose(newBitmap);
-        }
-
-        private static SKBitmap EnsureBgraBitmapAndDispose(SKBitmap src)
-        {
-            var copy = src.Copy(SKColorType.Bgra8888);
-            src.Dispose();
-            return copy;
+            BgraBmp = newBitmap;
         }
 
         public void Dispose() => BgraBmp.Dispose();

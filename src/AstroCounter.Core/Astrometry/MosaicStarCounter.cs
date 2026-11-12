@@ -91,6 +91,7 @@ public static class MosaicStarCounter
         IProgress<MosaicCountingProgress>? progress = null,
         WcsMatrix? targetWcs = null,
         AstroCounter.Core.Inference.IInferenceEngine? engine = null,
+        EquirectangularProjection? equirectangularProjection = null,
         CancellationToken cancellationToken = default)
     {
         if (mosaicProject == null) throw new ArgumentNullException(nameof(mosaicProject));
@@ -235,7 +236,7 @@ public static class MosaicStarCounter
         var projectionWcs = targetWcs ?? masterWcs;
 
         var (deduplicatedStars, overlapCount, panelDetails) = MergeAndDeduplicate(
-            activePanels, panelDetectionResults, matchToleranceArcsec, projectionWcs);
+            activePanels, panelDetectionResults, matchToleranceArcsec, projectionWcs, equirectangularProjection);
 
         stopwatch.Stop();
 
@@ -265,7 +266,8 @@ public static class MosaicStarCounter
             List<MosaicPanel> panels,
             ConcurrentDictionary<string, List<(AstrophotographyObject Star, CelestialCoordinates Sky)>> panelDetections,
             double matchToleranceArcsec,
-            WcsMatrix projectionWcs)
+            WcsMatrix projectionWcs,
+            EquirectangularProjection? equirectangularProjection = null)
     {
         // Spherical hash grid: cell size ~ 30 arcsec (0.00833 deg)
         const double cellSizeDeg = 0.008333; // 30 arcseconds
@@ -378,14 +380,18 @@ public static class MosaicStarCounter
             panelTransforms[p.Id] = MosaicProject.GetPanelCanvasTransform(p, projectionWcs, pIdx);
         }
 
-        // Project deduplicated stars into target/master canvas coordinates
+        // Project deduplicated stars into equirectangular or 2D master canvas coordinates
         var resultObjects = new List<AstrophotographyObject>(unifiedList.Count);
         for (int i = 0; i < unifiedList.Count; i++)
         {
             var u = unifiedList[i];
             double px, py;
 
-            if (panelTransforms.TryGetValue(u.FirstPanelId, out var tr))
+            if (equirectangularProjection != null)
+            {
+                equirectangularProjection.EquatorialToCanvas(u.Sky.RaDegrees, u.Sky.DecDegrees, out px, out py);
+            }
+            else if (panelTransforms.TryGetValue(u.FirstPanelId, out var tr))
             {
                 // Transform local sensor pixel (LocalX, LocalY) through the exact same 2D affine matrix used to draw the photo bitmap
                 px = (u.LocalX * tr.M11) + (u.LocalY * tr.M21) + tr.OffsetX;
@@ -396,7 +402,9 @@ public static class MosaicStarCounter
                 continue;
             }
 
-            float size = Math.Clamp(u.EstimatedSize, 4.0f, 60.0f);
+            float size = equirectangularProjection != null
+                ? Math.Clamp(u.EstimatedSize * 0.65f, 4.0f, 32.0f)
+                : Math.Clamp(u.EstimatedSize, 4.0f, 60.0f);
             resultObjects.Add(new AstrophotographyObject(
                 Id: u.Id,
                 Box: new BoundingBox((float)(px - (size / 2.0)), (float)(py - (size / 2.0)), size, size),

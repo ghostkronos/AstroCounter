@@ -1047,7 +1047,7 @@
                                Source="{Binding ImageBitmap}"
                                Width="{Binding ImageWidth}"
                                Height="{Binding ImageHeight}"
-                               Visibility="{Binding IsSingleImageActive, Converter={StaticResource BoolToVis}}"
+                               Visibility="{Binding IsRawFlatSingleImageActive, Converter={StaticResource BoolToVis}}"
                                Stretch="Fill"
                                RenderOptions.BitmapScalingMode="LowQuality"/>
 
@@ -1064,6 +1064,9 @@
                                                 ShowConstellations="{Binding ShowConstellations}"
                                                 ShowDsoMarkers="{Binding ShowDsoMarkers}"
                                                 MosaicPanels="{Binding MosaicPanels}"
+                                                MosaicEquirectangularProjection="{Binding ActiveEquirectangularProjection}"
+                                                MosaicCompositeBitmap="{Binding MosaicCompositeBitmap}"
+                                                CompositeOpacity="{Binding PhotoOpacity}"
                                                 ActiveFilePath="{Binding SelectedImagePath}"
                                                 UseFeatheredBlending="{Binding UseFeatheredBlending}"
                                                 Wcs="{Binding CurrentWcs}"
@@ -1181,6 +1184,7 @@
                                           Grid.Row="3"
                                           CurrentWcs="{Binding CurrentWcs}"
                                           MosaicPanels="{Binding MosaicPanels}"
+                                          MosaicTextureRevision="{Binding MosaicTextureRevision}"
                                           ActiveFilePath="{Binding SelectedImagePath}"
                                           ActiveImageBitmap="{Binding ImageBitmap}"
                                           VisibleObjects="{Binding VisibleObjects}"
@@ -1448,24 +1452,22 @@
 
                     <Border Background="#0B1528" BorderBrush="#1C3960" BorderThickness="1" CornerRadius="8" Padding="9,5.5" Margin="0,0,0,8"
                             Visibility="{Binding HasLoadedImage, Converter={StaticResource BoolToVis}}">
-                        <DockPanel LastChildFill="True">
-                            <TextBlock Text="{Binding L_ActivePhotoLabel}" Foreground="#64748B" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock Text="{Binding ActivePanelDisplayName}" Foreground="#38BDF8" FontSize="10.5" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                        </DockPanel>
+                        <StackPanel>
+                            <DockPanel LastChildFill="True">
+                                <TextBlock Text="{Binding L_ActivePhotoLabel}" Foreground="#64748B" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="{Binding ActivePanelDisplayName}" Foreground="#38BDF8" FontSize="10.5" FontWeight="Bold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
+                            <TextBlock Text="{Binding LightTargetScopeText}" Foreground="#7DD3FC" FontSize="9.5" FontWeight="SemiBold" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
                     </Border>
 
                     <Border Background="#0E1729" BorderBrush="#1C2C47" BorderThickness="1" CornerRadius="10" Padding="11,9" Margin="0,0,0,10">
                         <StackPanel>
-                            <CheckBox IsChecked="{Binding IsAutoBrightnessEnabled, Mode=TwoWay}"
-                                      Content="{Binding L_AutoBalanceLabel}"
-                                      Foreground="#FBBF24" FontWeight="SemiBold" FontSize="11"/>
-                            <TextBlock Text="{Binding BrightnessStatusText}" Foreground="#94A3B8" FontSize="10" Margin="22,5,0,7" TextTrimming="CharacterEllipsis"/>
-                            <Button Content="{Binding L_AutoBalanceNow}"
-                                    Command="{Binding AutoBalanceNowCommand}"
-                                    ToolTip="{Binding L_AutoBrightnessToolTip}"
-                                    Style="{StaticResource ModernButtonStyle}"
-                                    HorizontalAlignment="Left" Margin="22,0,0,0"
-                                    FontSize="10.5" Padding="9,4"/>
+                            <CheckBox IsChecked="{Binding IsHarmonizeSkyToneEnabled, Mode=TwoWay}"
+                                      Content="{Binding L_HarmonizeSkyToneLabel}"
+                                      ToolTip="{Binding L_HarmonizeSkyToneToolTip}"
+                                      Foreground="#38BDF8" FontWeight="SemiBold" FontSize="11"/>
+                            <TextBlock Text="{Binding HarmonizeSkyStatusText}" Foreground="#94A3B8" FontSize="10" Margin="22,5,0,0" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                     </Border>
 

@@ -206,10 +206,11 @@ public class CataloguePlateSolver : IPlateSolver
         WcsMatrix? wcs,
         int imageWidth,
         int imageHeight,
-        Func<double, double, bool>? isValidSkyPixel = null)
+        Func<double, double, bool>? isValidSkyPixel = null,
+        EquirectangularProjection? eqProjection = null)
     {
         var results = new List<AstronomicalTarget>();
-        if (wcs == null || imageWidth <= 0 || imageHeight <= 0)
+        if ((wcs == null && eqProjection == null) || imageWidth <= 0 || imageHeight <= 0)
         {
             return results;
         }
@@ -218,10 +219,19 @@ public class CataloguePlateSolver : IPlateSolver
         double marginY = imageHeight * 0.015;
         var addedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        bool TryProject(CelestialCoordinates coords, out double px, out double py)
+        {
+            if (eqProjection != null)
+            {
+                return eqProjection.EquatorialToCanvas(coords.RaDegrees, coords.DecDegrees, out px, out py);
+            }
+            return wcs!.EquatorialToPixel(coords, out px, out py);
+        }
+
         // 1. First add curated high-priority targets with rich Turkish and English names
         foreach (var target in KnownCatalogues)
         {
-            if (wcs.EquatorialToPixel(target.Coordinates, out double px, out double py))
+            if (TryProject(target.Coordinates, out double px, out double py))
             {
                 if (px >= marginX && px <= imageWidth - marginX &&
                     py >= marginY && py <= imageHeight - marginY)
@@ -242,9 +252,23 @@ public class CataloguePlateSolver : IPlateSolver
         // 2. Query full OpenNGC catalog (13,963 objects) across the field
         try
         {
-            var center = wcs.PixelToEquatorial(imageWidth / 2.0, imageHeight / 2.0);
-            double diag = Math.Sqrt(((double)imageWidth * imageWidth) + ((double)imageHeight * imageHeight));
-            double radiusDeg = (0.5 * diag * wcs.PixelScaleArcsec / 3600.0) * 1.05;
+            CelestialCoordinates center;
+            double radiusDeg;
+            if (eqProjection != null)
+            {
+                double midDec = Math.Clamp(0.5 * (eqProjection.DecMinDeg + eqProjection.DecMaxDeg), -89.9, 89.9);
+                center = new CelestialCoordinates(eqProjection.CenterRaDeg, midDec);
+                radiusDeg = Math.Clamp(
+                    0.55 * Math.Sqrt((eqProjection.RaSpanDeg * eqProjection.RaSpanDeg) + (eqProjection.DecSpanDeg * eqProjection.DecSpanDeg)),
+                    1.0,
+                    90.0);
+            }
+            else
+            {
+                center = wcs!.PixelToEquatorial(imageWidth / 2.0, imageHeight / 2.0);
+                double diag = Math.Sqrt(((double)imageWidth * imageWidth) + ((double)imageHeight * imageHeight));
+                radiusDeg = (0.5 * diag * wcs.PixelScaleArcsec / 3600.0) * 1.05;
+            }
 
             var ngcObjects = OpenNgcCatalog.QueryRegion(center.RaDegrees, center.DecDegrees, radiusDeg, maxMag: 15.5, maxResults: 150);
             foreach (var ngc in ngcObjects)
@@ -253,7 +277,7 @@ public class CataloguePlateSolver : IPlateSolver
                 if (addedIds.Contains(idKey) || addedIds.Contains(ngc.Name) || addedIds.Contains(ngc.Name.Replace(" ", "")))
                     continue;
 
-                if (wcs.EquatorialToPixel(ngc.Coordinates, out double px, out double py))
+                if (TryProject(ngc.Coordinates, out double px, out double py))
                 {
                     if (px >= marginX && px <= imageWidth - marginX &&
                         py >= marginY && py <= imageHeight - marginY)

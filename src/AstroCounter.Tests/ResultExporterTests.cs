@@ -3,6 +3,7 @@ namespace AstroCounter.Tests;
 using AstroCounter.Core.Astrometry;
 using AstroCounter.Core.Export;
 using AstroCounter.Core.Models;
+using AstroCounter.Core.Processing;
 using SkiaSharp;
 using Xunit;
 
@@ -281,6 +282,156 @@ public class ResultExporterTests
         var markers2 = new List<(float X, float Y)> { (80f, 50f), (1100f, 50f), (80f, 740f) };
         var corner2 = ResultExporter.ChooseSmartWatermarkCorner(bmp2, markers2, badgeWidth: 260, badgeHeight: 54, margin: 20);
         Assert.Equal(WatermarkCorner.BottomRight, corner2);
+    }
+
+    [Fact]
+    public void EquirectangularProjection_CircularRaWrapAndRoundtrip_MatchesExpected()
+    {
+        var wcs1 = new WcsMatrix(new CelestialCoordinates(356.0, 28.0), 400, 300, 12.0, 0.0, 800, 600);
+        var wcs2 = new WcsMatrix(new CelestialCoordinates(4.0, 32.0), 400, 300, 12.0, 0.0, 800, 600);
+        var p1 = new MosaicPanel("p1", "P1", 800, 600, wcs1);
+        var p2 = new MosaicPanel("p2", "P2", 800, 600, wcs2);
+
+        var proj = EquirectangularProjection.CreateForPanels(new[] { p1, p2 }, wcs1, targetMaxDim: 1600);
+        Assert.NotNull(proj);
+
+        // Circular mean center should sit right near 0 deg (not 180 deg)
+        Assert.True(proj!.CenterRaDeg < 15.0 || proj.CenterRaDeg > 345.0, $"Unexpected center RA {proj.CenterRaDeg}");
+        Assert.True(proj.RaSpanDeg < 60.0, $"Expected tight cropped RA span, got {proj.RaSpanDeg}");
+
+        // East (larger RA = 4 deg) projects LEFT of West (smaller RA = 356 deg)
+        Assert.True(proj.EquatorialToCanvas(4.0, 30.0, out double xEast, out double y30));
+        Assert.True(proj.EquatorialToCanvas(356.0, 30.0, out double xWest, out _));
+        Assert.True(xEast < xWest, $"Expected East ({xEast}) < West ({xWest})");
+
+        proj.CanvasToEquatorial(xEast, y30, out double rtRa, out double rtDec);
+        Assert.InRange(rtRa, 3.9, 4.1);
+        Assert.InRange(rtDec, 29.9, 30.1);
+    }
+
+    [Fact]
+    public void MosaicSkyHarmonizer_HarmonizeBitmaps_FlattensLightDomeAndEqualizesPedestals()
+    {
+        using var darkBmp = new SKBitmap(240, 180, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using (var c = new SKCanvas(darkBmp))
+        {
+            c.Clear(new SKColor(10, 12, 18));
+            using var starPaint = new SKPaint { Color = SKColors.White };
+            for (int i = 0; i < 40; i++)
+                c.DrawCircle(15 + ((i * 37) % 210), 15 + ((i * 53) % 150), 2f, starPaint);
+        }
+
+        // Second frame has heavy light-pollution radial bright dome in center + bright stars
+        using var brightBmp = new SKBitmap(240, 180, SKColorType.Bgra8888, SKAlphaType.Premul);
+        using (var c = new SKCanvas(brightBmp))
+        {
+            using var radShader = SKShader.CreateRadialGradient(
+                new SKPoint(120, 90), 140f,
+                new[] { new SKColor(165, 160, 150), new SKColor(45, 50, 62) },
+                SKShaderTileMode.Clamp);
+            c.DrawRect(0, 0, 240, 180, new SKPaint { Shader = radShader });
+            using var starPaint = new SKPaint { Color = SKColors.White };
+            c.DrawCircle(120, 90, 2.5f, starPaint);
+            c.DrawCircle(40, 40, 2.0f, starPaint);
+        }
+
+        var working = new[] { darkBmp.Copy(), brightBmp.Copy() };
+        try
+        {
+            var res = MosaicSkyHarmonizer.HarmonizeBitmaps(working);
+            Assert.Equal(2, res.PanelsAnalyzed);
+
+            var metricsBrightAfter = MosaicSkyHarmonizer.SamplePanelSkyMetrics(working[1]);
+            Assert.True(metricsBrightAfter.InteriorMed50Lum < 45.0, $"Expected flattened dark interior sky, got {metricsBrightAfter.InteriorMed50Lum:F1}");
+
+            // Bright star peak at center (120, 90) remains clearly resolved well above flattened local sky
+            var starCenter = working[1].GetPixel(120, 90);
+            var nearSky = working[1].GetPixel(100, 90);
+            Assert.True(starCenter.Red >= 120 && starCenter.Green >= 120, $"Expected preserved star peak, got R={starCenter.Red}, G={starCenter.Green}");
+            Assert.True(starCenter.Red - nearSky.Red >= 80, $"Expected strong star-above-sky contrast, got star={starCenter.Red}, sky={nearSky.Red}");
+        }
+        finally
+        {
+            working[0].Dispose();
+            working[1].Dispose();
+        }
+    }
+
+    [Fact]
+    public void RenderEquirectangularCompositeBitmap_ProducesTransparentSkyMarginsAndHarmonizedMosaic()
+    {
+        string darkPath = Path.Combine(Path.GetTempPath(), $"comp_dark_{Guid.NewGuid():N}.png");
+        string brightPath = Path.Combine(Path.GetTempPath(), $"comp_bright_{Guid.NewGuid():N}.png");
+        try
+        {
+            CreateSyntheticSkyImage(darkPath, 320, 240, 8, 10, 16, 250);
+            CreateSyntheticSkyImage(brightPath, 320, 240, 145, 140, 130, 255);
+
+            var wcs1 = new WcsMatrix(new CelestialCoordinates(10.0, 25.0), 160, 120, 18.0, 0.0, 320, 240);
+            var wcs2 = new WcsMatrix(new CelestialCoordinates(12.2, 25.4), 160, 120, 18.0, 0.0, 320, 240);
+            var p1 = new MosaicPanel("p1", "Dark", 320, 240, wcs1, darkPath);
+            var p2 = new MosaicPanel("p2", "Bright", 320, 240, wcs2, brightPath);
+
+            var proj = EquirectangularProjection.CreateForPanels(new[] { p1, p2 }, wcs1, targetMaxDim: 640);
+            Assert.NotNull(proj);
+
+            using var bmp1 = ImagePreprocessor.LoadImage(darkPath);
+            using var bmp2 = ImagePreprocessor.LoadImage(brightPath);
+            using var composite = ResultExporter.RenderEquirectangularCompositeBitmap(
+                proj!,
+                new[] { (p1, bmp1), (p2, bmp2) },
+                useFeatheredBlending: true,
+                harmonizeSkyTone: true,
+                transparentBackground: true);
+
+            Assert.Equal(proj!.CanvasWidth, composite.Width);
+            Assert.Equal(proj.CanvasHeight, composite.Height);
+
+            // Outer padding corner (0, 0) stays transparent (Alpha == 0)
+            Assert.Equal(0, composite.GetPixel(0, 0).Alpha);
+
+            // Panel centers are opaque and harmonized (bright frame pulled down close to dark sky)
+            proj.EquatorialToCanvas(10.0, 25.0, out double x1, out double y1);
+            proj.EquatorialToCanvas(12.2, 25.4, out double x2, out double y2);
+            var c1 = composite.GetPixel((int)x1, (int)y1);
+            var c2 = composite.GetPixel((int)x2, (int)y2);
+            Assert.Equal(255, c1.Alpha);
+            Assert.Equal(255, c2.Alpha);
+            Assert.True(c2.Red < 70, $"Expected harmonized bright panel sky < 70, got {c2.Red}");
+        }
+        finally
+        {
+            if (File.Exists(darkPath)) File.Delete(darkPath);
+            if (File.Exists(brightPath)) File.Delete(brightPath);
+        }
+    }
+
+    [Fact]
+    public void EquirectangularProjection_IgnoresUnsolvedFallbackPanelsEvenWithEmptyTargetName()
+    {
+        var realWcs = new WcsMatrix(new CelestialCoordinates(10.68, 41.27), 400, 300, 12.0, 0.0, 800, 600);
+        var fallbackWcs = new WcsMatrix(new CelestialCoordinates(180.0, 30.0), 400, 300, 2.5, 0.0, 800, 600);
+
+        var solvedPanel = new MosaicPanel("s1", "Andromeda", 800, 600, realWcs, "m31.png", targetName: "M31");
+        var unsolvedWithEmptyTarget = new MosaicPanel("u1", "Unsolved", 800, 600, fallbackWcs, "u1.png", targetName: string.Empty);
+
+        Assert.True(solvedPanel.IsSolved);
+        Assert.False(unsolvedWithEmptyTarget.IsSolved);
+
+        var proj = EquirectangularProjection.CreateForPanels(
+            new[] { solvedPanel, unsolvedWithEmptyTarget },
+            fallbackWcs,
+            targetMaxDim: 1600);
+
+        Assert.NotNull(proj);
+        Assert.InRange(proj!.CenterRaDeg, 5.0, 20.0);
+        Assert.True(proj.RaSpanDeg < 30.0, $"Expected tight crop around M31 without stretching to 180 deg, got {proj.RaSpanDeg}");
+
+        var onlyUnsolved = EquirectangularProjection.CreateForPanels(
+            new[] { unsolvedWithEmptyTarget },
+            fallbackWcs,
+            targetMaxDim: 1600);
+        Assert.Null(onlyUnsolved);
     }
 
     private static void CreateSyntheticSkyImage(string path, int w, int h, byte bgR, byte bgG, byte bgB, byte starIntensity)

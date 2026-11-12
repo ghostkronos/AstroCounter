@@ -119,6 +119,36 @@ public sealed class DetectionOverlay : FrameworkElement
         set => SetValue(UseFeatheredBlendingProperty, value);
     }
 
+    public static readonly DependencyProperty MosaicEquirectangularProjectionProperty = DependencyProperty.Register(
+        nameof(MosaicEquirectangularProjection), typeof(EquirectangularProjection), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public EquirectangularProjection? MosaicEquirectangularProjection
+    {
+        get => (EquirectangularProjection?)GetValue(MosaicEquirectangularProjectionProperty);
+        set => SetValue(MosaicEquirectangularProjectionProperty, value);
+    }
+
+    public static readonly DependencyProperty MosaicCompositeBitmapProperty = DependencyProperty.Register(
+        nameof(MosaicCompositeBitmap), typeof(System.Windows.Media.Imaging.BitmapSource), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public System.Windows.Media.Imaging.BitmapSource? MosaicCompositeBitmap
+    {
+        get => (System.Windows.Media.Imaging.BitmapSource?)GetValue(MosaicCompositeBitmapProperty);
+        set => SetValue(MosaicCompositeBitmapProperty, value);
+    }
+
+    public static readonly DependencyProperty CompositeOpacityProperty = DependencyProperty.Register(
+        nameof(CompositeOpacity), typeof(double), typeof(DetectionOverlay),
+        new FrameworkPropertyMetadata(1.0, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    public double CompositeOpacity
+    {
+        get => (double)GetValue(CompositeOpacityProperty);
+        set => SetValue(CompositeOpacityProperty, value);
+    }
+
 
     private static readonly Brush[] TierBrushes =
     {
@@ -184,7 +214,24 @@ public sealed class DetectionOverlay : FrameworkElement
         new(2048)
     };
     private WcsMatrix? _lastHipparcosWcs;
+    private EquirectangularProjection? _lastHipparcosProj;
     private List<HipparcosStar>? _cachedHipparcosStars;
+    private static readonly Brush EquirectangularSkyBrush = CreateEquirectangularSkyBrush();
+
+    private static Brush CreateEquirectangularSkyBrush()
+    {
+        var brush = new LinearGradientBrush(
+            new GradientStopCollection
+            {
+                new GradientStop(Color.FromRgb(4, 7, 16), 0.0),
+                new GradientStop(Color.FromRgb(8, 15, 34), 0.5),
+                new GradientStop(Color.FromRgb(4, 7, 16), 1.0)
+            },
+            new Point(0.5, 0.0),
+            new Point(0.5, 1.0));
+        brush.Freeze();
+        return brush;
+    }
     private readonly Dictionary<(int Pct, int Tier, int SizeKey), FormattedText> _labelTextCache = new(512);
     private static readonly Typeface LabelTypeface = new(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
@@ -344,20 +391,25 @@ public sealed class DetectionOverlay : FrameworkElement
         double width = ActualWidth;
         double height = ActualHeight;
 
-        // Transparent fill makes the whole overlay hit-testable (needed for drawing tools).
-        dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, width, height));
+        var eqProj = MosaicEquirectangularProjection;
+        // Transparent fill in raw single-photo mode; deep night-sky celestial gradient in equirectangular mode.
+        dc.DrawRectangle(eqProj != null ? EquirectangularSkyBrush : Brushes.Transparent, null, new Rect(0, 0, width, height));
 
         double inv = 1.0 / Math.Max(_zoom, 0.20);
 
-        // Layer 0: Background Photo Mosaic Panels (Base Raster & Selection Outline)
-        if (MosaicPanels != null && MosaicPanels.Count > 0)
+        // Layer 0: Background Photo Mosaic Panels (Equirectangular Composite or Legacy Flat Affine)
+        if (eqProj != null || (MosaicPanels != null && MosaicPanels.Count > 0))
         {
             DrawMosaicPanels(dc, inv, width, height);
         }
 
         // Layer 1-4: Astrometric Grid, Constellations, Stars, DSO Markers
-        if (Wcs != null)
+        if (Wcs != null || eqProj != null)
         {
+            var placedSkyLabels = (ShowConstellations || ShowHipparcosStars || ShowDsoMarkers)
+                ? new List<Rect>(64)
+                : null;
+
             if (ShowSphericalGrid)
             {
                 DrawSphericalGrid(dc, inv, width, height);
@@ -365,17 +417,17 @@ public sealed class DetectionOverlay : FrameworkElement
 
             if (ShowConstellations)
             {
-                DrawConstellationLines(dc, inv, width, height);
+                DrawConstellationLines(dc, inv, width, height, placedSkyLabels);
             }
 
             if (ShowHipparcosStars)
             {
-                DrawHipparcosStars(dc, inv, width, height);
+                DrawHipparcosStars(dc, inv, width, height, placedSkyLabels);
             }
 
             if (ShowDsoMarkers)
             {
-                DrawDsoMarkers(dc, inv, width, height);
+                DrawDsoMarkers(dc, inv, width, height, placedSkyLabels);
             }
         }
 
@@ -844,6 +896,13 @@ public sealed class DetectionOverlay : FrameworkElement
 
     private void DrawSphericalGrid(DrawingContext dc, double inv, double width, double height)
     {
+        var eqProj = MosaicEquirectangularProjection;
+        if (eqProj != null)
+        {
+            DrawEquirectangularGrid(dc, eqProj, inv, width, height);
+            return;
+        }
+
         var wcs = Wcs;
         if (wcs == null) return;
 
@@ -891,6 +950,71 @@ public sealed class DetectionOverlay : FrameworkElement
                 dc.DrawRectangle(LabelBackground, null, new Rect(midPt.X + (4 * inv), midPt.Y - (ft.Height / 2), ft.Width + (6 * inv), ft.Height));
                 dc.DrawText(ft, new Point(midPt.X + (7 * inv), midPt.Y - (ft.Height / 2)));
             }
+        }
+    }
+
+    private void DrawEquirectangularGrid(DrawingContext dc, EquirectangularProjection proj, double inv, double width, double height)
+    {
+        var gridPen = new Pen(MakeBrush(56, 189, 248, 85), 1.15 * inv);
+        gridPen.Freeze();
+
+        var labelBrush = MakeBrush(56, 189, 248, 215);
+        double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+        var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+        double fontSize = Math.Clamp(11.0 * inv, 9.0, 22.0);
+
+        static double ChooseStep(double span, double[] candidates, int targetLines)
+        {
+            foreach (double step in candidates)
+            {
+                if (span / step <= targetLines) return step;
+            }
+            return candidates[^1];
+        }
+
+        double raStep = ChooseStep(proj.RaSpanDeg, new[] { 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 45.0 }, 9);
+        double decStep = ChooseStep(proj.DecSpanDeg, new[] { 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0 }, 7);
+
+        // Vertical RA meridians across [-RaSpan/2 .. +RaSpan/2]
+        int maxRaSteps = (int)Math.Ceiling(proj.RaSpanDeg / raStep) + 2;
+        double startOffset = -Math.Ceiling((proj.RaSpanDeg * 0.5) / raStep) * raStep;
+        double baseRaGrid = Math.Round(proj.CenterRaDeg / raStep) * raStep;
+        for (int i = 0; i <= maxRaSteps; i++)
+        {
+            double raDeg = EquirectangularProjection.NormalizeRa(baseRaGrid + startOffset + (i * raStep));
+            double relRa = proj.RelativeRaDeg(raDeg);
+            if (Math.Abs(relRa) > (proj.RaSpanDeg * 0.5) + 0.01) continue;
+
+            double x = (0.5 + (relRa / proj.RaSpanDeg)) * width;
+            dc.DrawLine(gridPen, new Point(x, 0), new Point(x, height));
+
+            double totalHours = raDeg / 15.0;
+            int hh = (int)Math.Floor(totalHours) % 24;
+            int mm = (int)Math.Round((totalHours - Math.Floor(totalHours)) * 60.0);
+            if (mm >= 60) { mm = 0; hh = (hh + 1) % 24; }
+            string raLabel = mm == 0 ? $"{hh}h" : $"{hh}h{mm:00}m";
+
+            var ft = new FormattedText(raLabel, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, fontSize, labelBrush, dpi);
+            double lx = Math.Clamp(x + (4 * inv), 4 * inv, Math.Max(4 * inv, width - ft.Width - (8 * inv)));
+            double ly = 10 * inv;
+            dc.DrawRectangle(LabelBackground, null, new Rect(lx - (3 * inv), ly - (2 * inv), ft.Width + (6 * inv), ft.Height + (4 * inv)));
+            dc.DrawText(ft, new Point(lx, ly));
+        }
+
+        // Horizontal Dec parallels
+        double firstDec = Math.Ceiling(proj.DecMinDeg / decStep) * decStep;
+        for (double decDeg = firstDec; decDeg <= proj.DecMaxDeg + 1e-6; decDeg += decStep)
+        {
+            if (Math.Abs(decDeg) > 89.9) continue;
+            double y = ((proj.DecMaxDeg - decDeg) / proj.DecSpanDeg) * height;
+            dc.DrawLine(gridPen, new Point(0, y), new Point(width, y));
+
+            string decLabel = decStep < 1.0 ? $"{decDeg:+0.0;-0.0;0}°" : $"{decDeg:+0;-0;0}°";
+            var ft = new FormattedText(decLabel, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, fontSize, labelBrush, dpi);
+            double lx = 10 * inv;
+            double ly = Math.Clamp(y - (ft.Height * 0.5), 6 * inv, Math.Max(6 * inv, height - ft.Height - (6 * inv)));
+            dc.DrawRectangle(LabelBackground, null, new Rect(lx - (3 * inv), ly - (2 * inv), ft.Width + (6 * inv), ft.Height + (4 * inv)));
+            dc.DrawText(ft, new Point(lx, ly));
         }
     }
 
@@ -948,33 +1072,101 @@ public sealed class DetectionOverlay : FrameworkElement
         }
     }
 
-    private void DrawHipparcosStars(DrawingContext dc, double inv, double width, double height)
+    private static bool TryReserveLabelRect(List<Rect>? occupied, Rect candidate, double padX = 4.0, double padY = 3.0)
     {
+        if (occupied == null) return true;
+        var padded = new Rect(candidate.X - padX, candidate.Y - padY, candidate.Width + (2.0 * padX), candidate.Height + (2.0 * padY));
+        for (int i = 0; i < occupied.Count; i++)
+        {
+            if (occupied[i].IntersectsWith(padded))
+            {
+                return false;
+            }
+        }
+        occupied.Add(padded);
+        return true;
+    }
+
+    private bool IsCoordinateNearSolvedMosaic(double raDeg, double decDeg, double marginDeg)
+    {
+        var panels = MosaicPanels;
+        if (panels == null || panels.Count == 0) return true;
+
+        bool anySolved = false;
+        var coord = new CelestialCoordinates(raDeg, decDeg);
+        for (int i = 0; i < panels.Count; i++)
+        {
+            var p = panels[i];
+            if (!p.IsVisible || !p.IsSolved || p.Wcs == null) continue;
+            anySolved = true;
+
+            double halfDiagDeg = 0.55 * Math.Sqrt((p.Wcs.FovWidthDegrees * p.Wcs.FovWidthDegrees) + (p.Wcs.FovHeightDegrees * p.Wcs.FovHeightDegrees));
+            if (p.Wcs.CenterCoordinates.AngularDistanceTo(coord) <= Math.Max(3.5, halfDiagDeg + marginDeg))
+            {
+                return true;
+            }
+        }
+
+        return !anySolved;
+    }
+
+    private void DrawHipparcosStars(DrawingContext dc, double inv, double width, double height, List<Rect>? placedLabels = null)
+    {
+        var eqProj = MosaicEquirectangularProjection;
         var wcs = Wcs;
-        if (wcs == null || width <= 0 || height <= 0) return;
+        if ((wcs == null && eqProj == null) || width <= 0 || height <= 0) return;
 
-        double fovDeg = Math.Max(wcs.FovWidthDegrees, wcs.FovHeightDegrees);
-        double searchRadius = Math.Max((fovDeg * 0.75) + 0.5, 6.0 / Math.Max(0.01, _zoom));
-        searchRadius = Math.Clamp(searchRadius, 4.0, 85.0);
-
-        double maxMag = fovDeg switch
+        if (eqProj != null)
         {
-            > 35.0 => 5.2,
-            > 20.0 => 6.2,
-            > 10.0 => 7.2,
-            > 4.0 => 8.2,
-            _ => 9.2
-        };
+            double spanDeg = Math.Sqrt((eqProj.RaSpanDeg * eqProj.RaSpanDeg) + (eqProj.DecSpanDeg * eqProj.DecSpanDeg));
+            double searchRadius = Math.Clamp(spanDeg * 0.65, 10.0, 180.0);
+            double midDec = Math.Clamp(0.5 * (eqProj.DecMinDeg + eqProj.DecMaxDeg), -89.9, 89.9);
+            double maxMag = eqProj.RaSpanDeg switch
+            {
+                > 90.0 => 6.3,
+                > 45.0 => 6.7,
+                > 20.0 => 7.4,
+                _ => 8.2
+            };
 
-        if (_cachedHipparcosStars == null || _lastHipparcosWcs != wcs)
+            if (_cachedHipparcosStars == null || _lastHipparcosProj != eqProj)
+            {
+                _cachedHipparcosStars = HipparcosCatalog.QueryRegion(
+                    eqProj.CenterRaDeg,
+                    midDec,
+                    searchRadius,
+                    maxMag,
+                    maxResults: 3500);
+                _lastHipparcosProj = eqProj;
+                _lastHipparcosWcs = wcs;
+            }
+        }
+        else if (wcs != null)
         {
-            _cachedHipparcosStars = HipparcosCatalog.QueryRegion(
-                wcs.CenterCoordinates.RaDegrees,
-                wcs.CenterCoordinates.DecDegrees,
-                searchRadius,
-                maxMag,
-                maxResults: 600);
-            _lastHipparcosWcs = wcs;
+            double fovDeg = Math.Max(wcs.FovWidthDegrees, wcs.FovHeightDegrees);
+            double searchRadius = Math.Max((fovDeg * 0.75) + 0.5, 6.0 / Math.Max(0.01, _zoom));
+            searchRadius = Math.Clamp(searchRadius, 4.0, 85.0);
+
+            double maxMag = fovDeg switch
+            {
+                > 35.0 => 5.2,
+                > 20.0 => 6.2,
+                > 10.0 => 7.2,
+                > 4.0 => 8.2,
+                _ => 9.2
+            };
+
+            if (_cachedHipparcosStars == null || _lastHipparcosWcs != wcs || _lastHipparcosProj != null)
+            {
+                _cachedHipparcosStars = HipparcosCatalog.QueryRegion(
+                    wcs.CenterCoordinates.RaDegrees,
+                    wcs.CenterCoordinates.DecDegrees,
+                    searchRadius,
+                    maxMag,
+                    maxResults: 600);
+                _lastHipparcosWcs = wcs;
+                _lastHipparcosProj = null;
+            }
         }
 
         var stars = _cachedHipparcosStars;
@@ -991,8 +1183,11 @@ public sealed class DetectionOverlay : FrameworkElement
         {
             if (!TryProjectCelestialTo2DCanvas(star.RaDeg, star.DecDeg, out double px, out double py)) continue;
             if (!view.Contains(px, py)) continue;
+            if (eqProj != null && (px < 0 || px > width || py < 0 || py > height)) continue;
 
-            double radius = Math.Max(1.0, (8.5 - star.Mag) * 0.9) * inv;
+            double radius = eqProj != null
+                ? Math.Clamp((7.2 - star.Mag) * 0.65, 0.9, 5.2) * inv
+                : Math.Max(1.0, (8.5 - star.Mag) * 0.9) * inv;
             var starBrush = GetStarBrush(star.Bv);
 
             if (star.Mag <= 3.5)
@@ -1004,7 +1199,10 @@ public sealed class DetectionOverlay : FrameworkElement
 
             dc.DrawEllipse(starBrush, null, new Point(px, py), radius, radius);
 
-            if (star.Mag <= 2.8 || (_zoom > 2.0 && star.Mag <= 4.2))
+            bool drawLabel = eqProj != null
+                ? ((_zoom > 1.35 && star.Mag <= 3.8) || (_zoom <= 1.35 && star.Mag <= 1.6))
+                : (star.Mag <= 2.8 || (_zoom > 2.0 && star.Mag <= 4.2));
+            if (drawLabel)
             {
                 string text = $"HIP {star.HipId} ({star.Mag:F1})";
                 var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
@@ -1012,17 +1210,21 @@ public sealed class DetectionOverlay : FrameworkElement
 
                 double lx = px + radius + (3.0 * inv);
                 double ly = py - (ft.Height / 2.0);
-                dc.DrawRectangle(StarLabelBackground, null,
-                    new Rect(lx - inv, ly - inv, ft.Width + (2.0 * inv), ft.Height + (2.0 * inv)));
-                dc.DrawText(ft, new Point(lx, ly));
+                var bgRect = new Rect(lx - inv, ly - inv, ft.Width + (2.0 * inv), ft.Height + (2.0 * inv));
+                if (TryReserveLabelRect(placedLabels, bgRect, 4.0 * inv, 3.0 * inv))
+                {
+                    dc.DrawRectangle(StarLabelBackground, null, bgRect);
+                    dc.DrawText(ft, new Point(lx, ly));
+                }
             }
         }
     }
 
-    private void DrawConstellationLines(DrawingContext dc, double inv, double width, double height)
+    private void DrawConstellationLines(DrawingContext dc, double inv, double width, double height, List<Rect>? placedLabels = null)
     {
+        var eqProj = MosaicEquirectangularProjection;
         var wcs = Wcs;
-        if (wcs == null || width <= 0 || height <= 0) return;
+        if ((wcs == null && eqProj == null) || width <= 0 || height <= 0) return;
 
         var pen = new Pen(ConstellationLineBrush, 1.4 * inv)
         {
@@ -1040,11 +1242,28 @@ public sealed class DetectionOverlay : FrameworkElement
         double margin = Math.Max(width, height) * 2.0;
         Rect activeBounds = view;
         activeBounds.Inflate(margin, margin);
+        Rect labelBounds = eqProj != null
+            ? Rect.Intersect(view, new Rect(0, 0, width, height))
+            : activeBounds;
 
         foreach (var line in ConstellationCatalog.Lines)
         {
-            if (!TryProjectCelestialTo2DCanvas(line.Start.RaDegrees, line.Start.DecDegrees, out double x1, out double y1)) continue;
-            if (!TryProjectCelestialTo2DCanvas(line.End.RaDegrees, line.End.DecDegrees, out double x2, out double y2)) continue;
+            double x1, y1, x2, y2;
+            if (eqProj != null)
+            {
+                if (!eqProj.TryProjectSegment(
+                    line.Start.RaDegrees, line.Start.DecDegrees,
+                    line.End.RaDegrees, line.End.DecDegrees,
+                    out x1, out y1, out x2, out y2))
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                if (!TryProjectCelestialTo2DCanvas(line.Start.RaDegrees, line.Start.DecDegrees, out x1, out y1)) continue;
+                if (!TryProjectCelestialTo2DCanvas(line.End.RaDegrees, line.End.DecDegrees, out x2, out y2)) continue;
+            }
 
             bool anyNear = activeBounds.Contains(x1, y1) || activeBounds.Contains(x2, y2);
             if (!anyNear) continue;
@@ -1056,9 +1275,8 @@ public sealed class DetectionOverlay : FrameworkElement
                 double mx = (x1 + x2) * 0.5;
                 double my = (y1 + y2) * 0.5;
 
-                if (activeBounds.Contains(mx, my))
+                if (!labelBounds.IsEmpty && labelBounds.Contains(mx, my))
                 {
-                    labeledConstellations.Add(line.ConstellationName);
                     string text = line.DisplayName.ToUpperInvariant();
                     var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
                         typeface, labelFontSize, ConstellationTextBrush, dpi);
@@ -1067,17 +1285,22 @@ public sealed class DetectionOverlay : FrameworkElement
                                         my - (ft.Height * 0.5) - (2.0 * inv),
                                         ft.Width + (8.0 * inv),
                                         ft.Height + (4.0 * inv));
-                    dc.DrawRoundedRectangle(ConstellationBackground, null, rect, 3.0 * inv, 3.0 * inv);
-                    dc.DrawText(ft, new Point(mx - (ft.Width * 0.5), my - (ft.Height * 0.5)));
+                    if (TryReserveLabelRect(placedLabels, rect, 6.0 * inv, 4.0 * inv))
+                    {
+                        labeledConstellations.Add(line.ConstellationName);
+                        dc.DrawRoundedRectangle(ConstellationBackground, null, rect, 3.0 * inv, 3.0 * inv);
+                        dc.DrawText(ft, new Point(mx - (ft.Width * 0.5), my - (ft.Height * 0.5)));
+                    }
                 }
             }
         }
     }
 
-    private void DrawDsoMarkers(DrawingContext dc, double inv, double width, double height)
+    private void DrawDsoMarkers(DrawingContext dc, double inv, double width, double height, List<Rect>? placedLabels = null)
     {
+        var eqProj = MosaicEquirectangularProjection;
         var wcs = Wcs;
-        if (wcs == null || width <= 0 || height <= 0) return;
+        if ((wcs == null && eqProj == null) || width <= 0 || height <= 0) return;
 
         var dsoPen = new Pen(DsoCircleBrush, 1.4 * inv)
         {
@@ -1087,22 +1310,52 @@ public sealed class DetectionOverlay : FrameworkElement
 
         double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
-        double labelFontSize = Math.Clamp(11.0 * inv, 10.0, 24.0);
-        double degPerPx = wcs.PixelScaleArcsec / 3600.0;
+        double labelFontSize = eqProj != null && _zoom < 1.35
+            ? Math.Clamp(9.5 * inv, 8.5, 19.0)
+            : Math.Clamp(11.0 * inv, 10.0, 24.0);
+        double degPerPx = eqProj != null
+            ? (1.0 / Math.Max(0.1, eqProj.PixelsPerDegreeY))
+            : ((wcs!.PixelScaleArcsec) / 3600.0);
 
         Rect view = _viewport.IsEmpty ? new Rect(0, 0, width, height) : _viewport;
-        view.Inflate(80 * inv, 80 * inv);
-
-        foreach (var target in CataloguePlateSolver.KnownCatalogues)
+        if (eqProj != null)
         {
+            view = Rect.Intersect(view, new Rect(0, 0, width, height));
+            if (view.IsEmpty) return;
+        }
+        else
+        {
+            view.Inflate(80 * inv, 80 * inv);
+        }
+
+        bool overviewMode = eqProj != null && _zoom < 1.35 && eqProj.RaSpanDeg > 20.0;
+        var candidates = overviewMode
+            ? CataloguePlateSolver.KnownCatalogues.OrderByDescending(t => t.TypicalFovDegrees)
+            : (IEnumerable<CataloguePlateSolver.AstronomicalTarget>)CataloguePlateSolver.KnownCatalogues;
+
+        int overviewLabelsDrawn = 0;
+        const int maxOverviewLabels = 10;
+
+        foreach (var target in candidates)
+        {
+            if (overviewMode && overviewLabelsDrawn >= maxOverviewLabels)
+            {
+                break;
+            }
+
+            if (overviewMode && !IsCoordinateNearSolvedMosaic(target.Coordinates.RaDegrees, target.Coordinates.DecDegrees, marginDeg: 3.5))
+            {
+                continue;
+            }
+
             if (!TryProjectCelestialTo2DCanvas(target.Coordinates.RaDegrees, target.Coordinates.DecDegrees, out double px, out double py)) continue;
             if (!view.Contains(px, py)) continue;
 
             double angularRadiusDeg = target.TypicalFovDegrees * 0.5;
             double pixelRadius = degPerPx > 1e-8 ? (angularRadiusDeg / degPerPx) : (20.0 * inv);
-            pixelRadius = Math.Clamp(pixelRadius, 14.0 * inv, 80.0 * inv);
-
-            dc.DrawEllipse(DsoFillBrush, dsoPen, new Point(px, py), pixelRadius, pixelRadius);
+            pixelRadius = overviewMode
+                ? Math.Clamp(pixelRadius, 9.0 * inv, 36.0 * inv)
+                : Math.Clamp(pixelRadius, 14.0 * inv, 80.0 * inv);
 
             string label = target.CommonName;
             var ft = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
@@ -1112,21 +1365,38 @@ public sealed class DetectionOverlay : FrameworkElement
             double ly = py + pixelRadius + (4.0 * inv);
 
             var bgRect = new Rect(lx - (4.0 * inv), ly - (2.0 * inv), ft.Width + (8.0 * inv), ft.Height + (4.0 * inv));
-            dc.DrawRoundedRectangle(DsoLabelBackground, null, bgRect, 3.0 * inv, 3.0 * inv);
-            dc.DrawText(ft, new Point(lx, ly));
+            bool labelFits = TryReserveLabelRect(placedLabels, bgRect, 6.0 * inv, 4.0 * inv);
+
+            if (overviewMode && !labelFits)
+            {
+                continue;
+            }
+
+            dc.DrawEllipse(DsoFillBrush, dsoPen, new Point(px, py), pixelRadius, pixelRadius);
+
+            if (labelFits)
+            {
+                overviewLabelsDrawn++;
+                dc.DrawRoundedRectangle(DsoLabelBackground, null, bgRect, 3.0 * inv, 3.0 * inv);
+                dc.DrawText(ft, new Point(lx, ly));
+            }
         }
     }
 
     /// <summary>
     /// Projects a celestial coordinate (RA, Dec) to 2D canvas coordinates.
-    /// In multi-panel mosaic mode, if the coordinate falls inside a visible solved panel, projects it
-    /// through that panel's local WCS and 2D affine canvas transform so catalog stars, constellations,
-    /// and DSO markers align 1:1 with the rendered photo bitmap.
+    /// Uses the cropped equirectangular sky projection when active, otherwise falls back to panel-local or master TAN WCS.
     /// </summary>
     private bool TryProjectCelestialTo2DCanvas(double raDeg, double decDeg, out double px, out double py)
     {
         px = 0;
         py = 0;
+        var eqProj = MosaicEquirectangularProjection;
+        if (eqProj != null)
+        {
+            return eqProj.EquatorialToCanvas(raDeg, decDeg, out px, out py, marginPx: 140.0);
+        }
+
         var wcs = Wcs;
         if (wcs == null) return false;
 
@@ -1161,7 +1431,7 @@ public sealed class DetectionOverlay : FrameworkElement
         if (!string.IsNullOrEmpty(path) && bmp != null)
         {
             _panelBitmapCache[path] = bmp;
-            _featheredBitmapCache.Remove(path);
+            PurgeFeatheredCacheForPath(path);
         }
     }
 
@@ -1170,7 +1440,25 @@ public sealed class DetectionOverlay : FrameworkElement
         if (!string.IsNullOrEmpty(path))
         {
             _panelBitmapCache.Remove(path);
-            _featheredBitmapCache.Remove(path);
+            PurgeFeatheredCacheForPath(path);
+        }
+    }
+
+    private static void PurgeFeatheredCacheForPath(string path)
+    {
+        string prefix = path + "_";
+        var keysToRemove = new List<string>();
+        foreach (string k in _featheredBitmapCache.Keys)
+        {
+            if (k.Equals(path, StringComparison.OrdinalIgnoreCase) ||
+                k.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                keysToRemove.Add(k);
+            }
+        }
+        foreach (string k in keysToRemove)
+        {
+            _featheredBitmapCache.Remove(k);
         }
     }
 
@@ -1180,8 +1468,41 @@ public sealed class DetectionOverlay : FrameworkElement
     public MosaicPanel? HitTestPanelAtCanvasPoint(Point canvasPt)
     {
         var panels = MosaicPanels;
-        var wcs = Wcs;
+        var eqProj = MosaicEquirectangularProjection;
         if (panels == null || panels.Count == 0) return null;
+
+        if (eqProj != null)
+        {
+            eqProj.CanvasToEquatorial(canvasPt.X, canvasPt.Y, out double raDeg, out double decDeg);
+            var sky = new CelestialCoordinates(raDeg, decDeg);
+            double decRad = sky.DecRadians;
+            double raRad = sky.RaRadians;
+            double sx = Math.Cos(decRad) * Math.Cos(raRad);
+            double sy = Math.Cos(decRad) * Math.Sin(raRad);
+            double sz = Math.Sin(decRad);
+
+            for (int pIndex = panels.Count - 1; pIndex >= 0; pIndex--)
+            {
+                var p = panels[pIndex];
+                if (!p.IsVisible || !p.IsSolved || p.Wcs == null || p.Width <= 0 || p.Height <= 0) continue;
+
+                if (p.Wcs.EquatorialToPixel(sky, out double lx, out double ly) &&
+                    lx >= 0 && lx <= p.Width && ly >= 0 && ly <= p.Height)
+                {
+                    var rt = p.Wcs.PixelToEquatorial(lx, ly);
+                    double dot = (sx * Math.Cos(rt.DecRadians) * Math.Cos(rt.RaRadians))
+                               + (sy * Math.Cos(rt.DecRadians) * Math.Sin(rt.RaRadians))
+                               + (sz * Math.Sin(rt.DecRadians));
+                    if (dot >= 0.96)
+                    {
+                        return p;
+                    }
+                }
+            }
+            return null;
+        }
+
+        var wcs = Wcs;
         if (panels.Count == 1)
         {
             var p0 = panels[0];
@@ -1327,6 +1648,10 @@ public sealed class DetectionOverlay : FrameworkElement
             return cached;
 
         var feathered = CreateFeatheredBitmap(baseBmp, fraction, edges, perimeterMask, perimeterDepth);
+        if (_featheredBitmapCache.Count > 64)
+        {
+            _featheredBitmapCache.Clear();
+        }
         _featheredBitmapCache[key] = feathered;
         return feathered;
     }
@@ -1553,9 +1878,9 @@ public sealed class DetectionOverlay : FrameworkElement
 
     private void DrawMosaicPanels(DrawingContext dc, double inv, double width, double height)
     {
+        var eqProj = MosaicEquirectangularProjection;
+        var compositeBmp = MosaicCompositeBitmap;
         var panels = MosaicPanels;
-        var wcs = Wcs;
-        if (panels == null || panels.Count == 0) return;
 
         var selectedBorderPen = new Pen(MakeBrush(56, 189, 248, 250), 2.8 * inv);
         selectedBorderPen.Freeze();
@@ -1568,6 +1893,52 @@ public sealed class DetectionOverlay : FrameworkElement
         double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         var typeface = new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
         double labelFontSize = Math.Clamp(11.0 * inv, 10.0, 24.0);
+
+        if (eqProj != null)
+        {
+            if (compositeBmp != null)
+            {
+                dc.PushOpacity(Math.Clamp(CompositeOpacity, 0.05, 1.0));
+                dc.DrawImage(compositeBmp, new Rect(0, 0, width, height));
+                dc.Pop();
+            }
+
+            if (panels != null && panels.Count > 0)
+            {
+                bool trLang = CataloguePlateSolver.UseTurkishLanguage;
+                int unsolvedRibbonIndex = 0;
+
+                for (int pIndex = 0; pIndex < panels.Count; pIndex++)
+                {
+                    var p = panels[pIndex];
+                    if (!p.IsVisible || p.Width <= 0 || p.Height <= 0) continue;
+
+                    if (p.IsSolved && p.Wcs != null && p.IsSelected)
+                    {
+                        DrawEquirectangularPanelOutline(dc, eqProj, p, selectedBorderPen, width, height, inv, labelFontSize, typeface, dpi, trLang);
+                    }
+                    else if (!p.IsSolved && panels.Count > 1)
+                    {
+                        // Surface unsolved warning neatly in bottom corner without obstructing sky dome
+                        string badge = trLang
+                            ? $"⚠️ [{p.Name}] Hizalanamadı — Katalog/Yıldız Eşleşmesi Yok"
+                            : $"⚠️ [{p.Name}] Unsolved — No Catalog/Star Match";
+                        var ft = new FormattedText(badge, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                            typeface, labelFontSize, MakeBrush(251, 191, 36, 255), dpi);
+                        double bx = 14.0 * inv;
+                        double by = height - ((unsolvedRibbonIndex + 1) * (ft.Height + (12.0 * inv))) - (10.0 * inv);
+                        var bgRect = new Rect(bx - (4.0 * inv), by - (2.0 * inv), ft.Width + (8.0 * inv), ft.Height + (4.0 * inv));
+                        dc.DrawRoundedRectangle(LabelBackground, unsolvedBorderPen, bgRect, 4.0 * inv, 4.0 * inv);
+                        dc.DrawText(ft, new Point(bx, by));
+                        unsolvedRibbonIndex++;
+                    }
+                }
+            }
+            return;
+        }
+
+        var wcs = Wcs;
+        if (panels == null || panels.Count == 0) return;
 
         Rect view = _viewport.IsEmpty ? new Rect(0, 0, width, height) : _viewport;
         view.Inflate(100 * inv, 100 * inv);
@@ -1651,6 +2022,74 @@ public sealed class DetectionOverlay : FrameworkElement
                 dc.DrawText(ft, new Point(pt1.X + (8.0 * inv), pt1.Y + (6.0 * inv)));
             }
         }
+    }
+
+    private void DrawEquirectangularPanelOutline(
+        DrawingContext dc,
+        EquirectangularProjection proj,
+        MosaicPanel panel,
+        Pen borderPen,
+        double width,
+        double height,
+        double inv,
+        double labelFontSize,
+        Typeface typeface,
+        double dpi,
+        bool trLang)
+    {
+        if (panel.Wcs == null) return;
+        const int edgeSteps = 14;
+        var perimeter = new List<Point>(edgeSteps * 4 + 1);
+
+        void AddSample(double sx, double sy)
+        {
+            var eq = panel.Wcs.PixelToEquatorial(sx, sy);
+            proj.EquatorialToCanvas(eq.RaDegrees, eq.DecDegrees, out double cx, out double cy);
+            perimeter.Add(new Point(cx, cy));
+        }
+
+        double maxW = Math.Max(1.0, panel.Width - 1.0);
+        double maxH = Math.Max(1.0, panel.Height - 1.0);
+        for (int i = 0; i < edgeSteps; i++) AddSample((i / (double)edgeSteps) * maxW, 0);
+        for (int i = 0; i < edgeSteps; i++) AddSample(maxW, (i / (double)edgeSteps) * maxH);
+        for (int i = 0; i < edgeSteps; i++) AddSample((1.0 - (i / (double)edgeSteps)) * maxW, maxH);
+        for (int i = 0; i < edgeSteps; i++) AddSample(0, (1.0 - (i / (double)edgeSteps)) * maxH);
+        if (perimeter.Count > 0) perimeter.Add(perimeter[0]);
+
+        var geom = new StreamGeometry();
+        using (var ctx = geom.Open())
+        {
+            bool openFigure = false;
+            Point prev = default;
+            double wrapLimit = width * 0.45;
+            foreach (var pt in perimeter)
+            {
+                if (!openFigure || Math.Abs(pt.X - prev.X) > wrapLimit)
+                {
+                    ctx.BeginFigure(pt, isFilled: false, isClosed: false);
+                    openFigure = true;
+                }
+                else
+                {
+                    ctx.LineTo(pt, isStroked: true, isSmoothJoin: true);
+                }
+                prev = pt;
+            }
+        }
+        geom.Freeze();
+        dc.DrawGeometry(null, borderPen, geom);
+
+        var topLeftEq = panel.Wcs.PixelToEquatorial(0, 0);
+        proj.EquatorialToCanvas(topLeftEq.RaDegrees, topLeftEq.DecDegrees, out double bx, out double by);
+        bx = Math.Clamp(bx + (4.0 * inv), 8.0 * inv, Math.Max(8.0 * inv, width - (220.0 * inv)));
+        by = Math.Clamp(by + (4.0 * inv), 8.0 * inv, Math.Max(8.0 * inv, height - (32.0 * inv)));
+
+        string badge = $"🎯 [{panel.Name}] ({panel.Width}x{panel.Height})";
+        var ft = new FormattedText(badge, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+            typeface, labelFontSize, MakeBrush(56, 189, 248, 255), dpi);
+        var bgRect = new Rect(bx, by, ft.Width + (8.0 * inv), ft.Height + (4.0 * inv));
+        dc.DrawRoundedRectangle(LabelBackground, null, bgRect, 3.0 * inv, 3.0 * inv);
+        dc.DrawText(ft, new Point(bx + (4.0 * inv), by + (2.0 * inv)));
     }
 
     private static Brush GetStarBrush(float bv) => bv switch
