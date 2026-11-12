@@ -121,4 +121,53 @@ public class TransientAnomalyTests
         int anomalyCount = results.Count(r => r.IsAnomaly);
         Assert.Equal(2, anomalyCount);
     }
+    [Fact]
+    public void DetectAnomalies_CosmicRaySpike_NotFlaggedAsAnomaly()
+    {
+        var wcs = new WcsMatrix(
+            centerCoordinates: new CelestialCoordinates(15.0, -75.0),
+            referencePixelX: 500,
+            referencePixelY: 500,
+            pixelScaleArcsec: 3.6,
+            rotationDegrees: 0,
+            imageWidth: 1000,
+            imageHeight: 1000
+        );
+
+        // A single-pixel spike (width = 1, height = 1, FWHM < 1.0)
+        var detections = new List<AstrophotographyObject>
+        {
+            new AstrophotographyObject(1, new BoundingBox(500, 500, 1, 1), 0.95f, "star", Snr: 15.0f)
+        };
+
+        var results = TransientAnomalyDetector.DetectAnomalies(detections, wcs, 1000, 1000, minSnr: 7.5f, minConfidence: 0.65f);
+
+        Assert.Single(results);
+        Assert.False(results[0].IsAnomaly, "Single-pixel cosmic ray or hot pixel spike must be rejected by PSF shape filter");
+    }
+
+    [Fact]
+    public void DetectAnomalies_SatelliteStreak_NotFlaggedAsAnomaly()
+    {
+        var wcs = new WcsMatrix(
+            centerCoordinates: new CelestialCoordinates(15.0, -75.0),
+            referencePixelX: 500,
+            referencePixelY: 500,
+            pixelScaleArcsec: 3.6,
+            rotationDegrees: 0,
+            imageWidth: 1000,
+            imageHeight: 1000
+        );
+
+        // An elongated streak (width = 30, height = 3, Ellipticity = 0.90)
+        var detections = new List<AstrophotographyObject>
+        {
+            new AstrophotographyObject(1, new BoundingBox(500, 500, 30, 3), 0.90f, "star", Snr: 14.0f)
+        };
+
+        var results = TransientAnomalyDetector.DetectAnomalies(detections, wcs, 1000, 1000, minSnr: 7.5f, minConfidence: 0.65f);
+
+        Assert.Single(results);
+        Assert.False(results[0].IsAnomaly, "Elongated satellite streak must be rejected by ellipticity filter");
+    }
 }

@@ -22,6 +22,9 @@ public partial class MainWindow : Window
     private double _currentZoom = 1.0;
     private bool _isUpdatingZoomOrRotation;
     private Point _lastCenterPixel;
+    private string? _lastFittedImagePath;
+    private Size _lastFittedCanvasSize;
+    private bool _lastFittedWasEquirectangular;
 
     private Point? _rectStart;
     private bool _isDrawingRect;
@@ -57,8 +60,19 @@ public partial class MainWindow : Window
             Vm.RequestScrollToMosaicPanel += ScrollToMosaicPanel;
             Vm.RequestInvalidateOverlay += () =>
             {
-                Overlay.InvalidateVisual();
-                SphereControl.RebuildPhotoMeshes();
+                if (Dispatcher.CheckAccess())
+                {
+                    Overlay.InvalidateVisual();
+                    SphereControl.RebuildPhotoMeshes();
+                }
+                else
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        Overlay.InvalidateVisual();
+                        SphereControl.RebuildPhotoMeshes();
+                    }));
+                }
             };
         }
 
@@ -154,6 +168,11 @@ public partial class MainWindow : Window
 
     private void Vm_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(() => Vm_PropertyChanged(sender, e)));
+            return;
+        }
         if (string.IsNullOrEmpty(e.PropertyName))
         {
             SphereControl.RefreshLocalization();
@@ -171,9 +190,22 @@ public partial class MainWindow : Window
                 else
                 {
                     CanvasContainer.Margin = new Thickness(0);
+                    _lastFittedImagePath = null;
+                    _lastFittedCanvasSize = default;
+                    _lastFittedWasEquirectangular = false;
                 }
-                // Wait for layout so the viewport size is known, then fit the new image to the window.
-                Dispatcher.BeginInvoke(new Action(FitToView), DispatcherPriority.Loaded);
+                // Preserve zoom & pan when adjusting display sliders on the same image; fit only on genuinely new file load
+                if (Vm != null && !string.Equals(_lastFittedImagePath, Vm.SelectedImagePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _lastFittedImagePath = Vm.SelectedImagePath;
+                    _lastFittedCanvasSize = new Size(Vm.CanvasWidth, Vm.CanvasHeight);
+                    _lastFittedWasEquirectangular = Vm.ActiveEquirectangularProjection != null;
+                    Dispatcher.BeginInvoke(new Action(FitToView), DispatcherPriority.Loaded);
+                }
+                else
+                {
+                    Dispatcher.BeginInvoke(new Action(() => Overlay.InvalidateVisual()), DispatcherPriority.Render);
+                }
                 break;
             case nameof(MainViewModel.ImageRotationAngle):
                 if (Vm?.ImageBitmap != null)
@@ -181,10 +213,6 @@ public partial class MainWindow : Window
                     Point keepCenter = _lastCenterPixel;
                     Dispatcher.BeginInvoke(new Action(() => CenterOnPixel(keepCenter.X, keepCenter.Y)), DispatcherPriority.Loaded);
                 }
-                break;
-            case nameof(MainViewModel.Tool):
-                CancelDrawing();
-                ApplyToolCursor();
                 break;
             case nameof(MainViewModel.Is2DViewActive):
                 if (Vm != null && Vm.Is2DViewActive)
@@ -198,7 +226,7 @@ public partial class MainWindow : Window
                 break;
             case nameof(MainViewModel.CanvasWidth):
             case nameof(MainViewModel.CanvasHeight):
-            case nameof(MainViewModel.MosaicPanels):
+            case nameof(MainViewModel.ActiveEquirectangularProjection):
                 if (Vm != null)
                 {
                     CanvasContainer.Margin = (Vm.ImageBitmap != null || Vm.MosaicProject.Count > 0)
@@ -207,15 +235,36 @@ public partial class MainWindow : Window
                 }
                 if (Vm != null && Vm.Is2DViewActive)
                 {
-                    Dispatcher.BeginInvoke(new Action(() =>
+                    bool isEq = Vm.ActiveEquirectangularProjection != null;
+                    bool dimsChanged = Math.Abs(Vm.CanvasWidth - _lastFittedCanvasSize.Width) > 2.0
+                                    || Math.Abs(Vm.CanvasHeight - _lastFittedCanvasSize.Height) > 2.0
+                                    || isEq != _lastFittedWasEquirectangular;
+                    if (dimsChanged)
                     {
-                        if (Vm.MosaicProject.Count > 1)
+                        _lastFittedCanvasSize = new Size(Vm.CanvasWidth, Vm.CanvasHeight);
+                        _lastFittedWasEquirectangular = isEq;
+                        Dispatcher.BeginInvoke(new Action(() =>
                         {
                             FitToView();
-                        }
-                        Overlay.InvalidateVisual();
-                    }), DispatcherPriority.Loaded);
+                            Overlay.InvalidateVisual();
+                        }), DispatcherPriority.Loaded);
+                    }
+                    else
+                    {
+                        Dispatcher.BeginInvoke(new Action(() => Overlay.InvalidateVisual()), DispatcherPriority.Render);
+                    }
                 }
+                break;
+            case nameof(MainViewModel.MosaicPanels):
+            case nameof(MainViewModel.MosaicCompositeBitmap):
+                if (Vm != null && Vm.Is2DViewActive)
+                {
+                    Dispatcher.BeginInvoke(new Action(() => Overlay.InvalidateVisual()), DispatcherPriority.Render);
+                }
+                break;
+            case nameof(MainViewModel.Tool):
+                CancelDrawing();
+                ApplyToolCursor();
                 break;
         }
     }
@@ -245,10 +294,32 @@ public partial class MainWindow : Window
             var files = (string[]?)e.Data.GetData(DataFormats.FileDrop);
             if (files != null && files.Length > 0)
             {
-                var validFiles = files.Where(f => {
-                    string x = Path.GetExtension(f).ToLowerInvariant();
-                    return x is ".png" or ".jpg" or ".jpeg" or ".tif" or ".tiff" or ".bmp" or ".fits" or ".fit";
-                }).ToList();
+                static bool IsSupportedImage(string path)
+                {
+                    string x = Path.GetExtension(path).ToLowerInvariant();
+                    return x is ".png" or ".jpg" or ".jpeg" or ".tif" or ".tiff" or ".bmp" or ".fits" or ".fit" or ".fts" or ".xisf";
+                }
+
+                var validFiles = new List<string>();
+                foreach (var entry in files)
+                {
+                    if (Directory.Exists(entry))
+                    {
+                        try
+                        {
+                            validFiles.AddRange(Directory.EnumerateFiles(entry, "*.*", SearchOption.TopDirectoryOnly)
+                                .Where(IsSupportedImage)
+                                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
+                        }
+                        catch { }
+                    }
+                    else if (File.Exists(entry) && IsSupportedImage(entry))
+                    {
+                        validFiles.Add(entry);
+                    }
+                }
+
+                validFiles = validFiles.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
                 if (validFiles.Count > 0)
                 {
@@ -370,14 +441,13 @@ public partial class MainWindow : Window
 
             ViewerScrollViewer.ScrollToHorizontalOffset(ViewerScrollViewer.HorizontalOffset + deltaX);
             ViewerScrollViewer.ScrollToVerticalOffset(ViewerScrollViewer.VerticalOffset + deltaY);
-            ViewerScrollViewer.UpdateLayout();
         }
         finally
         {
             _isUpdatingZoomOrRotation = false;
         }
 
-        UpdateViewport(notifyStellarium: true);
+        UpdateViewport(notifyStellarium: false);
         e.Handled = true;
     }
 

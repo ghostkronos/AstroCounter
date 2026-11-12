@@ -83,4 +83,39 @@ public class PhotometricCountingTests
         int anomalyCount = anomalies.Count(a => a.IsAnomaly);
         Assert.InRange(anomalyCount, 0, 2);
     }
+
+    [Fact]
+    public void DetectStars_SoftWideFieldStarAndCompanionStar_BothDetectedOnCompressedFormat()
+    {
+        int w = 256, h = 256;
+        using var bmp = new SkiaSharp.SKBitmap(w, h, SkiaSharp.SKColorType.Bgra8888, SkiaSharp.SKAlphaType.Premul);
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                double lum = 18.0;
+                // 1. Bright wide star at (80, 80)
+                double d1Sq = ((x - 80) * (x - 80)) + ((y - 80) * (y - 80));
+                lum += 210.0 * Math.Exp(-d1Sq / (2.0 * 4.5 * 4.5));
+
+                // 2. Distinct companion star 18px away at (98, 80) separated by a valley
+                double d2Sq = ((x - 98) * (x - 98)) + ((y - 80) * (y - 80));
+                lum += 85.0 * Math.Exp(-d2Sq / (2.0 * 2.0 * 2.0));
+
+                // 3. Soft defocused faint/medium star at (180, 160), wide sigma=4.0, peak delta=18
+                double d3Sq = ((x - 180) * (x - 180)) + ((y - 160) * (y - 160));
+                lum += 18.0 * Math.Exp(-d3Sq / (2.0 * 4.0 * 4.0));
+
+                byte v = (byte)Math.Clamp((int)Math.Round(lum), 0, 255);
+                bmp.SetPixel(x, y, new SkiaSharp.SKColor(v, v, v, 255));
+            }
+        }
+
+        var cfg = new TilingConfig(DefaultConfidenceThreshold: 0.25f, MinConfidence: 0.05f);
+        var stars = PhotometricStarFinder.DetectStars(bmp, cfg, isCompressedFormat: true);
+
+        Assert.Contains(stars, s => Math.Abs(s.CenterX - 80) < 4 && Math.Abs(s.CenterY - 80) < 4);
+        Assert.Contains(stars, s => Math.Abs(s.CenterX - 98) < 4 && Math.Abs(s.CenterY - 80) < 4);
+        Assert.Contains(stars, s => Math.Abs(s.CenterX - 180) < 5 && Math.Abs(s.CenterY - 160) < 5);
+    }
 }

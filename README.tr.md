@@ -1,9 +1,9 @@
-# AstroCounter v1.3.0
+# AstroCounter v1.4.1
 
 **Dil / Language:** [**English Documentation (EN)**](README.md) | **Türkçe (TR)**
 
 [![Build & Test](https://github.com/ghostkronos/AstroCounter/actions/workflows/build-test.yml/badge.svg)](https://github.com/ghostkronos/AstroCounter/actions)
-[![Version](https://img.shields.io/badge/Version-v1.3.0-00E5FF.svg)](https://github.com/ghostkronos/AstroCounter/releases)
+[![Version](https://img.shields.io/badge/Version-v1.4.1-00E5FF.svg)](https://github.com/ghostkronos/AstroCounter/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Framework](https://img.shields.io/badge/.NET-10.0_WPF-purple.svg)](https://dotnet.microsoft.com/)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX_Runtime-DirectML-orange.svg)](https://onnxruntime.ai/)
@@ -13,7 +13,7 @@
 
 > [!NOTE]
 > **Proje Kapsamı:**  
-> AstroCounter; yüksek çözünürlüklü astrofotoğraf analizi, tam çözünürlüklü fotometrik yıldız sayımı, çoklu mozaik kenetleme, kör geometrik gökyüzü çözümleme (plate solving), 3B gök küresi (planetarium) görselleştirmesi ve gerçek zamanlı Stellarium senkronizasyonu için geliştirilmiş açık kaynaklı bir masaüstü uygulamasıdır. Yazılım, Sloan Digital Sky Survey (SDSS DR16) gerçek gökyüzü gözlem verileriyle eğitilmiş `YOLO11n ONNX` sinir ağı modeli (`models/astro_yolo11n.onnx`) ve gömülü J2000 parlak yıldız ve derin uzay kataloğu ile birlikte gelir.
+> AstroCounter; yüksek çözünürlüklü astrofotoğraf analizi, tam çözünürlüklü fotometrik yıldız sayımı, çoklu mozaik kenetleme, kör geometrik gökyüzü çözümleme (plate solving), 3B gök küresi (planetarium) görselleştirmesi ve gerçek zamanlı Stellarium senkronizasyonu için geliştirilmiş açık kaynaklı bir masaüstü uygulamasıdır. Yazılım, Sloan Digital Sky Survey (SDSS DR16) gerçek gökyüzü gözlem verileriyle eğitilmiş `YOLO11n ONNX` sinir ağı modeli (`models/astro_yolo11n.onnx`), 2,5 Milyon yıldızlı yoğun **Gaia DR3 / Tycho-2** referans kataloğu (`catalogs/gaia_tycho_dense.bin`), 13.963 derin uzay cismini kapsayan **OpenNGC** kataloğu ve 88 resmi IAU takımyıldızının tamamıyla birlikte gelir.
 
 ---
 
@@ -21,12 +21,16 @@
 
 Yüksek çözünürlüklü astrofotoğraflar ve çok parçalı gökyüzü mozaikleri genellikle 24 MP ile 100 MP+ üzerinde boyuta ve çok karanlık doğrusal istiflerden yoğun şehir ışık kirliliğine veya kayıplı JPEG sıkıştırma izlerine kadar uzanan uç dinamik aralık farklarına sahiptir. Standart nesne tespit yöntemleri tam kare görüntüleri küçük girdi matrislerine sıkıştırdığında, sönük yıldızlar ve derin uzay cisimleri kaybolur.
 
-**AstroCounter v1.3.0**, dört temel astronomik görüntü işleme katmanını pencere içinde serbestçe sürüklenebilen modern ve minimalist bir masaüstü arayüzünde birleştirir:
+**AstroCounter v1.4.1**, beş temel astronomik görüntü işleme katmanını pencere içinde serbestçe sürüklenebilen modern, animasyonlu **Observatory Glass** masaüstü arayüzünde birleştirir:
 
-1. **Çoklu Tespit Motoru (`Hibrit Füzyon`, `Fotometri`, `DirectML`):** Analitik nokta dağılım fonksiyonu ve sinyal-gürültü oranı fotometrisini (DAOStarFinder standardı), Windows DirectML donanım hızlandırmalı 640×640 örtüşmeli dilimleme (SAHI) ve `YOLO11n ONNX` derin öğrenme çıkarımı ile bir arada sunar.
-2. **Format Duyarlı Fotoğraf Başına Otomatik Güven Eşiği & Çoklu Işık İşleme:** Her fotoğrafın arka plan gürültü dirsek noktasını ve dosya formatını analiz ederek kayıplı formatlarda (`.jpg`/`.jpeg`) sıkıştırma artefaktlarına karşı daha seçici, kayıpsız bilimsel formatlarda (`.tiff`, `.fits`, `.png`) ise sönük yıldızlara karşı daha hassas eşik değerini otomatik belirler. **Görüntü & Işık (`☀️`)** panelindeki ayarlar hem 2D hem 3D ekranda seçili tüm fotoğraflara eşzamanlı olarak uygulanır.
-3. **Kör Geometrik Gökyüzü Çözümleme & Çoklu Mozaik Kenetleme:** Alt-piksel hassasiyetinde yıldız merkezlerini çıkarır, ölçek ve dönüşten bağımsız üçgen kenar oranlarını RANSAC ile J2000 kataloğuna karşı doğrular, örtüşen mozaik karelerini yıldız eşleşmeleriyle birbirine kenetler ve küresel gök koordinatlarında (`RA`/`Dec`) 100.000+ yıldızı mükerrer sayım olmadan birleştirir.
-4. **2D Sınırsız Tuval, 3D Gök Küresi & Çift Yönlü Stellarium Senkronizasyonu:** 2D ekranda fotoğraf sınırlarına takılmadan her yöne sınırsız kaydırma (infinite panning), 360° etkileşimli 3D gök küresi, hem 2D hem 3D modda Stellarium ile çift yönlü canlı kamera senkronizasyonu ve 360° × 180° panoramik gökyüzü haritası dışa aktarımı sunar.
+1. **Yoğun Gökyüzü Katalog Paketi (2.5M Yıldız + 14K DSO + 88 Takımyıldız):**
+   - **2.500.000 Gaia DR3 / Tycho-2 Referans Yıldızı:** 14.0 kadir parlaklığına kadar inen ikili katalog (`catalogs/gaia_tycho_dense.bin`), 180 deklinasyon şeridi ve hızlı 1 MB akış okuyucusuyla geniş açıdan dar açıya tüm fotoğrafları çözer.
+   - **13.963 OpenNGC Derin Uzay Cismi:** Çekirdeğe gömülü sıkıştırılmış veri akışı (`Resources/open_ngc.catalog.gz`) ile tüm 110 Messier nesnesi, 7.840 NGC ve 5.386 IC nesnesini kapsar; kadraj içine düşen gök cisimlerini otomatik tespit eder.
+   - **88 Resmi IAU Takımyıldızı:** 695 çizgi segmentinden oluşan tam takımyıldız ağı (`Resources/constellations_88.catalog.gz`) ve çift dilli (Türkçe/İngilizce) isim desteği.
+2. **Çoklu Tespit Motoru (`Hibrit Füzyon`, `Fotometri`, `DirectML`):** Çok ölçekli yumuşak-PSF fotometrisini (DAOStarFinder standardı ve yakın ikili yıldız ayrıştırması), Windows DirectML donanım hızlandırmalı 640×640 örtüşmeli dilimleme (SAHI) ve `YOLO11n ONNX` derin öğrenme çıkarımı ile bir arada sunar.
+3. **Format Duyarlı Otomatik Güven & Canlı Mozaik Gökyüzü Tonu Eşitleme:** Her fotoğrafın arka plan gürültü dirsek noktasını ve dosya formatını analiz ederek `.jpg`/`.jpeg` sıkıştırma artefaktlarını bastırır, `.tiff`/`.fits`/`.png` karelerinde ise sönük yıldızları korur. Canlı **Mozaik Gökyüzü Tonu Eşitleme (`MosaicSkyHarmonizer`)** hem **2D** hem **3D** ekranda paneller arası ton farklarını ve radyal ışık kubbesi eğimini otomatik eşitler.
+4. **Kör Geometrik Gökyüzü Çözümleme & Çoklu Mozaik Kenetleme:** Alt-piksel hassasiyetinde yıldız merkezlerini çıkarır, ölçek ve dönüşten bağımsız üçgen kenar oranlarını RANSAC ile J2000 kataloğuna karşı doğrular, örtüşen mozaik karelerini yıldız eşleşmeleriyle birbirine kenetler ve küresel gök koordinatlarında (`RA`/`Dec`) 100.000+ yıldızı mükerrer sayım olmadan birleştirir.
+5. **Eşdikdörtgen (Plate Carrée) 2D Görünüm, 3D Gök Küresi & Çift Yönlü Stellarium Senkronizasyonu:** Hizalanmış mozaikleri kırpılmış silindirik eşdikdörtgen 2D gökyüzü projeksiyonunda sunar, 360° etkileşimli 3D gök kubbesi ve Stellarium ile çift yönlü canlı kamera senkronizasyonu sağlar; doğal mozaik boyutunda, 4K/8K veya 360° panoramik çıktı üretir.
 
 ![AstroCounter 3D Gök Küresi ve Çoklu Fotoğraf Işık Kontrolleri](assets/screenshots/02_stellarium_sync_andromeda.png)
 
@@ -57,9 +61,14 @@ flowchart TD
 
 ---
 
-## v1.3.0 Sürümündeki Temel Özellikler
+## v1.4.1 Sürümündeki Temel Özellikler
 
-### 1. Modern Minimalist Arayüz & Sürüklenebilir Yüzer Pencereler
+### 1. Yoğun Astrometrik Katalog Paketi (Gaia DR3, Tycho-2, OpenNGC ve IAU 88)
+* **2.500.000 Gaia DR3 / Tycho-2 Yıldızı:** Yüksek performanslı ikili katalog biçimi (`catalogs/gaia_tycho_dense.bin`, 47.7 MB), 180 deklinasyon şeridi ve 1 MB toplu bellek akışı ile 14.0 kadire kadar yıldızları çözer.
+* **13.963 OpenNGC Derin Uzay Cismi:** Çekirdeğe gömülü sıkıştırılmış veri akışı (`Resources/open_ngc.catalog.gz`) ile 110 Messier nesnesi, 7.840 NGC bulutsu/galaksi/küme ve 5.386 IC hedefini kapsar; kadraj içine düşen nesneleri anında filtreler.
+* **88 Resmi IAU Takımyıldızının Tamamı:** 695 çizgi segmentinden oluşan tam takımyıldız ağı (`Resources/constellations_88.catalog.gz`) ve Türkçe/İngilizce isim desteği.
+
+### 2. Modern Minimalist Arayüz & Sürüklenebilir Yüzer Pencereler
 * **Pencere İçi Taşınabilir Araç Panelleri:** **Katmanlar (`🏷️`)**, **Görüntü & Işık (`☀️`)**, **Otomatik Güven (`⚡`)**, **Mozaik & Fotoğraf Yöneticisi (`🖼️`)**, **Gelişmiş Dışa Aktarım (`🚀`)** ve **Kullanım Kılavuzu & Yardım Merkezi (`❓`)** pencerelerinin tamamı başlık çubuklarından tutularak çalışma alanı içinde istenilen yere sürüklenebilir.
 * **Çoklu Fotoğraf Seçimi & Seçimsiz Temiz Görünüm:**
   - **Fotoğraflar** panelindeki kartlara tıklayarak, **`☑ Tümü`** düğmesini kullanarak veya 2D/3D ekranda `Ctrl`/`Shift` basılı tutup fotoğraflara çift tıklayarak birden fazla fotoğrafı aynı anda seçebilirsiniz.
@@ -73,17 +82,16 @@ flowchart TD
 * **Format Duyarlı Fotoğraf Başına Otomatik Güven (Auto-Confidence):** Arka planda her fotoğrafın dosya formatını (`.jpg` kayıplı sıkıştırma vs. `.tiff`/`.fits`/`.png` kayıpsız) ve arka plan gürültüsünü analiz ederek fotoğraf başına en uygun güven eşiğini otomatik atar; kullanıcı **Otomatik Güven (`⚡`)** panelinden her fotoğrafın eşiğini tek tek sürgüyle de değiştirebilir.
 * **2D Bölgesel Tarama Alanı (ROI) Araçları:** 2D ekranda **Dikdörtgen** veya **Çokgen** araçlarıyla belirli bir alanı **Sadece Tara** veya **Hariç Tut** maskesi olarak çizebilirsiniz.
 
-### 3. 2D ve 3D Ekranda Eşzamanlı Çoklu Fotoğraf Işık Ayarları
-* **Astronomik MTF ve Manuel Pozlama Kontrolü:** **Opaklık**, **Parlaklık**, **Pozlama (Gama)**, **Kontrast** ve **Otomatik Pozlama & Renk Dengesi (MTF)** ayarları gerçek zamanlı olarak uygulanır:
-  $$\text{MTF}(t, m) = \frac{(m - 1)t}{(2m - 1)t - m}$$
-* **Seçili Fotoğraflara Eşzamanlı Uygulama:** **Görüntü & Işık (`☀️`)** panelindeki tüm ayarlar hem **2D Görünüm** hem de **3D Küre** ekranında o anda seçili olan tüm fotoğraflara (hiç seçim yoksa tüm fotoğraflara) aynı anda uygulanır.
+### 3. 2D ve 3D Ekranda Canlı Gökyüzü Tonu Eşitleme & Çoklu Fotoğraf Işık Ayarları
+* **Canlı Mozaik Gökyüzü Tonu Eşitleme (`2D` & `3D`):** **Görüntü & Işık (`☀️`)** panelinde varsayılan olarak açık gelen **Mozaik Gökyüzü Tonu Eşitle** özelliği, panellerin gökyüzü parlaklığını örnekleyerek radyal vinyet/ışık kubbesi farklarını hem **2D Eşdikdörtgen Görünüm** hem de **3D Gök Kubbe** üzerinde eşzamanlı olarak dengeler.
+* **Seçili Fotoğraflara Manuel Renk/Pozlama Kontrolü:** Eşitleme sonrasında **Saydamlık**, **Parlaklık**, **Pozlama (Gama)** ve **Kontrast** ayarları seçili panellere (hiç seçim yoksa tüm panellere) yakınlaştırma veya kamera açısını bozmadan uygulanır.
 
-### 4. 2D Sınırsız Kaydırma, 3D Gök Küresi & Çift Yönlü Stellarium Senkronizasyonu
-* **2D Sınırsız Kaydırma (Infinite Panning):** 2D ekranda fotoğrafların kenar sınırlarına takılmadan her yöne sınırsız kaydırma yapabilir ve fare tekerleğiyle imleç merkezli yakınlaştırma (`%5` – `%2000`) uygulayabilirsiniz.
+### 4. Kırpılmış Eşdikdörtgen 2D Görünüm, 3D Gök Kubbesi & Gelişmiş Dışa Aktarım
+* **Kırpılmış Plate Carrée 2D Projeksiyon & Sınırsız Kaydırma:** Hizalanmış mozaik panelleri gökyüzü geometrisine uygun kırpılmış eşdikdörtgen harita üzerinde çizilir; imleç merkezli pürüzsüz yakınlaştırma (`%5` – `%2000`) ve genel bakışta akıllı etiket sadeleştirmesi sunar.
 * **2D ve 3D Ekranda Çift Yönlü 1:1 Stellarium Senkronizasyonu:**
   - **Canlı Senkron: Bağlan** düğmesi yerel Stellarium kurulumunu HTTP Uzaktan Kontrol servisi (`localhost:8090`) açık olarak otomatik başlatır ve bağlanır.
   - Hem **2D Görünüm** hem de **3D Küre** modunda kamerayı çevirdiğinizde veya yakınlaştırdığınızda Stellarium anında aynı gök koordinatına odaklanır; Stellarium içinde gezinildiğinde de AstroCounter senkronize olarak hareket eder.
-* **2D Mozaik & 360° Panoramik Dışa Aktarım (`Export`):** **Dışa Aktar (`🚀`)** panelinden **2D Tuval / Mozaik** veya **360° × 180° Panoramik Gökyüzü Haritası (Equirectangular)** çıktısını `PNG`, `Kayıpsız TIFF`, `JPG`, `CSV` veya `JSON` formatlarında (`1x` veya `2x Süper Çözünürlük / 4K`) kaydedebilirsiniz.
+* **Doğal Mozaik Boyutu, Özel Çözünürlük & 360° Dışa Aktarım (`Export`):** **Dışa Aktar (`🚀`)** panelinden **Doğal Tam Mozaik Alanı**, **1x**, **2x**, **4K**, **8K** veya **Özel Çözünürlük** seçenekleriyle `PNG`, `Kayıpsız TIFF`, `JPG`, `CSV` ve `JSON` çıktısı alabilir; boş köşe algılayan **akıllı filigran** (`AstroCounter v1.4.1` + tespit sayısı) ve **donmayı önleyen ilerleme ekranıyla** çalışabilirsiniz.
 
 ---
 
@@ -128,8 +136,8 @@ Stellarium varsayılan dizinine (`C:\Program Files\Stellarium`) kuruluysa ek bir
 
 ## Kurulum ve Kullanım
 
-### Seçenek A: Kurulumsuz Taşınabilir Sürüm (Portable v1.3.0)
-1. `AstroCounter-v1.3.0-Portable` klasörünü açın.
+### Seçenek A: Kurulumsuz Taşınabilir Sürüm (Portable v1.4.1)
+1. `AstroCounter-v1.4.1-portable-win-x64` klasörünü açın.
 2. `AstroCounter.UI.exe` dosyasını doğrudan çalıştırın. Python, CUDA veya ayrı bir .NET çalışma zamanı kurulumu gerektirmez.
 
 ### Seçenek B: Kaynak Koddan Derleme
@@ -141,15 +149,15 @@ git clone https://github.com/ghostkronos/AstroCounter.git
 cd AstroCounter
 
 # Otomatik birim testlerini çalıştırın
-dotnet test AstroCounter.sln -c Release
+dotnet test src/AstroCounter.slnx -c Release
 
 # Uygulamayı başlatın
 dotnet run --project src/AstroCounter.UI/AstroCounter.UI.csproj -c Release
 ```
 
-Bağımsız taşınabilir (Portable) çalıştırılabilir sürüm üretmek için:
+Bağımsız taşınabilir (Portable) sürüm üretmek için:
 ```powershell
-dotnet publish src/AstroCounter.UI/AstroCounter.UI.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -o ../AstroCounter-v1.3.0-Portable
+dotnet publish src/AstroCounter.UI/AstroCounter.UI.csproj -c Release -r win-x64 --self-contained true -o release/AstroCounter-v1.4.1-portable-win-x64
 ```
 
 ---
@@ -170,23 +178,23 @@ python scripts/train_real_astro_dataset.py
 ```text
 AstroCounter/
 ├── Directory.Build.props                # Deterministik derleme yapılandırması
-├── AstroCounter.sln                     # Çözüm dosyası
 ├── assets/                              # Arayüz logoları, simgeler, örnek görseller ve ekran görüntüleri
-│   └── screenshots/                     # v1.3.0 arayüz önizleme ekran görüntüleri
+│   └── screenshots/                     # Arayüz önizleme ekran görüntüleri
 ├── models/
 │   └── astro_yolo11n.onnx               # SDSS DR16 verileriyle eğitilmiş YOLO11n ONNX modeli
-├── scripts/
-│   └── train_real_astro_dataset.py      # SDSS DR16 gerçek astronomik veri seti oluşturucu ve YOLO11 eğiticisi
+├── scripts/                             # SDSS DR16 veri seti oluşturucu ve YOLO11 eğitim betikleri
 ├── src/
-│   ├── AstroCounter.Core/               # Çekirdek kütüphane (Fotometri, SAHI, WCS, Mozaik, Stellarium API)
-│   │   ├── Astrometry/                  # RANSAC yıldız üçgen çözücü, ikili mozaik kenetleyici, WCS, katalog
-│   │   ├── Export/                      # 2D Mozaik, 360° Panoramik Harita, CSV ve JSON dışa aktarıcılar
+│   ├── AstroCounter.slnx                # Visual Studio / .NET çözüm dosyası
+│   ├── AstroCounter.Core/               # Çekirdek kütüphane (Fotometri, SAHI, WCS, Mozaik, Gökyüzü Tonu Eşitleyici, Stellarium API)
+│   │   ├── Astrometry/                  # RANSAC çözücü, EquirectangularProjection, Gaia/Tycho 2.5M, OpenNGC, 88 Takımyıldız
+│   │   ├── Export/                      # Doğal/Özel/4K/8K Mozaik, 360° Panoramik Harita, Filigran, CSV ve JSON dışa aktarıcılar
 │   │   ├── Inference/                   # DirectML ONNX ve fotometrik tespit motorları
 │   │   ├── Models/                      # Veri modelleri ve bölge geometrisi
-│   │   ├── Processing/                  # FITS/TIFF çözücüler, MTF parlaklık dengeleme, SAHI dilimleyici
+│   │   ├── Processing/                  # FITS/TIFF çözücüler, MosaicSkyHarmonizer, SAHI dilimleyici
+│   │   ├── Resources/                   # Gömülü OpenNGC ve 88 IAU Takımyıldız ikili veri akışları
 │   │   └── Stellarium/                  # Stellarium HTTP istemcisi ve pencereli başlatıcı
 │   ├── AstroCounter.UI/                 # WPF masaüstü arayüzü (MVVM, çift dilli TR/EN, 2D & 3D Küre)
-│   └── AstroCounter.Tests/              # xUnit otomatik birim testleri (108 test)
+│   └── AstroCounter.Tests/              # xUnit otomatik birim testleri (137 test)
 ├── README.md                            # İngilizce dokümantasyon (Varsayılan)
 └── README.tr.md                         # Türkçe dokümantasyon
 ```

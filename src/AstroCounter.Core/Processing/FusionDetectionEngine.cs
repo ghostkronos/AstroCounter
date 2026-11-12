@@ -21,7 +21,8 @@ public static class FusionDetectionEngine
     public static List<AstrophotographyObject> FuseDetections(
         List<AstrophotographyObject> photometricStars,
         List<AstrophotographyObject>? yoloDetections,
-        float matchDistancePx = 14f)
+        float matchDistancePx = 14f,
+        bool isCompressedFormat = false)
     {
         if (yoloDetections == null || yoloDetections.Count == 0)
         {
@@ -104,14 +105,37 @@ public static class FusionDetectionEngine
             if (matchedYoloIndices.Contains(i)) continue;
 
             var yolo = yoloDetections[i];
-            // Include subtle AI detections; lift faint candidates to baseline visible tier (>= 0.25)
-            float effectiveConf = Math.Max(yolo.Confidence, 0.25f);
-            fusedResults.Add(yolo with
+            if (isCompressedFormat)
             {
-                Id = id++,
-                Confidence = effectiveConf,
-                Snr = yolo.Snr > 0 ? yolo.Snr : 4.5f
-            });
+                // On lossy compressed formats (JPG/WebP), uncorroborated AI boxes on DCT ringing/blocking
+                // must have genuine morphological confidence and photometric SNR above the compression floor.
+                if (yolo.Confidence < 0.35f || (yolo.Snr > 0f && yolo.Snr < 2.8f))
+                {
+                    continue;
+                }
+
+                fusedResults.Add(yolo with
+                {
+                    Id = id++,
+                    Snr = yolo.Snr > 0f ? yolo.Snr : 3.0f
+                });
+            }
+            else
+            {
+                if (yolo.Snr > 0f && yolo.Snr < 1.8f && yolo.Confidence < 0.35f)
+                {
+                    continue;
+                }
+
+                // Include subtle AI detections on lossless frames; lift faint candidates to baseline visible tier (>= 0.25)
+                float effectiveConf = Math.Max(yolo.Confidence, 0.25f);
+                fusedResults.Add(yolo with
+                {
+                    Id = id++,
+                    Confidence = effectiveConf,
+                    Snr = yolo.Snr > 0 ? yolo.Snr : 4.5f
+                });
+            }
         }
 
         return fusedResults.OrderByDescending(o => o.Confidence).ToList();

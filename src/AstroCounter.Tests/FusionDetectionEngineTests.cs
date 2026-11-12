@@ -80,5 +80,33 @@ public class FusionDetectionEngineTests
         Assert.Single(fused);
         Assert.Equal("nebula", fused[0].ClassName);
     }
+
+    [Fact]
+    public void FuseDetections_CompressedFormat_RejectsLowConfidenceOrLowSnrPhantomYoloDetections()
+    {
+        var photoStars = new List<AstrophotographyObject>
+        {
+            new AstrophotographyObject(1, new BoundingBox(100, 100, 10, 10), 0.78f, "star", Snr: 8.5f)
+        };
+
+        var yoloDetections = new List<AstrophotographyObject>
+        {
+            // Phantom compression noise: low confidence (0.18) and low SNR (1.9)
+            new AstrophotographyObject(2, new BoundingBox(220, 220, 8, 8), 0.18f, "star", Snr: 1.9f),
+            // Phantom compression ripple: moderate confidence (0.42) but sub-floor SNR (2.1)
+            new AstrophotographyObject(3, new BoundingBox(260, 260, 8, 8), 0.42f, "star", Snr: 2.1f),
+            // Genuine faint morphological galaxy/star above compressed floor
+            new AstrophotographyObject(4, new BoundingBox(350, 350, 18, 18), 0.55f, "galaxy", Snr: 4.2f)
+        };
+
+        var fused = FusionDetectionEngine.FuseDetections(
+            photoStars, yoloDetections, matchDistancePx: 10f, isCompressedFormat: true);
+
+        Assert.Equal(2, fused.Count);
+        Assert.Contains(fused, f => f.Box.X == 100 && f.Box.Y == 100);
+        Assert.Contains(fused, f => f.Box.X == 350 && f.Box.Y == 350);
+        Assert.DoesNotContain(fused, f => f.Box.X == 220);
+        Assert.DoesNotContain(fused, f => f.Box.X == 260);
+    }
 }
 

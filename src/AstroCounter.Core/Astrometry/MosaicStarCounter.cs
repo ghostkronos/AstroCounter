@@ -90,6 +90,8 @@ public static class MosaicStarCounter
         double matchToleranceArcsec = 3.0,
         IProgress<MosaicCountingProgress>? progress = null,
         WcsMatrix? targetWcs = null,
+        AstroCounter.Core.Inference.IInferenceEngine? engine = null,
+        EquirectangularProjection? equirectangularProjection = null,
         CancellationToken cancellationToken = default)
     {
         if (mosaicProject == null) throw new ArgumentNullException(nameof(mosaicProject));
@@ -139,39 +141,58 @@ public static class MosaicStarCounter
                         : $"Counting stars in '{panel.Name}' at full resolution ({panel.Width}x{panel.Height} px)",
                     Math.Max(0.05f, (float)currentDone / totalPanels * 0.80f)));
 
-                SKBitmap? bmp = null;
-                bool shouldDispose = false;
+                IReadOnlyList<AstrophotographyObject>? stars = panel.DetectedStars;
 
-                if (panel.CachedSkiaBitmap is SKBitmap skb1)
+                if (stars == null || stars.Count == 0)
                 {
-                    bmp = skb1;
-                }
-                else if (panel.CachedBitmap is SKBitmap skb2)
-                {
-                    bmp = skb2;
-                }
-                else if (!string.IsNullOrEmpty(panel.FilePath) && File.Exists(panel.FilePath))
-                {
-                    bmp = ImagePreprocessor.LoadImage(panel.FilePath);
-                    shouldDispose = true;
-                }
+                    if (engine != null && engine.Mode != AstroCounter.Core.Inference.DetectionEngineMode.Photometric &&
+                        !string.IsNullOrEmpty(panel.FilePath) && File.Exists(panel.FilePath))
+                    {
+                        var dlRes = await engine.ProcessImageAsync(panel.FilePath, config, null, cancellationToken);
+                        stars = dlRes.AllObjects;
+                    }
+                    else
+                    {
+                        SKBitmap? bmp = null;
+                        bool shouldDispose = false;
 
-                if (bmp == null)
-                {
-                    // If no disk file or cached SKBitmap, create placeholder if width and height are known
-                    bmp = new SKBitmap(Math.Max(100, panel.Width), Math.Max(100, panel.Height));
-                    shouldDispose = true;
-                }
+                        if (panel.CachedSkiaBitmap is SKBitmap skb1)
+                        {
+                            bmp = skb1;
+                        }
+                        else if (panel.CachedBitmap is SKBitmap skb2)
+                        {
+                            bmp = skb2;
+                        }
+                        else if (!string.IsNullOrEmpty(panel.FilePath) && File.Exists(panel.FilePath))
+                        {
+                            bmp = ImagePreprocessor.LoadImage(panel.FilePath);
+                            shouldDispose = true;
+                        }
 
-                try
-                {
-                    // Run full-resolution photometric DAOStarFinder detection
-                    var stars = PhotometricStarFinder.DetectStars(bmp, config, cancellationToken: cancellationToken);
+                        if (bmp == null)
+                        {
+                            bmp = new SKBitmap(Math.Max(100, panel.Width), Math.Max(100, panel.Height));
+                            shouldDispose = true;
+                        }
 
-                    // Compute per-photo background optimal auto-confidence threshold, taking lossy JPEG/WebP format into account
+                        try
+                        {
+                            stars = PhotometricStarFinder.DetectStars(bmp, config, cancellationToken: cancellationToken);
+                        }
+                        finally
+                        {
+                            if (shouldDispose)
+                            {
+                                bmp.Dispose();
+                            }
+                        }
+                    }
+
                     float optimalConf = AutoConfidenceCalculator.ComputeOptimalThreshold(stars, panel.IsLossyFormat);
                     panel.AutoConfidenceThreshold = optimalConf;
                     panel.DetectedStars = stars;
+                }
 
                     var panelStars = new List<(AstrophotographyObject Star, CelestialCoordinates Sky)>(stars.Count);
                     var panelWcs = panel.Wcs ?? masterWcs;
@@ -194,14 +215,6 @@ public static class MosaicStarCounter
                         rawDetectionsSum,
                         panel.Name,
                         (float)completed / totalPanels * 0.85f));
-                }
-                finally
-                {
-                    if (shouldDispose)
-                    {
-                        bmp.Dispose();
-                    }
-                }
             }
             finally
             {
@@ -223,7 +236,7 @@ public static class MosaicStarCounter
         var projectionWcs = targetWcs ?? masterWcs;
 
         var (deduplicatedStars, overlapCount, panelDetails) = MergeAndDeduplicate(
-            activePanels, panelDetectionResults, matchToleranceArcsec, projectionWcs);
+            activePanels, panelDetectionResults, matchToleranceArcsec, projectionWcs, equirectangularProjection);
 
         stopwatch.Stop();
 
@@ -253,7 +266,8 @@ public static class MosaicStarCounter
             List<MosaicPanel> panels,
             ConcurrentDictionary<string, List<(AstrophotographyObject Star, CelestialCoordinates Sky)>> panelDetections,
             double matchToleranceArcsec,
-            WcsMatrix projectionWcs)
+            WcsMatrix projectionWcs,
+            EquirectangularProjection? equirectangularProjection = null)
     {
         // Spherical hash grid: cell size ~ 30 arcsec (0.00833 deg)
         const double cellSizeDeg = 0.008333; // 30 arcseconds
@@ -366,14 +380,18 @@ public static class MosaicStarCounter
             panelTransforms[p.Id] = MosaicProject.GetPanelCanvasTransform(p, projectionWcs, pIdx);
         }
 
-        // Project deduplicated stars into target/master canvas coordinates
+        // Project deduplicated stars into equirectangular or 2D master canvas coordinates
         var resultObjects = new List<AstrophotographyObject>(unifiedList.Count);
         for (int i = 0; i < unifiedList.Count; i++)
         {
             var u = unifiedList[i];
             double px, py;
 
-            if (panelTransforms.TryGetValue(u.FirstPanelId, out var tr))
+            if (equirectangularProjection != null)
+            {
+                equirectangularProjection.EquatorialToCanvas(u.Sky.RaDegrees, u.Sky.DecDegrees, out px, out py);
+            }
+            else if (panelTransforms.TryGetValue(u.FirstPanelId, out var tr))
             {
                 // Transform local sensor pixel (LocalX, LocalY) through the exact same 2D affine matrix used to draw the photo bitmap
                 px = (u.LocalX * tr.M11) + (u.LocalY * tr.M21) + tr.OffsetX;
@@ -384,7 +402,9 @@ public static class MosaicStarCounter
                 continue;
             }
 
-            float size = Math.Clamp(u.EstimatedSize, 4.0f, 60.0f);
+            float size = equirectangularProjection != null
+                ? Math.Clamp(u.EstimatedSize * 0.65f, 4.0f, 32.0f)
+                : Math.Clamp(u.EstimatedSize, 4.0f, 60.0f);
             resultObjects.Add(new AstrophotographyObject(
                 Id: u.Id,
                 Box: new BoundingBox((float)(px - (size / 2.0)), (float)(py - (size / 2.0)), size, size),

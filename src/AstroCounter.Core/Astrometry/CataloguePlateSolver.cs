@@ -199,27 +199,39 @@ public class CataloguePlateSolver : IPlateSolver
     };
 
     /// <summary>
-    /// Scans the entire astronomical catalog and returns only the objects that project inside
-    /// the given photo's WCS coverage area (and optional valid non-void sky check).
+    /// Scans the entire astronomical catalog (curated deep sky objects, navigation stars, and full OpenNGC catalog)
+    /// and returns only the objects that project inside the given photo's WCS coverage area.
     /// </summary>
     public static List<AstronomicalTarget> GetTargetsInField(
         WcsMatrix? wcs,
         int imageWidth,
         int imageHeight,
-        Func<double, double, bool>? isValidSkyPixel = null)
+        Func<double, double, bool>? isValidSkyPixel = null,
+        EquirectangularProjection? eqProjection = null)
     {
         var results = new List<AstronomicalTarget>();
-        if (wcs == null || imageWidth <= 0 || imageHeight <= 0)
+        if ((wcs == null && eqProjection == null) || imageWidth <= 0 || imageHeight <= 0)
         {
             return results;
         }
 
         double marginX = imageWidth * 0.015;
         double marginY = imageHeight * 0.015;
+        var addedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        bool TryProject(CelestialCoordinates coords, out double px, out double py)
+        {
+            if (eqProjection != null)
+            {
+                return eqProjection.EquatorialToCanvas(coords.RaDegrees, coords.DecDegrees, out px, out py);
+            }
+            return wcs!.EquatorialToPixel(coords, out px, out py);
+        }
+
+        // 1. First add curated high-priority targets with rich Turkish and English names
         foreach (var target in KnownCatalogues)
         {
-            if (wcs.EquatorialToPixel(target.Coordinates, out double px, out double py))
+            if (TryProject(target.Coordinates, out double px, out double py))
             {
                 if (px >= marginX && px <= imageWidth - marginX &&
                     py >= marginY && py <= imageHeight - marginY)
@@ -227,9 +239,74 @@ public class CataloguePlateSolver : IPlateSolver
                     if (isValidSkyPixel == null || isValidSkyPixel(px, py))
                     {
                         results.Add(target);
+                        addedIds.Add(target.Id);
+                        if (!string.IsNullOrEmpty(target.Id))
+                        {
+                            addedIds.Add(target.Id.Replace(" ", ""));
+                        }
                     }
                 }
             }
+        }
+
+        // 2. Query full OpenNGC catalog (13,963 objects) across the field
+        try
+        {
+            CelestialCoordinates center;
+            double radiusDeg;
+            if (eqProjection != null)
+            {
+                double midDec = Math.Clamp(0.5 * (eqProjection.DecMinDeg + eqProjection.DecMaxDeg), -89.9, 89.9);
+                center = new CelestialCoordinates(eqProjection.CenterRaDeg, midDec);
+                radiusDeg = Math.Clamp(
+                    0.55 * Math.Sqrt((eqProjection.RaSpanDeg * eqProjection.RaSpanDeg) + (eqProjection.DecSpanDeg * eqProjection.DecSpanDeg)),
+                    1.0,
+                    90.0);
+            }
+            else
+            {
+                center = wcs!.PixelToEquatorial(imageWidth / 2.0, imageHeight / 2.0);
+                double diag = Math.Sqrt(((double)imageWidth * imageWidth) + ((double)imageHeight * imageHeight));
+                radiusDeg = (0.5 * diag * wcs.PixelScaleArcsec / 3600.0) * 1.05;
+            }
+
+            var ngcObjects = OpenNgcCatalog.QueryRegion(center.RaDegrees, center.DecDegrees, radiusDeg, maxMag: 15.5, maxResults: 150);
+            foreach (var ngc in ngcObjects)
+            {
+                string idKey = !string.IsNullOrEmpty(ngc.MessierName) ? ngc.MessierName : ngc.Name;
+                if (addedIds.Contains(idKey) || addedIds.Contains(ngc.Name) || addedIds.Contains(ngc.Name.Replace(" ", "")))
+                    continue;
+
+                if (TryProject(ngc.Coordinates, out double px, out double py))
+                {
+                    if (px >= marginX && px <= imageWidth - marginX &&
+                        py >= marginY && py <= imageHeight - marginY)
+                    {
+                        if (isValidSkyPixel == null || isValidSkyPixel(px, py))
+                        {
+                            string nameEn = ngc.DisplayName;
+                            string nameTr = !string.IsNullOrEmpty(ngc.CommonName)
+                                ? $"{ngc.CommonName} ({idKey})"
+                                : (!string.IsNullOrEmpty(ngc.MessierName) ? $"{ngc.MessierName} ({ngc.Name})" : ngc.Name);
+
+                            results.Add(new AstronomicalTarget(
+                                idKey,
+                                nameEn,
+                                nameTr,
+                                ngc.Coordinates,
+                                ngc.TypicalFovDegrees,
+                                ngc.EstimatedPixelScaleArcsec));
+
+                            addedIds.Add(idKey);
+                            addedIds.Add(ngc.Name);
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Keep curated targets if OpenNGC query fails
         }
 
         return results;
@@ -295,6 +372,27 @@ public class CataloguePlateSolver : IPlateSolver
                     matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M81");
                 else if (tokens.Contains("dumbbell"))
                     matchedTarget = KnownCatalogues.FirstOrDefault(t => t.Id == "M27");
+            }
+
+            // Also check OpenNGC catalog for any direct NGC/IC/Messier token matches
+            if (matchedTarget == null)
+            {
+                foreach (var token in tokens)
+                {
+                    var ngcObj = OpenNgcCatalog.FindByName(token);
+                    if (ngcObj != null)
+                    {
+                        string idKey = !string.IsNullOrEmpty(ngcObj.Value.MessierName) ? ngcObj.Value.MessierName : ngcObj.Value.Name;
+                        matchedTarget = new AstronomicalTarget(
+                            idKey,
+                            ngcObj.Value.DisplayName,
+                            !string.IsNullOrEmpty(ngcObj.Value.CommonName) ? $"{ngcObj.Value.CommonName} ({idKey})" : ngcObj.Value.DisplayName,
+                            ngcObj.Value.Coordinates,
+                            ngcObj.Value.TypicalFovDegrees,
+                            ngcObj.Value.EstimatedPixelScaleArcsec);
+                        break;
+                    }
+                }
             }
         }
 

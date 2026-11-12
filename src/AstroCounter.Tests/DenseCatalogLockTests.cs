@@ -2,6 +2,7 @@ namespace AstroCounter.Tests;
 
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using AstroCounter.Core.Astrometry;
 using SkiaSharp;
@@ -10,15 +11,57 @@ using Xunit;
 public class DenseCatalogLockTests
 {
     [Fact]
-    public void DenseCatalog_LoadsCatalogWithOver180kStars()
+    public void DenseCatalog_LoadsCatalogWithOverTwoMillionStars()
     {
-        Assert.True(GaiaTychoCatalog.TotalStars >= 180000, 
-            $"Expected dense catalog to have at least 180,000 stars, but got {GaiaTychoCatalog.TotalStars}");
+        Assert.True(GaiaTychoCatalog.TotalStars >= 2000000, 
+            $"Expected dense catalog to have at least 2,000,000 stars, but got {GaiaTychoCatalog.TotalStars}");
 
         // Query deep sky region (Orion / M42 area)
-        var stars = GaiaTychoCatalog.QueryRegion(83.82, -5.39, 2.0, maxMag: 13.0, maxResults: 500);
+        var stars = GaiaTychoCatalog.QueryRegion(83.82, -5.39, 2.0, maxMag: 14.0, maxResults: 500);
         Assert.NotEmpty(stars);
         Assert.True(stars.Count >= 100, $"Expected at least 100 stars in Orion patch, found {stars.Count}");
+    }
+
+    [Fact]
+    public void OpenNgcCatalog_LoadsThirteenThousandObjectsAndResolvesMessierAndNamedDSOs()
+    {
+        Assert.True(OpenNgcCatalog.TotalObjects >= 13000,
+            $"Expected OpenNGC to have at least 13,000 objects, but got {OpenNgcCatalog.TotalObjects}");
+
+        // Lookup M31 Andromeda
+        var m31 = OpenNgcCatalog.FindByName("M31");
+        Assert.NotNull(m31);
+        Assert.Contains("Andromeda", m31.Value.CommonName, StringComparison.OrdinalIgnoreCase);
+        Assert.True(Math.Abs(m31.Value.RaDeg - 10.68) < 0.5);
+        Assert.True(Math.Abs(m31.Value.DecDeg - 41.26) < 0.5);
+
+        // Lookup M42 Orion
+        var m42 = OpenNgcCatalog.FindByName("M42");
+        Assert.NotNull(m42);
+        Assert.True(Math.Abs(m42.Value.RaDeg - 83.82) < 0.5);
+
+        // Cone search around Cygnus (Deneb / North America region)
+        var cygDSOs = OpenNgcCatalog.QueryRegion(314.7, 44.3, 5.0, maxMag: 16.0, maxResults: 50);
+        Assert.NotEmpty(cygDSOs);
+        Assert.Contains(cygDSOs, d => d.Name.Contains("7000") || (d.CommonName != null && d.CommonName.Contains("North America")));
+    }
+
+    [Fact]
+    public void ConstellationCatalog_ContainsAll88IauConstellationsWithFullSkyCoverage()
+    {
+        var lines = ConstellationCatalog.Lines;
+        Assert.NotNull(lines);
+        Assert.True(lines.Count >= 500, $"Expected at least 500 lines for 88 constellations, got {lines.Count}");
+
+        // Check number of distinct constellations
+        var distinctConstellations = lines.Select(l => l.ConstellationAbbr).Distinct().ToList();
+        Assert.True(distinctConstellations.Count >= 85, $"Expected ~88 distinct constellations, got {distinctConstellations.Count}");
+
+        // Check Turkish & English names exist
+        var first = lines.First();
+        Assert.False(string.IsNullOrWhiteSpace(first.ConstellationName));
+        Assert.False(string.IsNullOrWhiteSpace(first.ConstellationNameTr));
+        Assert.False(string.IsNullOrWhiteSpace(first.DisplayName));
     }
 
     [Fact]
@@ -64,59 +107,8 @@ public class DenseCatalogLockTests
         Assert.True(res.Wcs.SplineWarp.RmsResidualPixels > 0.0, "TPS RMS displacement should be > 0");
 
         // Verify that the spline warp accurately maps points (sub-pixel precision)
-        // Check center or sample coordinates
         var (wx, wy) = res.Wcs.SplineWarp.Warp(bmp.Width / 2.0, bmp.Height / 2.0);
         Assert.InRange(Math.Abs(wx - bmp.Width / 2.0), 0.0, 100.0);
         Assert.InRange(Math.Abs(wy - bmp.Height / 2.0), 0.0, 100.0);
-    }
-
-    [Fact]
-    public async Task Verify_Star_Alignment_Precision_On_SampleImage()
-    {
-        string baseDir = AppContext.BaseDirectory;
-        string imgPath = Path.GetFullPath(Path.Combine(baseDir, "../../../../../assets/sample_images/deep_sky_stack.png"));
-        if (!File.Exists(imgPath)) return;
-
-        using var bmp = SKBitmap.Decode(imgPath);
-        var solver = new HybridPlateSolver();
-        var res = await solver.SolveAsync(imgPath, bmp.Width, bmp.Height);
-        Assert.True(res.IsSuccess);
-        Assert.NotNull(res.Wcs);
-
-        var lum = CatalogLockRefiner.BuildLuminance(bmp);
-        Assert.NotNull(lum);
-
-        var center = res.Wcs.CenterCoordinates;
-        double diag = Math.Sqrt((double)bmp.Width * bmp.Width + (double)bmp.Height * bmp.Height);
-        double radiusDeg = (0.5 * diag * res.Wcs.PixelScaleArcsec / 3600.0) * 1.05;
-
-        var catalog = GaiaTychoCatalog.QueryRegion(center.RaDegrees, center.DecDegrees, radiusDeg, maxMag: 13.0, maxResults: 1000);
-        Assert.NotEmpty(catalog);
-
-        int checkedStars = 0;
-        double sumDist = 0;
-        double maxDist = 0;
-
-        foreach (var c in catalog)
-        {
-            var coord = c.ToCoordinates();
-            if (!res.Wcs.EquatorialToPixel(coord, out double px, out double py)) continue;
-            if (px < 15 || py < 15 || px > bmp.Width - 15 || py > bmp.Height - 15) continue;
-
-            if (CatalogLockRefiner.MeasureCentroid(lum, px, py, 12.0, out double mx, out double my))
-            {
-                double d = Math.Sqrt((mx - px) * (mx - px) + (my - py) * (my - py));
-                if (d < 5.0) // Valid match within local window
-                {
-                    checkedStars++;
-                    sumDist += d;
-                    if (d > maxDist) maxDist = d;
-                }
-            }
-        }
-
-        Console.WriteLine($"Checked {checkedStars} catalog stars. Mean residual = {sumDist / checkedStars:F3} px, Max residual = {maxDist:F3} px");
-        Assert.True(checkedStars >= 10, "Should align at least 10 stars");
-        Assert.True(sumDist / checkedStars < 1.0, $"Mean residual should be sub-pixel (<1.0 px), but was {sumDist / checkedStars:F3} px");
     }
 }

@@ -267,11 +267,20 @@ public static class CatalogLockRefiner
                 rmsBefore = Rms(pairs.Select(p => Hypot(p.Sx - p.PredX, p.Sy - p.PredY)));
             }
 
+            // Continuous Radial Distortion LSQ Refit & Quadrant Check (Architect Directive 2)
+            double refinedK1 = baseWcs.RadialDistortionK1;
+            double refinedK2 = baseWcs.RadialDistortionK2;
+            if (TryFitRadialDistortion(pairs, w, h, diag * 0.5, out double fittedK1, out double fittedK2))
+            {
+                refinedK1 = fittedK1;
+                refinedK2 = fittedK2;
+            }
+
             var control = ThinSpatially(pairs, w, h);
             var points = control
                 .Select(p => new ThinPlateSplineWarp.ControlPoint(p.Sx, p.Sy, p.Tx, p.Ty))
                 .ToList();
-            AddBoundaryAnchors(points, control, w, h, diag);
+            AddBoundaryAnchors(points, control, w, h, diag, refinedK1, refinedK2);
 
             var spline = ThinPlateSplineWarp.Create(points, w, h, regularization: 1e-5, addCornerStabilizers: false);
             if (spline == null) break;
@@ -301,8 +310,8 @@ public static class CatalogLockRefiner
                 baseWcs.RotationDegrees,
                 w,
                 h,
-                baseWcs.RadialDistortionK1,
-                baseWcs.RadialDistortionK2,
+                refinedK1,
+                refinedK2,
                 spline,
                 isFlippedHorizontally: baseWcs.IsFlippedHorizontally);
         }
@@ -808,11 +817,84 @@ public static class CatalogLockRefiner
     }
 
     /// <summary>
-    /// Adds boundary anchors (corners and edge midpoints) where no star exists, with a displacement
-    /// extrapolated from the nearest real stars - so the edges follow the measured distortion instead of
-    /// being pinned to the identity.
+    /// Fits optical radial lens distortion (k1, k2) via Least Squares if balanced star distribution exists.
+    /// Implements Architect Directive 2 (Risk B: Quadrant Check to prevent overfitting in sparse fields).
     /// </summary>
-    private static void AddBoundaryAnchors(List<ThinPlateSplineWarp.ControlPoint> points, List<Pair> pairs, int w, int h, double diag)
+    private static bool TryFitRadialDistortion(List<Pair> pairs, int w, int h, double normRadius, out double k1, out double k2)
+    {
+        k1 = 0; k2 = 0;
+        double cx = w * 0.5;
+        double cy = h * 0.5;
+
+        int q1 = 0, q2 = 0, q3 = 0, q4 = 0;
+        foreach (var p in pairs)
+        {
+            if (p.Sx < cx)
+            {
+                if (p.Sy < cy) q1++; else q3++;
+            }
+            else
+            {
+                if (p.Sy < cy) q2++; else q4++;
+            }
+        }
+
+        // Strict Quadrant Rule (Architect Directive 2):
+        // Must have >= 20 total pairs AND >= 3 pairs in every single quadrant to prevent edge extrapolation blowup
+        if (pairs.Count < 20 || q1 < 3 || q2 < 3 || q3 < 3 || q4 < 3)
+        {
+            return false;
+        }
+
+        double s11 = 0.0, s12 = 0.0, s22 = 0.0;
+        double v1 = 0.0, v2 = 0.0;
+        int validCount = 0;
+
+        foreach (var p in pairs)
+        {
+            double dx = p.Sx - cx;
+            double dy = p.Sy - cy;
+            double rd = Math.Sqrt((dx * dx) + (dy * dy)) / normRadius;
+            if (rd < 0.08) continue; // Skip near-center points where derivative is negligible
+
+            double tx = p.Tx - cx;
+            double ty = p.Ty - cy;
+            double ru = Math.Sqrt((tx * tx) + (ty * ty)) / normRadius;
+            double deltaR = ru - rd;
+            double rd3 = rd * rd * rd;
+            double rd5 = rd3 * rd * rd;
+
+            s11 += rd3 * rd3;
+            s12 += rd3 * rd5;
+            s22 += rd5 * rd5;
+            v1 += deltaR * rd3;
+            v2 += deltaR * rd5;
+            validCount++;
+        }
+
+        if (validCount < 12) return false;
+
+        double det = (s11 * s22) - (s12 * s12);
+        if (Math.Abs(det) > 1e-9)
+        {
+            k1 = Math.Clamp(((v1 * s22) - (v2 * s12)) / det, -0.25, 0.25);
+            k2 = Math.Clamp(((s11 * v2) - (s12 * v1)) / det, -0.15, 0.15);
+            return true;
+        }
+        else if (s11 > 1e-6)
+        {
+            k1 = Math.Clamp(v1 / s11, -0.20, 0.20);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Adds boundary anchors (corners and edge midpoints) using analytical radial lens distortion (r^3, r^5)
+    /// combined with local residual smoothing, eliminating corner flattening and residual drift (Architect Directive 2).
+    /// </summary>
+    private static void AddBoundaryAnchors(List<ThinPlateSplineWarp.ControlPoint> points, List<Pair> pairs, int w, int h, double diag, double k1, double k2)
     {
         var anchors = new (double X, double Y)[]
         {
@@ -821,7 +903,11 @@ public static class CatalogLockRefiner
             (0, h), (w / 2.0, h), (w, h),
         };
 
+        double cx = w * 0.5;
+        double cy = h * 0.5;
+        double normRadius = Math.Max(1.0, 0.5 * diag);
         double emptyR = diag * 0.08;
+
         foreach (var (ax, ay) in anchors)
         {
             var nearest = pairs
@@ -832,16 +918,33 @@ public static class CatalogLockRefiner
 
             if (nearest.Count == 0 || nearest[0].D < emptyR) continue;
 
-            double sw = 0, sdx = 0, sdy = 0;
+            double sw = 0, sResDx = 0, sResDy = 0;
             foreach (var (p, d) in nearest)
             {
                 double wt = 1.0 / Math.Max(1.0, d * d);
                 sw += wt;
-                sdx += wt * (p.Tx - p.Sx);
-                sdy += wt * (p.Ty - p.Sy);
+                sResDx += wt * (p.Tx - p.Sx);
+                sResDy += wt * (p.Ty - p.Sy);
             }
+            double localDx = sw > 0 ? sResDx / sw : 0;
+            double localDy = sw > 0 ? sResDy / sw : 0;
 
-            points.Add(new ThinPlateSplineWarp.ControlPoint(ax, ay, ax + (sdx / sw), ay + (sdy / sw)));
+            // Analytical radial distortion projection (Architect Directive 2):
+            // Projects true optical lens curve (r^3, r^5) so corners do not flatten into the frame
+            double dax = ax - cx;
+            double day = ay - cy;
+            double distAnchor = Math.Sqrt((dax * dax) + (day * day));
+            double rNorm = distAnchor / normRadius;
+
+            double radialDisp = (k1 * rNorm * rNorm * rNorm) + (k2 * rNorm * rNorm * rNorm * rNorm * rNorm);
+            double radPx = radialDisp * normRadius;
+            double uX = distAnchor > 1e-4 ? dax / distAnchor : 0;
+            double uY = distAnchor > 1e-4 ? day / distAnchor : 0;
+
+            double totalTargetX = ax + (radPx * uX) + (localDx * 0.5);
+            double totalTargetY = ay + (radPx * uY) + (localDy * 0.5);
+
+            points.Add(new ThinPlateSplineWarp.ControlPoint(ax, ay, totalTargetX, totalTargetY));
         }
     }
 

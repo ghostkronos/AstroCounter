@@ -287,28 +287,64 @@ public class WcsMatrix
         double dx = ((_cd22 * xiDeg) - (_cd12 * etaDeg)) / _detCd;
         double dy = ((-_cd21 * xiDeg) + (_cd11 * etaDeg)) / _detCd;
 
+        double linearDx = dx;
+        double linearDy = dy;
         double ruSq = (dx * dx) + (dy * dy);
         if ((Math.Abs(RadialDistortionK1) > 1e-7 || Math.Abs(RadialDistortionK2) > 1e-7) && ruSq > 1e-6)
         {
-            // Invert ru = rd * (1 + k1*rd^2 + k2*rd^4) using high-precision 4-step Newton-Raphson
+            // Robust Bounded Inversion:
+            // Inverts ru = rd * (1 + k1*rd^2 + k2*rd^4) strictly inside the physical monotonic sensor neighborhood
+            // (ruNorm <= 2.5, converged residual < 1e-7, positive branch slope f' > 0.05) so large-angle off-axis
+            // sky coordinates can never fold back across the polynomial turnaround point into concentric rings.
             double ruNorm = Math.Sqrt(ruSq) / _normRadius;
-            if (ruNorm > 1e-8)
+            if (ruNorm > 1e-8 && ruNorm <= 2.5)
             {
-                double rd = ruNorm;
-                for (int iter = 0; iter < 4; iter++)
+                double rd = Math.Min(ruNorm, 1.45);
+                bool converged = false;
+                double finalFPrime = 0.0;
+                const double tol = 1e-7;
+
+                for (int iter = 0; iter < 16; iter++)
                 {
                     double rd2 = rd * rd;
                     double rd4 = rd2 * rd2;
-                    double f = rd * (1.0 + (RadialDistortionK1 * rd2) + (RadialDistortionK2 * rd4)) - ruNorm;
+                    double f = (rd * (1.0 + (RadialDistortionK1 * rd2) + (RadialDistortionK2 * rd4))) - ruNorm;
                     double fPrime = 1.0 + (3.0 * RadialDistortionK1 * rd2) + (5.0 * RadialDistortionK2 * rd4);
-                    if (Math.Abs(fPrime) > 1e-9)
+                    if (Math.Abs(f) < tol)
                     {
-                        rd -= f / fPrime;
+                        finalFPrime = fPrime;
+                        converged = true;
+                        break;
+                    }
+                    if (fPrime <= 0.05 || double.IsNaN(fPrime))
+                    {
+                        break;
+                    }
+                    double step = f / fPrime;
+                    rd -= step;
+                    if (double.IsNaN(rd) || double.IsInfinity(rd) || rd < 0.0 || rd > 3.0)
+                    {
+                        break;
                     }
                 }
-                double factor = rd / ruNorm;
-                dx *= factor;
-                dy *= factor;
+
+                if (converged && rd > 0.0 && rd <= 2.8 && finalFPrime > 0.05)
+                {
+                    double factor = rd / ruNorm;
+                    dx *= factor;
+                    dy *= factor;
+                }
+                else
+                {
+                    // Linear TAN Fallback outside monotonic lens domain (prevents off-axis concentric folding rings)
+                    dx = linearDx;
+                    dy = linearDy;
+                }
+            }
+            else if (ruNorm > 2.5)
+            {
+                dx = linearDx;
+                dy = linearDy;
             }
         }
 
@@ -440,7 +476,7 @@ public class WcsMatrix
 
     private bool AnyInBounds(List<System.Numerics.Vector2> pts)
     {
-        double margin = Math.Max(ImageWidth, ImageHeight) * 0.2;
+        double margin = Math.Max(ImageWidth, ImageHeight) * 1.5;
         foreach (var p in pts)
         {
             if (p.X >= -margin && p.X <= ImageWidth + margin &&

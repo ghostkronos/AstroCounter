@@ -6,6 +6,19 @@ using System.Linq;
 using AstroCounter.Core.Models;
 
 /// <summary>
+/// Represents a scientifically verified optical transient or supernova anomaly candidate.
+/// </summary>
+public readonly record struct TransientCandidate(
+    double Ra,
+    double Dec,
+    float Flux,
+    float Fwhm,
+    float Ellipticity,
+    bool IsSupernovaCandidate,
+    string? HostGalaxyId,
+    string AnomalyType);
+
+/// <summary>
 /// Scientific Dual-Verification Transient & Anomaly Hunter.
 /// Identifies unexplained optical transients, supernovae, novae, and high-SNR anomalies
 /// by cross-matching high-confidence detected celestial objects with high-density reference catalogs (Gaia DR3 / Tycho / Hipparcos).
@@ -45,6 +58,17 @@ public static class TransientAnomalyDetector
                 obj.CenterX > 25 && obj.CenterX < imageWidth - 25 &&
                 obj.CenterY > 25 && obj.CenterY < imageHeight - 25)
             {
+                // Pass 1: PSF Morphology Validation (Eliminates single-pixel cosmic ray spikes and elongated satellite streaks)
+                float boxW = Math.Max(0.5f, obj.Box.Width);
+                float boxH = Math.Max(0.5f, obj.Box.Height);
+                float estimatedFwhm = (boxW + boxH) * 0.42f;
+                float ellipticity = 1.0f - (Math.Min(boxW, boxH) / Math.Max(boxW, boxH));
+
+                // Hot pixels and cosmic rays have FWHM < 1.1px; streaks have ellipticity > 0.45
+                if (estimatedFwhm < 1.15f || ellipticity > 0.45f)
+                {
+                    continue;
+                }
                 // Radial distance from optical center for adaptive distortion tolerance
                 double dx = obj.CenterX - cx;
                 double dy = obj.CenterY - cy;
@@ -118,7 +142,7 @@ public static class TransientAnomalyDetector
                             double dRa = (eq.RaDegrees - target.Coordinates.RaDegrees) * Math.Cos(eq.DecDegrees * Math.PI / 180.0);
                             double dDec = eq.DecDegrees - target.Coordinates.DecDegrees;
                             double distDeg = Math.Sqrt((dRa * dRa) + (dDec * dDec));
-                            if (distDeg <= (target.TypicalFovDegrees * 0.8))
+                            if (distDeg <= (target.TypicalFovDegrees * 1.5))
                             {
                                 anomalyType = CataloguePlateSolver.UseTurkishLanguage
                                     ? $"Süpernova Adayı ({target.Id})"

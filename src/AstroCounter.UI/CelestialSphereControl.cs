@@ -111,6 +111,16 @@ public class CelestialSphereControl : Grid
         nameof(ExitCommand), typeof(ICommand), typeof(CelestialSphereControl),
         new PropertyMetadata(null));
 
+    public static readonly DependencyProperty MosaicTextureRevisionProperty = DependencyProperty.Register(
+        nameof(MosaicTextureRevision), typeof(int), typeof(CelestialSphereControl),
+        new PropertyMetadata(0, OnMosaicTextureRevisionChanged));
+
+    public int MosaicTextureRevision
+    {
+        get => (int)GetValue(MosaicTextureRevisionProperty);
+        set => SetValue(MosaicTextureRevisionProperty, value);
+    }
+
     public WcsMatrix? CurrentWcs
     {
         get => (WcsMatrix?)GetValue(CurrentWcsProperty);
@@ -283,6 +293,7 @@ public class CelestialSphereControl : Grid
 
     private double _currentNudgeStep = 0.05;
     private bool _suppressCameraAutoCenter;
+    private bool _isUserCameraActive;
     private double _cumulativeNudgeRa;
     private double _cumulativeNudgeDec;
     private double _cumulativeNudgeRot;
@@ -307,9 +318,8 @@ public class CelestialSphereControl : Grid
         _sceneGroup = new Model3DGroup();
         _panelsGroup = new Model3DGroup();
 
-        // Add celestial ambient lighting
-        _sceneGroup.Children.Add(new AmbientLight(Color.FromRgb(80, 95, 125)));
-        _sceneGroup.Children.Add(new DirectionalLight(Color.FromRgb(220, 230, 245), new Vector3D(0, 1, 0)));
+        // Add celestial ambient white lighting for true color fidelity and non-additive linear alpha crossfading (v1.3.2)
+        _sceneGroup.Children.Add(new AmbientLight(Colors.White));
 
         // Build celestial sphere globe / dome
         BuildCelestialSkyDome(IsGlobeView ? 97.0 : 150.0);
@@ -340,16 +350,23 @@ public class CelestialSphereControl : Grid
         var topCardTransform = new TranslateTransform();
         _topCard = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(225, 11, 17, 32)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(140, 56, 189, 248)),
+            Background = new SolidColorBrush(Color.FromArgb(242, 8, 13, 26)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(120, 56, 189, 248)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
+            CornerRadius = new CornerRadius(12),
             Padding = new Thickness(14, 10, 14, 10),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
             Cursor = Cursors.SizeAll,
             RenderTransform = topCardTransform,
-            ToolTip = CataloguePlateSolver.UseTurkishLanguage ? "Sürükleyerek taşıyabilirsiniz" : "Drag to move"
+            ToolTip = CataloguePlateSolver.UseTurkishLanguage ? "Başlıktan tutup sürükleyebilirsiniz" : "Drag to reposition",
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 18,
+                ShadowDepth = 4,
+                Opacity = 0.55
+            }
         };
 
         bool isDraggingHud = false;
@@ -458,19 +475,34 @@ public class CelestialSphereControl : Grid
 
         _centerPhotoBtn = new Button
         {
-            Content = CataloguePlateSolver.UseTurkishLanguage ? "🎯 Fotoğrafa Odaklan" : "🎯 Center on Photo",
-            Background = new SolidColorBrush(Color.FromArgb(220, 30, 41, 59)),
-            Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(120, 56, 189, 248)),
+            Content = CataloguePlateSolver.UseTurkishLanguage ? "🎯 Fotoğrafa Odaklan" : "🎯 Focus on Photo",
+            Background = new SolidColorBrush(Color.FromArgb(225, 13, 22, 42)),
+            Foreground = new SolidColorBrush(Color.FromRgb(125, 211, 252)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(130, 56, 189, 248)),
             BorderThickness = new Thickness(1),
-            Padding = new Thickness(12, 6, 12, 6),
-            FontSize = 11,
+            Padding = new Thickness(14, 7, 14, 7),
+            FontSize = 11.5,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 4, 0),
             Cursor = Cursors.Hand,
-            ToolTip = CataloguePlateSolver.UseTurkishLanguage ? "Kamerayı seçili fotoğrafın gökyüzündeki merkezine odaklar" : "Focuses the camera on the celestial center of the active photo"
+            ToolTip = CataloguePlateSolver.UseTurkishLanguage ? "Kamerayı seçili fotoğrafın gökyüzündeki merkezine odaklar" : "Centers the 3D camera directly on the active photo",
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 14,
+                ShadowDepth = 3,
+                Opacity = 0.45
+            }
         };
-        _centerPhotoBtn.Click += (s, e) => CenterOnActivePhoto();
+        if (Application.Current?.TryFindResource("GlassButtonStyle") is Style glassBtnStyle)
+        {
+            _centerPhotoBtn.Style = glassBtnStyle;
+        }
+        _centerPhotoBtn.Click += (s, e) =>
+        {
+            _isUserCameraActive = false;
+            CenterOnActivePhoto();
+        };
         rightStack.Children.Add(_centerPhotoBtn);
 
         Grid.SetRow(rightStack, 0);
@@ -479,13 +511,20 @@ public class CelestialSphereControl : Grid
         // Bottom navigation hints
         var bottomCard = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(190, 15, 23, 42)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(80, 56, 189, 248)),
+            Background = new SolidColorBrush(Color.FromArgb(205, 9, 15, 29)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(85, 56, 189, 248)),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(12, 6, 12, 6),
+            CornerRadius = new CornerRadius(14),
+            Padding = new Thickness(14, 7, 14, 7),
             HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Bottom
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 14,
+                ShadowDepth = 3,
+                Opacity = 0.45
+            }
         };
         _hudNavHints = new TextBlock
         {
@@ -715,7 +754,8 @@ public class CelestialSphereControl : Grid
         if (d is CelestialSphereControl csc)
         {
             csc.RebuildPhotoMeshes();
-            if (!csc._suppressCameraAutoCenter)
+            // Preserve user camera state on panel selection or property updates (v1.3.2 / Target 4)
+            if (!csc._suppressCameraAutoCenter && !csc._isUserCameraActive)
             {
                 csc.CenterOnActivePhoto();
             }
@@ -728,6 +768,16 @@ public class CelestialSphereControl : Grid
         if (d is CelestialSphereControl csc)
         {
             csc._overlayCanvas.InvalidateVisual();
+        }
+    }
+
+    private static void OnMosaicTextureRevisionChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is CelestialSphereControl csc)
+        {
+            // Refresh 3D panel materials in place while strictly preserving current camera azimuth/elevation/FOV
+            csc.RebuildPhotoMeshes();
+            csc.UpdateAlignmentHud();
         }
     }
 
@@ -795,12 +845,12 @@ public class CelestialSphereControl : Grid
         bool tr = CataloguePlateSolver.UseTurkishLanguage;
         if (_topCard != null)
         {
-            _topCard.ToolTip = tr ? "Sürükleyerek taşıyabilirsiniz" : "Drag to move";
+            _topCard.ToolTip = tr ? "Başlıktan tutup sürükleyebilirsiniz" : "Drag to reposition";
         }
         if (_centerPhotoBtn != null)
         {
-            _centerPhotoBtn.Content = tr ? "🎯 Fotoğrafa Odaklan" : "🎯 Center on Photo";
-            _centerPhotoBtn.ToolTip = tr ? "Kamerayı seçili fotoğrafın gökyüzündeki merkezine odaklar" : "Focuses the camera on the celestial center of the active photo";
+            _centerPhotoBtn.Content = tr ? "🎯 Fotoğrafa Odaklan" : "🎯 Focus on Photo";
+            _centerPhotoBtn.ToolTip = tr ? "Kamerayı seçili fotoğrafın gökyüzündeki merkezine odaklar" : "Centers the 3D camera directly on the active photo";
         }
         UpdateNavHints();
         UpdateCameraVectors();
@@ -929,13 +979,26 @@ public class CelestialSphereControl : Grid
         {
             _hudDetections.Visibility = Visibility.Visible;
             _hudDetections.Text = CataloguePlateSolver.UseTurkishLanguage
-                ? $"⭐ Tespitler: {TotalCount:N0} Obje (Tier 1: {Tier1Count} · Tier 2: {Tier2Count} · Tier 3: {Tier3Count})"
-                : $"⭐ Detections: {TotalCount:N0} Objects (Tier 1: {Tier1Count} · Tier 2: {Tier2Count} · Tier 3: {Tier3Count})";
+                ? $"⭐ Sayılan Nesne: {TotalCount:N0} (Parlak: {Tier1Count} · Orta: {Tier2Count} · Sönük: {Tier3Count})"
+                : $"⭐ Counted: {TotalCount:N0} Objects (Bright: {Tier1Count} · Mid: {Tier2Count} · Faint: {Tier3Count})";
         }
         else
         {
             _hudDetections.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private static BitmapSource GetOrCreate3DProxyBitmap(BitmapSource src)
+    {
+        if (src.PixelWidth <= 2048 && src.PixelHeight <= 2048)
+        {
+            return src;
+        }
+
+        double scale = 2048.0 / Math.Max(src.PixelWidth, src.PixelHeight);
+        var transformed = new TransformedBitmap(src, new ScaleTransform(scale, scale));
+        transformed.Freeze();
+        return transformed;
     }
 
     private void BuildCelestialSkyDome(double radius)
@@ -988,13 +1051,16 @@ public class CelestialSphereControl : Grid
             }
         }
 
-        var darkMat = new MaterialGroup();
-        darkMat.Children.Add(new EmissiveMaterial(new SolidColorBrush(Color.FromRgb(6, 10, 20))));
-        darkMat.Children.Add(new DiffuseMaterial(new SolidColorBrush(Color.FromRgb(10, 16, 30))));
+        var darkBrush = new SolidColorBrush(Color.FromRgb(6, 10, 20));
+        darkBrush.Freeze();
+        var darkMat = new EmissiveMaterial(darkBrush);
+        darkMat.Freeze();
 
-        _skyDomeModel = new GeometryModel3D(mesh, darkMat);
-        _skyDomeModel.Material = darkMat;
-        _skyDomeModel.BackMaterial = darkMat;
+        _skyDomeModel = new GeometryModel3D(mesh, darkMat)
+        {
+            Material = darkMat,
+            BackMaterial = darkMat
+        };
         _sceneGroup.Children.Insert(0, _skyDomeModel);
     }
 
@@ -1034,7 +1100,7 @@ public class CelestialSphereControl : Grid
             if (!p.IsVisible || p.Width <= 0 || p.Height <= 0) continue;
 
             var bmp = UseFeatheredBlending
-                ? (DetectionOverlay.GetOrLoadFeatheredPanelBitmap(p.FilePath, DetectionOverlay.GetPanelBitmap(p)) ?? DetectionOverlay.GetPanelBitmap(p))
+                ? (DetectionOverlay.GetOrLoadFeatheredPanelBitmap(p.FilePath, DetectionOverlay.GetPanelBitmap(p), p.FeatherFraction, p.OverlappingEdges, p.PerimeterOverlapMask, p.OverlapMaskHash, p.PerimeterOverlapDepth) ?? DetectionOverlay.GetPanelBitmap(p))
                 : DetectionOverlay.GetPanelBitmap(p);
             if (bmp == null && (p.Id == "active" || (!string.IsNullOrEmpty(ActiveFilePath) && string.Equals(p.FilePath, ActiveFilePath, StringComparison.OrdinalIgnoreCase))))
             {
@@ -1051,26 +1117,32 @@ public class CelestialSphereControl : Grid
                 ? (baseRadius + (pIndex * layerStep))
                 : (baseRadius - (pIndex * layerStep));
 
-            // 64x64 ultra-fine spherical mesh curves each photo accurately onto the celestial dome
-            // and faithfully samples non-linear Thin Plate Spline and optical radial lens distortion.
-            int divX = 64;
-            int divY = 64;
-            var mesh = new MeshGeometry3D();
+            // 32x32 spherical mesh warp (v1.3.2 / Target 2): Curves each photo accurately onto the celestial dome
+            // and faithfully snaps overlapping stars using non-linear Thin Plate Spline and optical radial lens distortion.
+            int divX = 32;
+            int divY = 32;
+            int vertexCount = (divX + 1) * (divY + 1);
+            var positions = new Point3D[vertexCount];
+            var texCoords = new Point[vertexCount];
 
-            for (int j = 0; j <= divY; j++)
+            var panelWcs = p.Wcs;
+            double pWidth = p.Width;
+            double pHeight = p.Height;
+
+            Parallel.For(0, divY + 1, j =>
             {
                 double v = (double)j / divY;
+                int rowOffset = j * (divX + 1);
 
                 for (int i = 0; i <= divX; i++)
                 {
                     double u = (double)i / divX;
-                    double px = u * p.Width;
-                    double py = v * p.Height;
+                    double px = u * pWidth;
+                    double py = v * pHeight;
 
-                    // Direct 1:1 astrometric mapping: Pixel (px, py) corresponding to texture coordinate (u, v)
-                    // maps via WcsMatrix (which includes non-linear Thin Plate Spline and radial lens distortion)
-                    // directly to the true celestial coordinate (RA, Dec) where that star belongs!
-                    var coord = p.Wcs.PixelToEquatorial(px, py);
+                    // Direct 1:1 astrometric mapping with non-linear TPS & distortion correction:
+                    // Snaps overlapping stars across adjacent panels to identical 3D celestial sphere coordinates!
+                    var coord = panelWcs.PixelToEquatorial(px, py);
                     double raRad = coord.RaRadians;
                     double decRad = coord.DecRadians;
 
@@ -1079,15 +1151,18 @@ public class CelestialSphereControl : Grid
                     double cosR = Math.Cos(raRad);
                     double sinR = Math.Sin(raRad);
 
-                    double currentRadius = panelRadius;
-
-                    mesh.Positions.Add(new Point3D(
-                        currentRadius * cosD * sinR,
-                        currentRadius * sinD,
-                        -currentRadius * cosD * cosR));
-                    mesh.TextureCoordinates.Add(new Point(u, v));
+                    int idx = rowOffset + i;
+                    positions[idx] = new Point3D(
+                        panelRadius * cosD * sinR,
+                        panelRadius * sinD,
+                        -panelRadius * cosD * cosR);
+                    texCoords[idx] = new Point(u, v);
                 }
-            }
+            });
+
+            var mesh = new MeshGeometry3D();
+            mesh.Positions = new Point3DCollection(positions);
+            mesh.TextureCoordinates = new PointCollection(texCoords);
 
             for (int j = 0; j < divY; j++)
             {
@@ -1109,6 +1184,11 @@ public class CelestialSphereControl : Grid
                 }
             }
 
+            mesh.Freeze();
+
+            // Mipmap Proxy Texture - ensure 3D spherical mesh texture is bounded to 2048px
+            bmp = GetOrCreate3DProxyBitmap(bmp);
+
             var imageBrush = new ImageBrush(bmp)
             {
                 Stretch = Stretch.Fill,
@@ -1116,14 +1196,15 @@ public class CelestialSphereControl : Grid
             };
             imageBrush.Freeze();
 
-            var matGroup = new MaterialGroup();
-            matGroup.Children.Add(new EmissiveMaterial(imageBrush));
-            matGroup.Children.Add(new DiffuseMaterial(imageBrush));
+            // v1.3.2 Fix 1: Use DiffuseMaterial with white ambient light for linear alpha crossfade blending without additive blowout
+            var diffMat = new DiffuseMaterial(imageBrush);
+            diffMat.Freeze();
 
-            var geomModel = new GeometryModel3D(mesh, matGroup);
-            // Double-sided rendering: visible both when inside the dome and outside looking at the globe
-            geomModel.Material = matGroup;
-            geomModel.BackMaterial = matGroup;
+            var geomModel = new GeometryModel3D(mesh, diffMat)
+            {
+                Material = diffMat,
+                BackMaterial = diffMat
+            };
 
             _panelsGroup.Children.Add(geomModel);
         }
@@ -1216,6 +1297,7 @@ public class CelestialSphereControl : Grid
         base.OnMouseMove(e);
         if (_isDragging && e.LeftButton == MouseButtonState.Pressed)
         {
+            _isUserCameraActive = true;
             var curPos = e.GetPosition(this);
             double dx = curPos.X - _lastMousePos.X;
             double dy = curPos.Y - _lastMousePos.Y;
@@ -1263,6 +1345,7 @@ public class CelestialSphereControl : Grid
     protected override void OnMouseWheel(MouseWheelEventArgs e)
     {
         base.OnMouseWheel(e);
+        _isUserCameraActive = true;
         double factor = e.Delta > 0 ? 0.85 : 1.18;
 
         if (IsGlobeView)
@@ -1835,7 +1918,7 @@ public class CelestialSphereControl : Grid
                 if (_owner.MosaicPanels != null && _owner.MosaicPanels.Count > 1 && !string.IsNullOrEmpty(obj.PanelId))
                 {
                     var parentPanel = _owner.MosaicPanels.FirstOrDefault(p => p.Id == obj.PanelId);
-                    if (parentPanel != null && parentPanel.TargetName == null) continue;
+                    if (parentPanel != null && !parentPanel.IsSolved) continue;
                 }
 
                 double targetRa = obj.RaDegrees ?? (wcs != null ? wcs.PixelToEquatorial(obj.CenterX, obj.CenterY).RaDegrees : 0);

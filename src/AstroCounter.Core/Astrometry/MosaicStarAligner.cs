@@ -60,7 +60,7 @@ public static class MosaicStarAligner
 
             if (bmp != null)
             {
-                refStars = PhotometricStarFinder.DetectStars(bmp, new TilingConfig(DefaultConfidenceThreshold: 0.15f, MinConfidence: 0.05f));
+                refStars = PhotometricStarFinder.DetectStarsFast(bmp, new TilingConfig(DefaultConfidenceThreshold: 0.15f, MinConfidence: 0.05f));
                 referencePanel.DetectedStars = refStars;
                 if (shouldDispose) bmp.Dispose();
             }

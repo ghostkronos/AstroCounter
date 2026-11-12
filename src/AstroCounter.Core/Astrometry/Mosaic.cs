@@ -9,6 +9,21 @@ using AstroCounter.Core.Models;
 /// Represents a single astrophotography photo tile within a celestial sky mosaic.
 /// Encapsulates its image dimensions, WCS celestial astrometry solution, footprint, and rendering properties.
 /// </summary>
+/// <summary>
+/// Bitmask flags identifying which rectangular edges of a mosaic panel intersect adjacent photo tiles.
+/// Used for seam-only alpha blending so outer mosaic perimeters remain 100% solid and unfeathered.
+/// </summary>
+[Flags]
+public enum EdgeOverlap
+{
+    None = 0,
+    Left = 1,
+    Top = 2,
+    Right = 4,
+    Bottom = 8,
+    All = Left | Top | Right | Bottom
+}
+
 public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
 {
     private double _opacity = 1.0;
@@ -18,11 +33,37 @@ public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
     private double _contrast = 1.0;
     private bool _isAutoBrightnessEnabled = false;
     private bool _useFeatheredBlending = true;
-    private double _featherFraction = 0.05;
+    private double _featherFraction = 0.12;
     private float _confidenceThreshold = 0.25f;
     private float _autoConfidenceThreshold = 0.25f;
     private bool _isAutoConfidenceEnabled = true;
     private bool _isSelected = false;
+    private EdgeOverlap _overlappingEdges = EdgeOverlap.All;
+
+    public const int PerimeterSampleCount = 256;
+    private readonly bool[] _perimeterOverlapMask = new bool[PerimeterSampleCount];
+    private readonly float[] _perimeterOverlapDepth = new float[PerimeterSampleCount];
+    public bool[] PerimeterOverlapMask => _perimeterOverlapMask;
+    public float[] PerimeterOverlapDepth => _perimeterOverlapDepth;
+    public bool HasOverlappingPerimeter { get; set; }
+    public long OverlapMaskHash { get; set; }
+
+    /// <summary>
+    /// Which borders of this photo tile intersect neighbor panels on the continuous canvas.
+    /// Only intersecting edges receive feathered blending.
+    /// </summary>
+    public EdgeOverlap OverlappingEdges
+    {
+        get => _overlappingEdges;
+        set
+        {
+            if (_overlappingEdges != value)
+            {
+                _overlappingEdges = value;
+                OnPropertyChanged(nameof(OverlappingEdges));
+            }
+        }
+    }
 
     public string Id { get; }
     public string Name { get; set; }
@@ -185,6 +226,12 @@ public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
     /// </summary>
     public object? CachedSkiaBitmap { get; set; }
 
+    /// <summary>
+    /// Lightweight downscaled (max 2048px) unadjusted SKBitmap proxy retained in memory for responsive
+    /// non-blocking live sky-tone harmonization and light-slider updates in 2D and 3D views.
+    /// </summary>
+    public object? DisplayBaseSkiaBitmap { get; set; }
+
     public double Opacity
     {
         get => _opacity;
@@ -237,9 +284,9 @@ public class MosaicPanel : System.ComponentModel.INotifyPropertyChanged
         }
     }
 
-    public bool IsSolved => Wcs != null && (TargetName != null || Math.Abs(Wcs.CenterCoordinates.RaDegrees - 180.0) > 1e-3 || Math.Abs(Wcs.CenterCoordinates.DecDegrees - 30.0) > 1e-3);
+    public bool IsSolved => Wcs != null && (!string.IsNullOrWhiteSpace(TargetName) || Math.Abs(Wcs.CenterCoordinates.RaDegrees - 180.0) > 1e-3 || Math.Abs(Wcs.CenterCoordinates.DecDegrees - 30.0) > 1e-3);
     public string StatusText => IsSolved
-        ? (TargetName != null ? $"✅ {TargetName}" : (CataloguePlateSolver.UseTurkishLanguage ? "✅ Çözümlendi" : "✅ Solved"))
+        ? (!string.IsNullOrWhiteSpace(TargetName) ? $"✅ {TargetName}" : (CataloguePlateSolver.UseTurkishLanguage ? "✅ Çözümlendi" : "✅ Solved"))
         : (CataloguePlateSolver.UseTurkishLanguage ? "⚠️ Hizalanamadı / Hizalanıyor" : "⚠️ Unsolved / Aligning");
     public string CenterCoordinatesText => Wcs != null ? $"{Wcs.CenterCoordinates.FormatRa()}  {Wcs.CenterCoordinates.FormatDec()}" : "-";
     public string ResolutionText => $"{Width} × {Height} px";
@@ -490,8 +537,297 @@ public class MosaicProject
     }
 
     /// <summary>
-    /// Brings the specified mosaic panel to the very front (drawn last on top).
+    /// Updates the 256-point perimeter overlap mask for all visible panels by sampling 64 points
+    /// per boundary edge in master canvas space. Only sub-segments intersecting neighbor panels
+    /// receive soft feathered blending; outer borders exposed to open sky remain 100% crisp and unfeathered.
     /// </summary>
+    public void UpdatePanelEdgeOverlaps(WcsMatrix? masterWcs = null)
+    {
+        if (_panels.Count <= 1)
+        {
+            for (int i = 0; i < _panels.Count; i++)
+            {
+                var p = _panels[i];
+                Array.Clear(p.PerimeterOverlapMask, 0, MosaicPanel.PerimeterSampleCount);
+                Array.Clear(p.PerimeterOverlapDepth, 0, MosaicPanel.PerimeterSampleCount);
+                p.HasOverlappingPerimeter = false;
+                p.OverlapMaskHash = 0;
+                p.OverlappingEdges = EdgeOverlap.None;
+            }
+            return;
+        }
+
+        var effectiveMasterWcs = masterWcs ?? ComputeMasterWcs() ?? _panels.FirstOrDefault(p => p.Wcs != null)?.Wcs;
+
+        int count = _panels.Count;
+        var transforms = new (double M11, double M12, double M21, double M22, double OffsetX, double OffsetY)[count];
+        var invTransforms = new (double InvM11, double InvM12, double InvM21, double InvM22, double OffsetX, double OffsetY, bool Valid)[count];
+
+        for (int i = 0; i < count; i++)
+        {
+            var tr = GetPanelCanvasTransform(_panels[i], effectiveMasterWcs, i);
+            transforms[i] = tr;
+
+            double det = (tr.M11 * tr.M22) - (tr.M12 * tr.M21);
+            if (Math.Abs(det) > 1e-9)
+            {
+                invTransforms[i] = (
+                    tr.M22 / det,
+                    -tr.M12 / det,
+                    -tr.M21 / det,
+                    tr.M11 / det,
+                    tr.OffsetX,
+                    tr.OffsetY,
+                    true);
+            }
+        }
+
+        const int samplesPerSide = MosaicPanel.PerimeterSampleCount / 4; // 64 samples per edge
+        Span<double> interiorSamples = stackalloc double[] { 0.25, 0.50, 0.75 };
+
+        for (int i = 0; i < count; i++)
+        {
+            var p = _panels[i];
+            if (!p.IsVisible || p.Width <= 0 || p.Height <= 0)
+            {
+                Array.Clear(p.PerimeterOverlapMask, 0, MosaicPanel.PerimeterSampleCount);
+                Array.Clear(p.PerimeterOverlapDepth, 0, MosaicPanel.PerimeterSampleCount);
+                p.HasOverlappingPerimeter = false;
+                p.OverlapMaskHash = 0;
+                p.OverlappingEdges = EdgeOverlap.None;
+                continue;
+            }
+
+            var tr = transforms[i];
+            var mask = p.PerimeterOverlapMask;
+            var depths = p.PerimeterOverlapDepth;
+            bool anyOverlap = false;
+            long hash = 17;
+
+            // 1. Full 256-point perimeter contour mask generation against UNDERLYING panels (j < i)
+            // Bottom-most panel (i == 0) remains 100% opaque so combined alpha never drops below 1.0 (zero dark seams).
+            // Edge 0: Top Edge (y = 0, x from 0 to Width, inward normal = +Y) -> indices 0..63
+            for (int s = 0; s < samplesPerSide; s++)
+            {
+                double t = (s + 0.5) / samplesPerSide;
+                double lx = t * p.Width;
+                double ly = 0;
+                float depth = MeasureUnderlyingOverlapDepth(lx, ly, 0.0, p.Height, tr, i, invTransforms);
+                bool isInside = depth > 0f;
+                mask[s] = isInside;
+                depths[s] = depth;
+                if (isInside) anyOverlap = true;
+                hash = unchecked((hash * 31) + (isInside ? (1 + (int)(depth * 100f)) : 0));
+            }
+
+            // Edge 1: Right Edge (x = Width, y from 0 to Height, inward normal = -X) -> indices 64..127
+            for (int s = 0; s < samplesPerSide; s++)
+            {
+                int idx = samplesPerSide + s;
+                double t = (s + 0.5) / samplesPerSide;
+                double lx = p.Width;
+                double ly = t * p.Height;
+                float depth = MeasureUnderlyingOverlapDepth(lx, ly, -p.Width, 0.0, tr, i, invTransforms);
+                bool isInside = depth > 0f;
+                mask[idx] = isInside;
+                depths[idx] = depth;
+                if (isInside) anyOverlap = true;
+                hash = unchecked((hash * 31) + (isInside ? (1 + (int)(depth * 100f)) : 0));
+            }
+
+            // Edge 2: Bottom Edge (y = Height, x from Width down to 0, inward normal = -Y) -> indices 128..191
+            for (int s = 0; s < samplesPerSide; s++)
+            {
+                int idx = (2 * samplesPerSide) + s;
+                double t = 1.0 - ((s + 0.5) / samplesPerSide);
+                double lx = t * p.Width;
+                double ly = p.Height;
+                float depth = MeasureUnderlyingOverlapDepth(lx, ly, 0.0, -p.Height, tr, i, invTransforms);
+                bool isInside = depth > 0f;
+                mask[idx] = isInside;
+                depths[idx] = depth;
+                if (isInside) anyOverlap = true;
+                hash = unchecked((hash * 31) + (isInside ? (1 + (int)(depth * 100f)) : 0));
+            }
+
+            // Edge 3: Left Edge (x = 0, y from Height down to 0, inward normal = +X) -> indices 192..255
+            for (int s = 0; s < samplesPerSide; s++)
+            {
+                int idx = (3 * samplesPerSide) + s;
+                double t = 1.0 - ((s + 0.5) / samplesPerSide);
+                double lx = 0;
+                double ly = t * p.Height;
+                float depth = MeasureUnderlyingOverlapDepth(lx, ly, p.Width, 0.0, tr, i, invTransforms);
+                bool isInside = depth > 0f;
+                mask[idx] = isInside;
+                depths[idx] = depth;
+                if (isInside) anyOverlap = true;
+                hash = unchecked((hash * 31) + (isInside ? (1 + (int)(depth * 100f)) : 0));
+            }
+
+            p.HasOverlappingPerimeter = anyOverlap;
+            p.OverlapMaskHash = hash;
+
+            // 2. 4-Edge rectilinear bitmask flags for UI status and cards
+            EdgeOverlap overlap = EdgeOverlap.None;
+
+            // Left Edge (x = 0, y in [0, Height])
+            foreach (double t in interiorSamples)
+            {
+                double lx = 0;
+                double ly = t * p.Height;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
+                {
+                    overlap |= EdgeOverlap.Left;
+                    break;
+                }
+            }
+
+            // Right Edge (x = Width, y in [0, Height])
+            foreach (double t in interiorSamples)
+            {
+                double lx = p.Width;
+                double ly = t * p.Height;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
+                {
+                    overlap |= EdgeOverlap.Right;
+                    break;
+                }
+            }
+
+            // Top Edge (y = 0, x in [0, Width])
+            foreach (double t in interiorSamples)
+            {
+                double lx = t * p.Width;
+                double ly = 0;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
+                {
+                    overlap |= EdgeOverlap.Top;
+                    break;
+                }
+            }
+
+            // Bottom Edge (y = Height, x in [0, Width])
+            foreach (double t in interiorSamples)
+            {
+                double lx = t * p.Width;
+                double ly = p.Height;
+                double cx = (tr.M11 * lx) + (tr.M21 * ly) + tr.OffsetX;
+                double cy = (tr.M12 * lx) + (tr.M22 * ly) + tr.OffsetY;
+                if (IsPointInsideAnyOtherPanel(cx, cy, i, invTransforms))
+                {
+                    overlap |= EdgeOverlap.Bottom;
+                    break;
+                }
+            }
+
+            p.OverlappingEdges = overlap;
+        }
+    }
+
+    private float MeasureUnderlyingOverlapDepth(
+        double edgeLx, double edgeLy,
+        double inwardVecX, double inwardVecY,
+        (double M11, double M12, double M21, double M22, double OffsetX, double OffsetY) tr,
+        int currentPanelIndex,
+        (double InvM11, double InvM12, double InvM21, double InvM22, double OffsetX, double OffsetY, bool Valid)[] invTransforms)
+    {
+        double edgeCx = (tr.M11 * edgeLx) + (tr.M21 * edgeLy) + tr.OffsetX;
+        double edgeCy = (tr.M12 * edgeLx) + (tr.M22 * edgeLy) + tr.OffsetY;
+
+        if (!IsPointInsideAnyUnderlyingPanel(edgeCx, edgeCy, currentPanelIndex, invTransforms))
+        {
+            return 0f;
+        }
+
+        // Probe inward along the panel normal to find how deep the underlying panel extends
+        float maxDepth = 0.02f;
+        ReadOnlySpan<float> stepFractions = stackalloc float[] { 0.04f, 0.06f, 0.09f, 0.12f, 0.16f, 0.22f, 0.30f, 0.35f };
+        foreach (float f in stepFractions)
+        {
+            double px = edgeLx + (inwardVecX * f);
+            double py = edgeLy + (inwardVecY * f);
+            double cx = (tr.M11 * px) + (tr.M21 * py) + tr.OffsetX;
+            double cy = (tr.M12 * px) + (tr.M22 * py) + tr.OffsetY;
+            if (IsPointInsideAnyUnderlyingPanel(cx, cy, currentPanelIndex, invTransforms))
+            {
+                maxDepth = f;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return maxDepth;
+    }
+
+    private bool IsPointInsideAnyUnderlyingPanel(
+        double cx, double cy, int currentPanelIndex,
+        (double InvM11, double InvM12, double InvM21, double InvM22, double OffsetX, double OffsetY, bool Valid)[] invTransforms)
+    {
+        for (int j = 0; j < currentPanelIndex; j++)
+        {
+            var other = _panels[j];
+            if (!other.IsVisible || other.Width <= 0 || other.Height <= 0) continue;
+
+            var inv = invTransforms[j];
+            if (!inv.Valid) continue;
+
+            double dx = cx - inv.OffsetX;
+            double dy = cy - inv.OffsetY;
+            double lx = (inv.InvM11 * dx) + (inv.InvM21 * dy);
+            double ly = (inv.InvM12 * dx) + (inv.InvM22 * dy);
+
+            // Require the point to be strictly inside the underlying panel's interior (1% inset)
+            // so flush outer sky borders (e.g. top/bottom edges of side-by-side tiles) are never feathered.
+            double insetX = other.Width * 0.01;
+            double insetY = other.Height * 0.01;
+            if (lx >= insetX && lx <= other.Width - insetX &&
+                ly >= insetY && ly <= other.Height - insetY)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private bool IsPointInsideAnyOtherPanel(
+        double cx, double cy, int currentPanelIndex,
+        (double InvM11, double InvM12, double InvM21, double InvM22, double OffsetX, double OffsetY, bool Valid)[] invTransforms)
+    {
+        for (int j = 0; j < _panels.Count; j++)
+        {
+            if (j == currentPanelIndex) continue;
+            var other = _panels[j];
+            if (!other.IsVisible || other.Width <= 0 || other.Height <= 0) continue;
+
+            var inv = invTransforms[j];
+            if (!inv.Valid) continue;
+
+            double dx = cx - inv.OffsetX;
+            double dy = cy - inv.OffsetY;
+            double lx = (inv.InvM11 * dx) + (inv.InvM21 * dy);
+            double ly = (inv.InvM12 * dx) + (inv.InvM22 * dy);
+
+            // Require the point to be strictly inside the underlying panel's interior (1% inset)
+            // so flush outer sky borders (e.g. top/bottom edges of side-by-side tiles) are never feathered.
+            double insetX = other.Width * 0.01;
+            double insetY = other.Height * 0.01;
+            if (lx >= insetX && lx <= other.Width - insetX &&
+                ly >= insetY && ly <= other.Height - insetY)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public bool BringToFront(MosaicPanel panel)
     {
         if (panel == null) return false;
@@ -564,8 +900,7 @@ public class MosaicProject
         if (activePanels.Count == 0) return null;
 
         // Prioritize solved panels with specific celestial targets over default (180, 30) fallback panels
-        var solvedPanels = activePanels.Where(p => p.Wcs != null &&
-            !(p.Wcs.CenterCoordinates.RaDegrees == 180.0 && p.Wcs.CenterCoordinates.DecDegrees == 30.0 && p.TargetName == null)).ToList();
+        var solvedPanels = activePanels.Where(p => p.IsSolved).ToList();
         var panelsToUse = solvedPanels.Count > 0 ? solvedPanels : activePanels;
 
         var allCorners = new List<CelestialCoordinates>(panelsToUse.Count * 4);
@@ -614,7 +949,7 @@ public class MosaicProject
         }
 
         double widthDeg = maxRadiusDeg * 2.0;
-        double heightDeg = Math.Max(maxDec - minDec, widthDeg * 0.7);
+        double heightDeg = Math.Max(maxDec - minDec, maxRadiusDeg * 2.0);
 
         double minRa = (center.RaDegrees - maxRadiusDeg + 360.0) % 360.0;
         double maxRa = (center.RaDegrees + maxRadiusDeg) % 360.0;
@@ -677,32 +1012,94 @@ public class MosaicProject
         }
         scale = Math.Max(0.01, scale);
 
-        // Total field of view in arcseconds
-        double widthArcsec = Math.Max(360.0, bounds.AngularWidthDegrees * 3600.0);
-        double heightArcsec = Math.Max(360.0, bounds.AngularHeightDegrees * 3600.0);
+        // Project all active panel corners onto an unconstrained tangent projection at bounds.Center
+        // to discover the exact bounding box (minX, maxX, minY, maxY) needed to house all panels.
+        var refProjection = new WcsMatrix(bounds.Center, 0.0, 0.0, scale, 0.0, 1000, 1000);
 
-        const int maxCanvasDim = 12000;
-        double minRequiredScaleW = widthArcsec / Math.Max(100, maxCanvasDim - (marginPx * 2));
-        double minRequiredScaleH = heightArcsec / Math.Max(100, maxCanvasDim - (marginPx * 2));
+        double minX = double.MaxValue, maxX = double.MinValue;
+        double minY = double.MaxValue, maxY = double.MinValue;
+        bool hasProjected = false;
+
+        foreach (var p in activePanels)
+        {
+            if (p.Wcs != null)
+            {
+                var (tl, tr, br, bl) = p.GetFootprintCorners();
+                CelestialCoordinates[] corners = [tl, tr, br, bl, p.Wcs.CenterCoordinates];
+                foreach (var c in corners)
+                {
+                    if (refProjection.EquatorialToPixel(c, out double cx, out double cy))
+                    {
+                        minX = Math.Min(minX, cx);
+                        maxX = Math.Max(maxX, cx);
+                        minY = Math.Min(minY, cy);
+                        maxY = Math.Max(maxY, cy);
+                        hasProjected = true;
+                    }
+                }
+            }
+        }
+
+        double spanX = hasProjected ? (maxX - minX) : (bounds.AngularWidthDegrees * 3600.0 / scale);
+        double spanY = hasProjected ? (maxY - minY) : (bounds.AngularHeightDegrees * 3600.0 / scale);
+
+        // Add generous margin around all panels so mosaic tiles never touch or cross the canvas boundary
+        int effectiveMargin = Math.Max(marginPx, Math.Max(600, (int)(Math.Max(spanX, spanY) * 0.20)));
+
+        const int maxCanvasDim = 16000;
+        double minRequiredScaleW = (spanX * scale) / Math.Max(100, maxCanvasDim - (effectiveMargin * 2));
+        double minRequiredScaleH = (spanY * scale) / Math.Max(100, maxCanvasDim - (effectiveMargin * 2));
         double minRequiredScale = Math.Max(minRequiredScaleW, minRequiredScaleH);
 
-        // Automatically increase master pixel scale if the angular span would exceed maxCanvasDim,
-        // so the entire mosaic always fits inside the 2D canvas without clipping!
         if (!targetPixelScaleArcsec.HasValue && scale < minRequiredScale)
         {
             scale = minRequiredScale;
+            refProjection = new WcsMatrix(bounds.Center, 0.0, 0.0, scale, 0.0, 1000, 1000);
+            minX = double.MaxValue; maxX = double.MinValue;
+            minY = double.MaxValue; maxY = double.MinValue;
+            foreach (var p in activePanels)
+            {
+                if (p.Wcs != null)
+                {
+                    var (tl, tr, br, bl) = p.GetFootprintCorners();
+                    CelestialCoordinates[] corners = [tl, tr, br, bl, p.Wcs.CenterCoordinates];
+                    foreach (var c in corners)
+                    {
+                        if (refProjection.EquatorialToPixel(c, out double cx, out double cy))
+                        {
+                            minX = Math.Min(minX, cx);
+                            maxX = Math.Max(maxX, cx);
+                            minY = Math.Min(minY, cy);
+                            maxY = Math.Max(maxY, cy);
+                        }
+                    }
+                }
+            }
+            spanX = maxX - minX;
+            spanY = maxY - minY;
+            effectiveMargin = Math.Max(marginPx, Math.Max(400, (int)(Math.Max(spanX, spanY) * 0.12)));
         }
 
-        int canvasW = (int)Math.Ceiling(widthArcsec / scale) + (marginPx * 2);
-        int canvasH = (int)Math.Ceiling(heightArcsec / scale) + (marginPx * 2);
+        int canvasW = (int)Math.Ceiling(spanX + (effectiveMargin * 2));
+        int canvasH = (int)Math.Ceiling(spanY + (effectiveMargin * 2));
 
-        canvasW = Math.Clamp(canvasW, 400, 16384);
-        canvasH = Math.Clamp(canvasH, 400, 16384);
+        // Reserve extra room on the right for fallback cards if any panels are genuinely unsolved
+        int unsolvedCount = activePanels.Count(p => !p.IsSolved);
+        if (unsolvedCount > 0)
+        {
+            canvasW += unsolvedCount <= 2 ? 800 : 1600;
+        }
+
+        canvasW = Math.Clamp(canvasW, 1200, 24000);
+        canvasH = Math.Clamp(canvasH, 1200, 24000);
+
+        double refPx = hasProjected ? (-minX + effectiveMargin) : (canvasW * 0.5);
+        double refPy = hasProjected ? (-minY + effectiveMargin) : (canvasH * 0.5);
 
         return new WcsMatrix(
             bounds.Center,
-            canvasW * 0.5,
-            canvasH * 0.5,
+            refPx,
+            refPy,
             scale,
             rotationDegrees: 0.0, // North-Up for master mosaic
             canvasW,
