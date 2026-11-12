@@ -29,21 +29,22 @@ jobs:
     - name: Restore Dependencies
       run: dotnet restore src/AstroCounter.slnx
 
-    - name: Publish Self-Contained Single File
+    - name: Publish Self-Contained Portable Package
       run: >
         dotnet publish src/AstroCounter.UI/AstroCounter.UI.csproj
         -c Release
         -r win-x64
         --self-contained true
-        -p:PublishSingleFile=true
-        -p:IncludeNativeLibrariesForSelfExtract=true
-        -p:EnableCompressionInSingleFile=true
-        -o ./publish
+        -o ./publish/AstroCounter-portable-win-x64
+
+    - name: Archive Portable Release
+      shell: pwsh
+      run: Compress-Archive -Path ./publish/AstroCounter-portable-win-x64/* -DestinationPath ./publish/AstroCounter-portable-win-x64.zip -Force
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        files: ./publish/AstroCounter.UI.exe
+        files: ./publish/AstroCounter-portable-win-x64.zip
         draft: false
         prerelease: false
         generate_release_notes: true
